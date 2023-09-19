@@ -37,12 +37,12 @@ func (s *Server) Run() {
 }
 
 func (s *Server) NewRouter() http.Handler {
-	mux := http.NewServeMux()
+	s.router = http.NewServeMux()
 
-	mux.HandleFunc("/", s.indexHandler)
-	mux.HandleFunc("/search", s.searchHandler)
+	s.router.HandleFunc("/", s.indexHandler)
+	s.router.HandleFunc("/search", s.searchHandler)
 
-	return mux
+	return s.router
 }
 
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
