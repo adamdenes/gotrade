@@ -26,7 +26,7 @@ func NewServer(addr string) *Server {
 }
 
 func (s *Server) Run() {
-	s.NewRouter()
+	s.routes()
 
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
 	err := http.ListenAndServe(s.listenAddress, s.router)
@@ -36,7 +36,7 @@ func (s *Server) Run() {
 	}
 }
 
-func (s *Server) NewRouter() http.Handler {
+func (s *Server) routes() http.Handler {
 	s.router = http.NewServeMux()
 
 	s.router.HandleFunc("/", s.indexHandler)
@@ -48,7 +48,8 @@ func (s *Server) NewRouter() http.Handler {
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 	// Send 404 if destination is not `/`
 	if r.URL.Path != "/" {
-		http.Error(w, "404 Page not found", http.StatusNotFound)
+		// http.Error(w, "404 Page not found", http.StatusNotFound)
+		s.notFound(w)
 		return
 	}
 
@@ -63,23 +64,25 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 	ts, err := template.ParseFiles(templateFiles...)
 	if err != nil {
 		s.errorLog.Println(err.Error())
-		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		s.serverError(w, err)
 		return
 	}
 	// Render the template
 	err = ts.ExecuteTemplate(w, "base", nil)
 	if err != nil {
 		s.errorLog.Println(err.Error())
-		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		s.serverError(w, err)
 		return
 	}
 }
 
 func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
-	// Send 404 if destination is not `/`
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		// http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		s.clientError(w, http.StatusMethodNotAllowed)
 		return
 	}
 
