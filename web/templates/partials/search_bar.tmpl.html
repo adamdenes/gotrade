@@ -1,0 +1,8 @@
+{{ define "search_bar" }}
+<div class="search-bar">
+    <form action="/search" method="GET">
+        <input type="text" name="symbol" placeholder="Search trading pairs...">
+        <button type="submit">Search</button>
+    </form>
+</div>
+{{ end }}
