@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 
-	"github.com/adamdenes/gotrade/internal/api"
+	"github.com/adamdenes/gotrade/api"
 	"github.com/adamdenes/gotrade/internal/logger"
 )
 
