@@ -1,15 +1,18 @@
 package main
 
 import (
-	"fmt"
+	"flag"
 
 	"github.com/adamdenes/gotrade/internal/api"
+	"github.com/adamdenes/gotrade/internal/logger"
 )
 
 func main() {
-	port := 8080
-	addr := fmt.Sprintf(":%d", port)
+	addr := flag.String("addr", ":4000", "HTTP network address")
+	flag.Parse()
 
-	server := api.NewServer(addr)
+	logger.Init()
+
+	server := api.NewServer(*addr)
 	server.Run()
 }
