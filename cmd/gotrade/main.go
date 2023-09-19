@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/adamdenes/gotrade/api"
+)
 
 func main() {
-	fmt.Println("Hello, world!")
+	port := 8080
+	addr := fmt.Sprintf(":%d", port)
+
+	server := api.NewServer(addr)
+	server.Run()
 }
