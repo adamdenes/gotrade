@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/adamdenes/gotrade/api"
+	"github.com/adamdenes/gotrade/internal/api"
 )
 
 func main() {
