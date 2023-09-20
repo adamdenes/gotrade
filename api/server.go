@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"log"
@@ -87,5 +88,33 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	symbol := r.FormValue("symbol")
-	fmt.Fprintf(w, "You were searching for '%v'\n", symbol)
+
+	// Trying to subscribe to the stream
+	cs := &CandleSubsciption{symbol: symbol, timeFrame: "1m"}
+	b := NewBinance(context.Background(), setupWs(cs))
+	// Send a subscription request to the signal channel
+	go processWsData(b.dataChannel)
+
+	fmt.Fprintf(w, "doing something else... you searched for %s", symbol)
+}
+
+type CandleSubsciption struct {
+	symbol    string
+	timeFrame string
+}
+
+func setupWs(cs *CandleSubsciption) <-chan *CandleSubsciption {
+	out := make(chan *CandleSubsciption)
+	go func() {
+		out <- cs
+		close(out)
+	}()
+	return out
+}
+
+func processWsData(dataChannel chan string) {
+	// Process data received from the data channel
+	for data := range dataChannel {
+		fmt.Println("RECEIVED", data)
+	}
 }
