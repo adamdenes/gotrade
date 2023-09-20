@@ -88,12 +88,14 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get the form values for further processing
 	symbol := r.FormValue("symbol")
+	timeFrame := r.FormValue("timeframe")
 
 	// Trying to subscribe to the stream
-	cs := &CandleSubsciption{symbol: symbol, timeFrame: "1m"}
+	// Construct `Binance` with a read-only channel and start processing incoming data
+	cs := &CandleSubsciption{symbol: symbol, timeFrame: timeFrame}
 	b := NewBinance(context.Background(), setupWs(cs))
-	// Send a subscription request to the signal channel
 	go processWsData(b.dataChannel)
 
 	fmt.Fprintf(w, "doing something else... you searched for %s", symbol)
