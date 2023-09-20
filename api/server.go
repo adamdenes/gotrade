@@ -59,6 +59,7 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 		"./web/templates/pages/chart.tmpl.html",
 		"./web/templates/partials/script.tmpl.html",
 		"./web/templates/partials/search_bar.tmpl.html",
+		"./web/templates/partials/dropdown_tf.tmpl.html",
 	}
 
 	// Parse the HTML template
