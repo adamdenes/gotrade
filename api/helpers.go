@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
 	"runtime/debug"
 )
@@ -19,4 +20,23 @@ func (s *Server) clientError(w http.ResponseWriter, status int) {
 
 func (s *Server) notFound(w http.ResponseWriter) {
 	s.clientError(w, http.StatusNotFound)
+}
+
+func (s *Server) render(w http.ResponseWriter, data any) {
+	// Parse the HTML template
+	ts, err := template.ParseFiles(templateFiles...)
+	if err != nil {
+		s.errorLog.Println(err.Error())
+		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		s.serverError(w, err)
+		return
+	}
+	// Render the template
+	err = ts.ExecuteTemplate(w, "base", nil)
+	if err != nil {
+		s.errorLog.Println(err.Error())
+		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		s.serverError(w, err)
+		return
+	}
 }
