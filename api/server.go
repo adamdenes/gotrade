@@ -3,12 +3,21 @@ package api
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
 )
+
+var templateFiles = []string{
+	"./web/templates/base.tmpl.html",
+	"./web/templates/pages/chart.tmpl.html",
+	"./web/templates/partials/script.tmpl.html",
+	"./web/templates/partials/search_bar.tmpl.html",
+	"./web/templates/partials/dropdown_tf.tmpl.html",
+}
 
 type Server struct {
 	listenAddress string
@@ -40,8 +49,11 @@ func (s *Server) Run() {
 func (s *Server) routes() http.Handler {
 	s.router = http.NewServeMux()
 
+	fileServer := http.FileServer(http.Dir("./web/static/"))
+
+	s.router.Handle("/static/", http.StripPrefix("/static", fileServer))
 	s.router.HandleFunc("/", s.indexHandler)
-	s.router.HandleFunc("/search", s.searchHandler)
+	s.router.HandleFunc("/ws", s.websocketClientHandler)
 
 	return s.router
 }
@@ -54,33 +66,11 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	templateFiles := []string{
-		"./web/templates/base.tmpl.html",
-		"./web/templates/pages/chart.tmpl.html",
-		"./web/templates/partials/script.tmpl.html",
-		"./web/templates/partials/search_bar.tmpl.html",
-		"./web/templates/partials/dropdown_tf.tmpl.html",
-	}
-
-	// Parse the HTML template
-	ts, err := template.ParseFiles(templateFiles...)
-	if err != nil {
-		s.errorLog.Println(err.Error())
-		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-		s.serverError(w, err)
-		return
-	}
-	// Render the template
-	err = ts.ExecuteTemplate(w, "base", nil)
-	if err != nil {
-		s.errorLog.Println(err.Error())
-		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-		s.serverError(w, err)
-		return
-	}
+	s.render(w, nil)
 }
 
-func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
+	// Handling the query/search part here
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		// http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -92,13 +82,42 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 	symbol := r.FormValue("symbol")
 	timeFrame := r.FormValue("timeframe")
 
+	// Explanation why we do this (RFC 6455 - Sec-Websocket-Key)
+	// https://dev.to/hgsgtk/how-decided-a-value-set-in-sec-websocket-keyaccept-header-l79
+	// In short, the client is trying to connect to WS server, but not sending the correct
+	// Request Headers and fields...
+	r.Header.Set("Connection", "keep-alive, Upgrade")
+	r.Header.Set("Upgrade", "websocket")
+	r.Header.Set("Sec-Websocket-Version", "13")
+	r.Header.Set("Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+
 	// Trying to subscribe to the stream
 	// Construct `Binance` with a read-only channel and start processing incoming data
 	cs := &CandleSubsciption{symbol: symbol, timeFrame: timeFrame}
-	b := NewBinance(context.Background(), setupWs(cs))
-	go processWsData(b.dataChannel)
+	b := NewBinance(context.Background(), inbound(cs))
+	go receiver(b.dataChannel)
 
-	fmt.Fprintf(w, "doing something else... you searched for %s", symbol)
+	/* ----------------------------------------------------------- */
+
+	// Handling websocket connection
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "something happened...")
+
+	for {
+		// To send data to the client, you can use wsjson.Write
+		// Replace `response` with the data you want to send
+		response := string([]byte("Hello, client!")) // Example data
+
+		err := wsjson.Write(r.Context(), conn, response)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+	}
 }
 
 type CandleSubsciption struct {
@@ -106,18 +125,18 @@ type CandleSubsciption struct {
 	timeFrame string
 }
 
-func setupWs(cs *CandleSubsciption) <-chan *CandleSubsciption {
-	out := make(chan *CandleSubsciption)
+func inbound[T any](in *T) <-chan *T {
+	out := make(chan *T)
 	go func() {
-		out <- cs
+		out <- in
 		close(out)
 	}()
 	return out
 }
 
-func processWsData(dataChannel chan string) {
+func receiver[T any](out chan T) {
 	// Process data received from the data channel
-	for data := range dataChannel {
+	for data := range out {
 		fmt.Println("RECEIVED", data)
 	}
 }
