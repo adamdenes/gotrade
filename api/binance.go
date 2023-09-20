@@ -34,16 +34,16 @@ func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
 		dataChannel: make(chan string, 1),
 	}
 
-	go b.HandleSymbolSubscriptions(cs)
+	go b.handleSymbolSubscriptions(cs)
 	return b
 }
 
-func (b *Binance) Close() {
+func (b *Binance) close() {
 	defer close(b.dataChannel)
 	b.ws.Close(websocket.StatusAbnormalClosure, "Closed by client")
 }
 
-func (b *Binance) Subscribe(subdata *CandleSubsciption) error {
+func (b *Binance) subscribe(subdata *CandleSubsciption) error {
 	header := make(http.Header)
 	header.Add("APCA-API-KEY-ID", apiKey)
 	header.Add("APCA-API-SECRET-KEY", apiSecret)
@@ -59,12 +59,12 @@ func (b *Binance) Subscribe(subdata *CandleSubsciption) error {
 	}
 	b.ws = conn
 
-	go b.HandleWsLoop()
+	go b.handleWsLoop()
 
 	return nil
 }
 
-func (b *Binance) HandleWsLoop() {
+func (b *Binance) handleWsLoop() {
 	for {
 		b.ws.SetReadLimit(65536)
 		_, msg, err := b.ws.Read(b.ctx)
@@ -92,17 +92,18 @@ func (b *Binance) HandleWsLoop() {
 	}
 }
 
-func (b *Binance) HandleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
+func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
 	out := make(chan string)
 	go func() {
 		select {
 		case sub := <-cs:
-			err := b.Subscribe(sub)
+			err := b.subscribe(sub)
 			if err != nil {
 				b.errorLog.Printf("subsciption error: %v\n", err)
 			}
 		case <-b.ctx.Done():
 			// Context canceled
+			b.close()
 			return
 		}
 		close(out)
