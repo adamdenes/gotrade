@@ -2,6 +2,9 @@
 <div class="search-bar">
     <form action="/search" method="GET">
         <input type="text" name="symbol" placeholder="Search trading pairs...">
+
+        {{ template "dropdown" .}}
+
         <button type="submit">Search</button>
     </form>
 </div>
