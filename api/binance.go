@@ -1,0 +1,119 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"strings"
+
+	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/valyala/fastjson"
+	"nhooyr.io/websocket"
+)
+
+const wsEndpoint = "wss://stream.binance.com/stream?streams="
+const apiKey = "6r3PLGC5RcRnHIlMkAej55otVT9YHPPkXKCB4z2dUIDx698MUVj1IvOcQPBnEFns"
+const apiSecret = "xVdliUOTP48qj0gQj96MKJ6F8Vmf4urj2vVEXSwlODINMxDXA8tXXBzf307Qt3q2"
+
+type Binance struct {
+	ws          *websocket.Conn
+	ctx         context.Context
+	infoLog     *log.Logger
+	errorLog    *log.Logger
+	dataChannel chan string
+}
+
+func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
+	b := &Binance{
+		ctx:         ctx,
+		infoLog:     logger.Info,
+		errorLog:    logger.Error,
+		dataChannel: make(chan string, 1),
+	}
+
+	go b.HandleSymbolSubscriptions(cs)
+	return b
+}
+
+func (b *Binance) Close() {
+	defer close(b.dataChannel)
+	b.ws.Close(websocket.StatusAbnormalClosure, "Closed by client")
+}
+
+func (b *Binance) Subscribe(subdata *CandleSubsciption) error {
+	header := make(http.Header)
+	header.Add("APCA-API-KEY-ID", apiKey)
+	header.Add("APCA-API-SECRET-KEY", apiSecret)
+
+	endpoint := createWsEndpoint(subdata.symbol, subdata.timeFrame)
+
+	conn, _, err := websocket.Dial(b.ctx, endpoint, &websocket.DialOptions{
+		HTTPHeader: header,
+	})
+	if err != nil {
+		b.errorLog.Printf("dial: %v", err)
+		return err
+	}
+	b.ws = conn
+
+	go b.HandleWsLoop()
+
+	return nil
+}
+
+func (b *Binance) HandleWsLoop() {
+	for {
+		b.ws.SetReadLimit(65536)
+		_, msg, err := b.ws.Read(b.ctx)
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+			b.errorLog.Println(err)
+			continue
+		}
+		parser := fastjson.Parser{}
+		v, err := parser.ParseBytes(msg)
+		if err != nil {
+			b.errorLog.Println(err)
+			continue
+		}
+		// stream := v.GetStringBytes("stream")
+		// symbol, kind := splitStream(string(stream))
+		data := v.Get("data")
+
+		// fmt.Println(data.GetObject("k").Get("o"))
+		// fmt.Println(symbol, "->", kind)
+
+		b.dataChannel <- data.String()
+	}
+}
+
+func (b *Binance) HandleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
+	out := make(chan string)
+	go func() {
+		select {
+		case sub := <-cs:
+			err := b.Subscribe(sub)
+			if err != nil {
+				b.errorLog.Printf("subsciption error: %v\n", err)
+			}
+		case <-b.ctx.Done():
+			// Context canceled
+			return
+		}
+		close(out)
+	}()
+}
+
+func createWsEndpoint(symbol string, timeFrame string) string {
+	return fmt.Sprintf("%s%s@kline_%s", wsEndpoint, symbol, timeFrame)
+}
+
+func splitStream(stream string) (string, string) {
+	parts := strings.Split(stream, "@")
+	return parts[0], parts[1]
+}
