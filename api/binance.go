@@ -13,7 +13,7 @@ import (
 	"nhooyr.io/websocket"
 )
 
-const wsEndpoint = "wss://stream.binance.com/stream?streams="
+const wsEndpoint = "wss://stream.binance.com:9443/stream?streams="
 const apiKey = "6r3PLGC5RcRnHIlMkAej55otVT9YHPPkXKCB4z2dUIDx698MUVj1IvOcQPBnEFns"
 const apiSecret = "xVdliUOTP48qj0gQj96MKJ6F8Vmf4urj2vVEXSwlODINMxDXA8tXXBzf307Qt3q2"
 
@@ -45,7 +45,7 @@ func (b *Binance) close() {
 	if err := b.ws.Close(websocket.StatusNormalClosure, "Closed by client"); err != nil {
 		b.errorLog.Printf(err.Error())
 	}
-	b.infoLog.Printf("Connection closed successfully.")
+	b.infoLog.Printf("BINANCE connection closed successfully.")
 }
 
 func (b *Binance) subscribe(subdata *CandleSubsciption) error {
@@ -53,7 +53,7 @@ func (b *Binance) subscribe(subdata *CandleSubsciption) error {
 	header.Add("APCA-API-KEY-ID", apiKey)
 	header.Add("APCA-API-SECRET-KEY", apiSecret)
 
-	endpoint := createWsEndpoint(subdata.symbol, subdata.timeFrame)
+	endpoint := createWsEndpoint(subdata.symbol, subdata.interval)
 
 	conn, _, err := websocket.Dial(b.ctx, endpoint, &websocket.DialOptions{
 		HTTPHeader: header,
@@ -95,8 +95,8 @@ func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
 	}
 }
 
-func createWsEndpoint(symbol string, timeFrame string) string {
-	return fmt.Sprintf("%s%s@kline_%s", wsEndpoint, symbol, timeFrame)
+func createWsEndpoint(symbol string, interval string) string {
+	return fmt.Sprintf("%s%s@kline_%s", wsEndpoint, symbol, interval)
 }
 
 func splitStream(stream string) (string, string) {
