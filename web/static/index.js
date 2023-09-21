@@ -34,16 +34,16 @@ searchButton.addEventListener("click", function(event) {
         .then(data => {
             const historicalData = data.map(d => {
                 return {
-                    time: d[0] / 1000,
-                    open: parseFloat(d[1]),
-                    high: parseFloat(d[2]),
-                    low: parseFloat(d[3]),
+                    time:  d[0] / 1000,
+                    open:  parseFloat(d[1]),
+                    high:  parseFloat(d[2]),
+                    low:   parseFloat(d[3]),
                     close: parseFloat(d[4])
                 }
             });
             candleSeries.setData(historicalData)
         })
-        .catch(err => console.log(err))
+        .catch(err => console.log("error in fetch:", err))
 
     createWebSocketConnection(symbol, interval)
 
@@ -95,10 +95,10 @@ function createWebSocketConnection(symbol, interval) {
         console.log(candleStick)
 
         candleSeries.update({
-            time: candleStick.t / 1000,
-            open: parseFloat(candleStick.o),
-            high: parseFloat(candleStick.h),
-            low: parseFloat(candleStick.l),
+            time:  candleStick.t / 1000,
+            open:  parseFloat(candleStick.o),
+            high:  parseFloat(candleStick.h),
+            low:   parseFloat(candleStick.l),
             close: parseFloat(candleStick.c)
         })
     };
