@@ -21,19 +21,38 @@ const searchButton = document.getElementById("search-btn");
 searchButton.addEventListener("click", function(event) {
     event.preventDefault();
 
-    // Get the selected trading pair and timeframe from the form
-    const symbol = document.getElementById("symbol").value;
-    const timeframe = document.getElementById("timeframe").value;
+    // Reset the CandleSeries before loading data again
+    candleSeries.setData([])
 
-    createWebSocketConnection(symbol, timeframe)
+    // Get the selected trading pair and interval from the form
+    const symbol = document.getElementById("symbol").value;
+    const interval = document.getElementById("interval").value;
+
+    // klines?symbol=BNBBTC&interval=1m&limit=1000
+    fetch(`http://localhost:4000/klines?symbol=${symbol}&${interval}`)
+        .then(response => response.json())
+        .then(data => {
+            const historicalData = data.map(d => {
+                return {
+                    time: d[0] / 1000,
+                    open: parseFloat(d[1]),
+                    high: parseFloat(d[2]),
+                    low: parseFloat(d[3]),
+                    close: parseFloat(d[4])
+                }
+            });
+            candleSeries.setData(historicalData)
+        })
+        .catch(err => console.log(err))
+
+    createWebSocketConnection(symbol, interval)
 
 });
 
 chart.timeScale().fitContent();
 
-
 // Function to create a WebSocket connection
-function createWebSocketConnection(symbol, timeframe) {
+function createWebSocketConnection(symbol, interval) {
     // Close the existing WebSocket connection, if it exists
     if (socket && socket.readyState === WebSocket.OPEN) {
         console.log("WebSocket stream already open. Closing it...")
@@ -41,7 +60,7 @@ function createWebSocketConnection(symbol, timeframe) {
         socket.close();
     }
     // Create a WebSocket connection
-    socket = new WebSocket(`ws://localhost:4000/ws?symbol=${symbol}&timeframe=${timeframe}`);
+    socket = new WebSocket(`ws://localhost:4000/ws?symbol=${symbol}&interval=${interval}`);
 
     // Event handler for when the connection is opened
     socket.onopen = function(event) {
