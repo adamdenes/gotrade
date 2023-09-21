@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -82,21 +81,10 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	symbol := r.FormValue("symbol")
 	timeFrame := r.FormValue("timeframe")
 
-	// Explanation why we do this (RFC 6455 - Sec-Websocket-Key)
-	// https://dev.to/hgsgtk/how-decided-a-value-set-in-sec-websocket-keyaccept-header-l79
-	// In short, the client is trying to connect to WS server, but not sending the correct
-	// Request Headers and fields...
-	r.Header.Set("Connection", "keep-alive, Upgrade")
-	r.Header.Set("Upgrade", "websocket")
-	r.Header.Set("Sec-Websocket-Version", "13")
-	r.Header.Set("Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
-
 	// Trying to subscribe to the stream
 	// Construct `Binance` with a read-only channel and start processing incoming data
 	cs := &CandleSubsciption{symbol: symbol, timeFrame: timeFrame}
 	b := NewBinance(context.Background(), inbound(cs))
-	go receiver(b.dataChannel)
-
 	/* ----------------------------------------------------------- */
 
 	// Handling websocket connection
@@ -105,19 +93,20 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, err)
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "something happened...")
+	// defer conn.Close(websocket.StatusNormalClosure, "something happened...")
 
-	for {
-		// To send data to the client, you can use wsjson.Write
-		// Replace `response` with the data you want to send
-		response := string([]byte("Hello, client!")) // Example data
+	go receiver[[]byte](b.dataChannel, conn)
+	// for {
+	// 	// To send data to the client, you can use wsjson.Write
+	// 	// Replace `response` with the data you want to send
+	// 	response := string([]byte("Hello, client!")) // Example data
 
-		err := wsjson.Write(r.Context(), conn, response)
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-	}
+	// 	err := wsjson.Write(r.Context(), conn, response)
+	// 	if err != nil {
+	// 		s.serverError(w, err)
+	// 		return
+	// 	}
+	// }
 }
 
 type CandleSubsciption struct {
@@ -134,9 +123,13 @@ func inbound[T any](in *T) <-chan *T {
 	return out
 }
 
-func receiver[T any](out chan T) {
+func receiver[T ~string | ~[]byte](in chan T, conn *websocket.Conn) {
 	// Process data received from the data channel
-	for data := range out {
-		fmt.Println("RECEIVED", data)
+	for data := range in {
+		// Write the data to the WebSocket connection
+		if err := wsjson.Write(context.Background(), conn, string(data)); err != nil {
+			log.Printf("Error writing data to WebSocket: %v\n", err)
+			continue
+		}
 	}
 }

@@ -48,15 +48,12 @@ searchButton.addEventListener("click", function(event) {
     const symbol = document.getElementById("symbol").value;
     const timeframe = document.getElementById("timeframe").value;
 
-    console.log(symbol, timeframe)
     // Create a WebSocket connection
-    const socket = new WebSocket("ws://localhost:4000/ws", "http");
+    const socket = new WebSocket(`ws://localhost:4000/ws?symbol=${symbol}&timeframe=${timeframe}`);
 
     // Event handler for when the connection is opened
     socket.onopen = function(event) {
         console.log("WebSocket connection opened.");
-        // Send a message to the server after the connection is established
-        // socket.send(JSON.parse({msg: "hello"}))
     };
 
     // Event handler for when the connection is closed
@@ -75,21 +72,25 @@ searchButton.addEventListener("click", function(event) {
 
     // Event handler for when a message is received from the server
     socket.onmessage = function(event) {
-        console.log("Message received from server:", event.data);
+        // console.log("Message received from server:", event.data);
         // Handle the received message here
-        const msg = JSON.parse(event.data)
-        console.log(msg)
 
-        // Kline data is in 'k' object
-        // const candleStick = msg.k
+        // Parse JSON String to JavaScript object
+        // not sure why have to do it 2x to work
+        const jsonObject = JSON.parse(JSON.parse(event.data));
 
-        // // candleSeries.setData();
-        // candleSeries.update({
-        //     time: candleSeries.t / 1000,
-        //     open: candleSeries.o,
-        //     high: candleSeries.h,
-        //     low: candleSeries.l,
-        //     close: candleSeries.c
-        // })
+        // Kline data is in 'data': {k: ...}' object
+        const candleStick = jsonObject.data.k
+        console.log(candleStick)
+
+        candleSeries.update({
+            time: candleStick.t / 1000,
+            open: parseFloat(candleStick.o),
+            high: parseFloat(candleStick.h),
+            low: parseFloat(candleStick.l),
+            close: parseFloat(candleStick.c)
+        })
     };
 });
+
+chart.timeScale().fitContent();

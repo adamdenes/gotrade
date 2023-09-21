@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/adamdenes/gotrade/internal/logger"
-	"github.com/valyala/fastjson"
 	"nhooyr.io/websocket"
 )
 
@@ -23,7 +22,7 @@ type Binance struct {
 	ctx         context.Context
 	infoLog     *log.Logger
 	errorLog    *log.Logger
-	dataChannel chan string
+	dataChannel chan []byte
 }
 
 func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
@@ -31,7 +30,7 @@ func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
 		ctx:         ctx,
 		infoLog:     logger.Info,
 		errorLog:    logger.Error,
-		dataChannel: make(chan string, 1),
+		dataChannel: make(chan []byte, 1),
 	}
 
 	go b.handleSymbolSubscriptions(cs)
@@ -75,20 +74,13 @@ func (b *Binance) handleWsLoop() {
 			b.errorLog.Println(err)
 			continue
 		}
-		parser := fastjson.Parser{}
-		v, err := parser.ParseBytes(msg)
-		if err != nil {
-			b.errorLog.Println(err)
-			continue
-		}
-		// stream := v.GetStringBytes("stream")
-		// symbol, kind := splitStream(string(stream))
-		data := v.Get("data")
-
-		// fmt.Println(data.GetObject("k").Get("o"))
-		// fmt.Println(symbol, "->", kind)
-
-		b.dataChannel <- data.String()
+		// parser := fastjson.Parser{}
+		// v, err := parser.ParseBytes(msg)
+		// if err != nil {
+		// 	b.errorLog.Println(err)
+		// 	continue
+		// }
+		b.dataChannel <- msg
 	}
 }
 
