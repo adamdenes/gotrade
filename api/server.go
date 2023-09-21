@@ -58,6 +58,7 @@ func (s *Server) routes() http.Handler {
 }
 
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
+	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
 	// Send 404 if destination is not `/`
 	if r.URL.Path != "/" {
 		// http.Error(w, "404 Page not found", http.StatusNotFound)
@@ -69,6 +70,7 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
+	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
 	// Handling the query/search part here
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -94,19 +96,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// defer conn.Close(websocket.StatusNormalClosure, "something happened...")
-
 	go receiver[[]byte](b.dataChannel, conn)
-	// for {
-	// 	// To send data to the client, you can use wsjson.Write
-	// 	// Replace `response` with the data you want to send
-	// 	response := string([]byte("Hello, client!")) // Example data
-
-	// 	err := wsjson.Write(r.Context(), conn, response)
-	// 	if err != nil {
-	// 		s.serverError(w, err)
-	// 		return
-	// 	}
-	// }
 }
 
 type CandleSubsciption struct {
