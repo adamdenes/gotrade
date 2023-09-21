@@ -83,19 +83,18 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	symbol := r.FormValue("symbol")
 	timeFrame := r.FormValue("timeframe")
 
-	// Trying to subscribe to the stream
-	// Construct `Binance` with a read-only channel and start processing incoming data
-	cs := &CandleSubsciption{symbol: symbol, timeFrame: timeFrame}
-	b := NewBinance(context.Background(), inbound(cs))
-	/* ----------------------------------------------------------- */
-
 	// Handling websocket connection
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	// defer conn.Close(websocket.StatusNormalClosure, "something happened...")
+	// Trying to subscribe to the stream
+	// Construct `Binance` with a read-only channel and start processing incoming data
+	cs := &CandleSubsciption{symbol: symbol, timeFrame: timeFrame}
+	b := NewBinance(context.Background(), inbound(cs))
+
+	defer s.cleanUp(w, r, conn, b)
 	go receiver[[]byte](b.dataChannel, conn)
 }
 
@@ -120,6 +119,35 @@ func receiver[T ~string | ~[]byte](in chan T, conn *websocket.Conn) {
 		if err := wsjson.Write(context.Background(), conn, string(data)); err != nil {
 			log.Printf("Error writing data to WebSocket: %v\n", err)
 			continue
+		}
+	}
+}
+
+func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, b *Binance) {
+	for {
+		msgType, msg, err := conn.Read(r.Context())
+		if err != nil {
+			if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
+				// Handle the WebSocket close message
+				s.infoLog.Printf("Received closing message from client: %v\n", websocket.StatusNormalClosure)
+				s.clientError(w, int(websocket.CloseStatus(err)))
+				b.close()
+				break
+			}
+			s.errorLog.Printf("WebSocket read error: %v - %v\n", err, websocket.CloseStatus(err))
+			break
+		}
+
+		if msgType == websocket.MessageText {
+			// Process the incoming text message (closing message or other messages)
+			message := string(msg)
+			if message == "CLOSE" {
+				// Handle the custom closing message from the client
+				s.infoLog.Printf("Received closing message from client: %v\n", message)
+				conn.Close(websocket.StatusNormalClosure, "Closed by client")
+				b.close()
+				break
+			}
 		}
 	}
 }

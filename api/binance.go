@@ -33,13 +33,19 @@ func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
 		dataChannel: make(chan []byte, 1),
 	}
 
+	b.infoLog.Printf("Starting binance WebSocket instance on: %v\n", &b.ws)
 	go b.handleSymbolSubscriptions(cs)
 	return b
 }
 
 func (b *Binance) close() {
-	defer close(b.dataChannel)
-	b.ws.Close(websocket.StatusAbnormalClosure, "Closed by client")
+	b.infoLog.Printf("Closing data channel: %v\n", b.dataChannel)
+	close(b.dataChannel)
+	b.infoLog.Printf("Closing Binance WebSocket connection on: %v\n", &b.ws)
+	if err := b.ws.Close(websocket.StatusNormalClosure, "Closed by client"); err != nil {
+		b.errorLog.Printf(err.Error())
+	}
+	b.infoLog.Printf("Connection closed successfully.")
 }
 
 func (b *Binance) subscribe(subdata *CandleSubsciption) error {
@@ -64,40 +70,29 @@ func (b *Binance) subscribe(subdata *CandleSubsciption) error {
 }
 
 func (b *Binance) handleWsLoop() {
+	b.infoLog.Printf("Websocket loop started on channel: %v\n", b.dataChannel)
 	for {
 		b.ws.SetReadLimit(65536)
 		_, msg, err := b.ws.Read(b.ctx)
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
+				b.errorLog.Printf("Unexpected error: %v", err)
 				break
 			}
-			b.errorLog.Println(err)
+			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+				b.errorLog.Printf("WebSocket closed: %v", err)
+				break
+			}
 			continue
 		}
-		// parser := fastjson.Parser{}
-		// v, err := parser.ParseBytes(msg)
-		// if err != nil {
-		// 	b.errorLog.Println(err)
-		// 	continue
-		// }
 		b.dataChannel <- msg
 	}
 }
 
 func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
-	go func() {
-		select {
-		case sub := <-cs:
-			err := b.subscribe(sub)
-			if err != nil {
-				b.errorLog.Printf("subsciption error: %v\n", err)
-			}
-		case <-b.ctx.Done():
-			// Context canceled
-			b.close()
-			return
-		}
-	}()
+	if err := b.subscribe(<-cs); err != nil {
+		b.errorLog.Printf("subsciption error: %v\n", err)
+	}
 }
 
 func createWsEndpoint(symbol string, timeFrame string) string {
