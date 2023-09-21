@@ -53,6 +53,7 @@ func (s *Server) routes() http.Handler {
 	s.router.Handle("/static/", http.StripPrefix("/static", fileServer))
 	s.router.HandleFunc("/", s.indexHandler)
 	s.router.HandleFunc("/ws", s.websocketClientHandler)
+	s.router.HandleFunc("/klines", s.historyHandler)
 
 	return s.router
 }
@@ -96,6 +97,28 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 
 	defer s.cleanUp(w, r, conn, b)
 	go receiver[[]byte](b.dataChannel, conn)
+}
+
+func (s *Server) historyHandler(w http.ResponseWriter, r *http.Request) {
+	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		s.clientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+	if r.URL.Path != "/klines" {
+		s.notFound(w)
+		return
+	}
+
+	/* TODO:
+	- need to get historical data from Database
+	- need to check how much data to load (limit=1000 ???)
+	- need to create db stuff
+	- need implement binance api request `GET /api/v3/klines`
+	  and store the data in db
+	*/
+	s.render(w, nil)
 }
 
 func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, b *Binance) {
