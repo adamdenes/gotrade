@@ -85,7 +85,6 @@ func (b *Binance) handleWsLoop() {
 }
 
 func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
-	out := make(chan string)
 	go func() {
 		select {
 		case sub := <-cs:
@@ -98,7 +97,6 @@ func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
 			b.close()
 			return
 		}
-		close(out)
 	}()
 }
 
