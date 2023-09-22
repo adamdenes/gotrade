@@ -7,15 +7,18 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"nhooyr.io/websocket"
 )
 
-const wsEndpoint = "wss://stream.binance.com:9443/stream?streams="
-const apiKey = "6r3PLGC5RcRnHIlMkAej55otVT9YHPPkXKCB4z2dUIDx698MUVj1IvOcQPBnEFns"
-const apiSecret = "xVdliUOTP48qj0gQj96MKJ6F8Vmf4urj2vVEXSwlODINMxDXA8tXXBzf307Qt3q2"
+const (
+	wsEndpoint = "wss://stream.binance.com:9443/stream?streams="
+	apiKey     = "APCA_API_KEY_ID"
+	apiSecret  = "APCA_API_SECRET_KEY"
+)
 
 type Binance struct {
 	ws          *websocket.Conn
@@ -50,8 +53,8 @@ func (b *Binance) close() {
 
 func (b *Binance) subscribe(subdata *CandleSubsciption) error {
 	header := make(http.Header)
-	header.Add("APCA-API-KEY-ID", apiKey)
-	header.Add("APCA-API-SECRET-KEY", apiSecret)
+	header.Add("APCA-API-KEY-ID", os.Getenv(apiKey))
+	header.Add("APCA-API-SECRET-KEY", os.Getenv(apiSecret))
 
 	endpoint := createWsEndpoint(subdata.symbol, subdata.interval)
 
