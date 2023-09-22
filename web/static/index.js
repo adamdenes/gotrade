@@ -29,7 +29,7 @@ searchButton.addEventListener("click", function(event) {
     const interval = document.getElementById("interval").value;
 
     // klines?symbol=BNBBTC&interval=1m&limit=1000
-    fetch(`http://localhost:4000/klines?symbol=${symbol}&${interval}`)
+    fetch(`http://localhost:4000/klines/live?symbol=${symbol}&interval=${interval}`)
         .then(response => response.json())
         .then(data => {
             const historicalData = data.map(d => {
@@ -96,10 +96,10 @@ function createWebSocketConnection(symbol, interval) {
 
         candleSeries.update({
             time:  candleStick.t / 1000,
-            open:  parseFloat(candleStick.o),
-            high:  parseFloat(candleStick.h),
-            low:   parseFloat(candleStick.l),
-            close: parseFloat(candleStick.c)
+            open:  candleStick.o,
+            high:  candleStick.h,
+            low:   candleStick.l,
+            close: candleStick.c
         })
     };
 };
