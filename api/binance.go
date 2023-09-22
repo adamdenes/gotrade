@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"nhooyr.io/websocket"
@@ -100,9 +99,4 @@ func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
 
 func createWsEndpoint(symbol string, interval string) string {
 	return fmt.Sprintf("%s%s@kline_%s", wsEndpoint, symbol, interval)
-}
-
-func splitStream(stream string) (string, string) {
-	parts := strings.Split(stream, "@")
-	return parts[0], parts[1]
 }
