@@ -1,17 +1,18 @@
 package main
 
 import (
-	"fmt"
+	"flag"
 	"log"
 	"os"
 
+	"github.com/adamdenes/gotrade/api"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/storage"
 )
 
 func main() {
-	// addr := flag.String("addr", ":4000", "HTTP network address")
-	// flag.Parse()
+	addr := flag.String("addr", ":4000", "HTTP network address")
+	flag.Parse()
 
 	logger.Init()
 
@@ -20,8 +21,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("%+v\n", db)
+	if err := db.Init(); err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
-	// server := api.NewServer(*addr, db)
-	// server.Run()
+	server := api.NewServer(*addr, db)
+	server.Run()
 }

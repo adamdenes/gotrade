@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/storage"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
@@ -20,15 +21,16 @@ var templateFiles = []string{
 
 type Server struct {
 	listenAddress string
-	store         Storage
+	store         storage.Storage
 	router        *http.ServeMux
 	infoLog       *log.Logger
 	errorLog      *log.Logger
 }
 
-func NewServer(addr string) *Server {
+func NewServer(addr string, db storage.Storage) *Server {
 	return &Server{
 		listenAddress: addr,
+		store:         db,
 		router:        &http.ServeMux{},
 		infoLog:       logger.Info,
 		errorLog:      logger.Error,
