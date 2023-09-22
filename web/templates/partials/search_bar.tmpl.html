@@ -1,6 +1,6 @@
 {{ define "search_bar" }}
 <div class="search-bar">
-    <form action="/ws" method="GET">
+    <form action="/klines/live" method="GET">
         <input id="symbol" type="text" name="symbol" placeholder="Search trading pairs...">
 
         {{ template "dropdown" .}}
