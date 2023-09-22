@@ -40,16 +40,16 @@ func (p *PostgresDB) CreateCandleTable() error {
 	query := `CREATE TABLE IF NOT EXISTS kline_data (
 		id serial PRIMARY KEY,
 		open_time TIMESTAMP WITH TIME ZONE NOT NULL,
-		open_price NUMERIC(18, 8) NOT NULL,
-		high_price NUMERIC(18, 8) NOT NULL,
-		low_price NUMERIC(18, 8) NOT NULL,
-		close_price NUMERIC(18, 8) NOT NULL,
+		open NUMERIC(18, 8) NOT NULL,
+		high NUMERIC(18, 8) NOT NULL,
+		low NUMERIC(18, 8) NOT NULL,
+		close NUMERIC(18, 8) NOT NULL,
 		volume NUMERIC(18, 8) NOT NULL,
 		close_time TIMESTAMP WITH TIME ZONE NOT NULL,
-		quote_asset_volume NUMERIC(18, 8) NOT NULL,
-		number_of_trades INT NOT NULL,
-		taker_buy_base_asset_volume NUMERIC(18, 8) NOT NULL,
-		taker_buy_quote_asset_volume NUMERIC(18, 8) NOT NULL
+		quote_volume NUMERIC(18, 8) NOT NULL,
+		count INT NOT NULL,
+		taker_buy_volume NUMERIC(18, 8) NOT NULL,
+		taker_buy_quote_volume NUMERIC(18, 8) NOT NULL
 	);`
 
 	_, err := p.db.Exec(query)
