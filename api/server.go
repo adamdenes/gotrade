@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/storage"
@@ -56,7 +59,8 @@ func (s *Server) routes() http.Handler {
 	s.router.Handle("/static/", http.StripPrefix("/static", fileServer))
 	s.router.HandleFunc("/", s.indexHandler)
 	s.router.HandleFunc("/ws", s.websocketClientHandler)
-	s.router.HandleFunc("/klines", s.historyHandler)
+	s.router.HandleFunc("/klines", s.klinesHandler)
+	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
 
 	return s.router
 }
@@ -84,7 +88,8 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Get the form values for further processing
-	symbol := r.FormValue("symbol")
+	// All symbols for streams are lowercase
+	symbol := strings.ToLower(r.FormValue("symbol"))
 	interval := r.FormValue("interval")
 
 	// Handling websocket connection
@@ -102,7 +107,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	go receiver[[]byte](b.dataChannel, conn)
 }
 
-func (s *Server) historyHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -122,6 +127,50 @@ func (s *Server) historyHandler(w http.ResponseWriter, r *http.Request) {
 	  and store the data in db
 	*/
 	s.render(w, nil)
+}
+
+func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
+	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
+
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		s.clientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	if r.URL.Path != "/klines/live" {
+		s.notFound(w)
+		return
+	}
+
+	// Trading pair has to be all uppercase for REST API
+	symbol := strings.ToUpper(r.FormValue("symbol"))
+	interval := r.FormValue("interval")
+
+	// GET request to binance
+	getKlinesURL := fmt.Sprintf("https://api.binance.com/api/v3/uiKlines?symbol=%s&interval=%s", symbol, interval)
+	resp, err := http.Get(getKlinesURL)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Check the HTTP status code
+	if resp.StatusCode != http.StatusOK {
+		s.serverError(w, fmt.Errorf("Binance API request failed with status code %d", resp.StatusCode))
+		return
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBody)
 }
 
 func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, b *Binance) {
