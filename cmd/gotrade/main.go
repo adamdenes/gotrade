@@ -1,18 +1,27 @@
 package main
 
 import (
-	"flag"
+	"fmt"
+	"log"
+	"os"
 
-	"github.com/adamdenes/gotrade/api"
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/storage"
 )
 
 func main() {
-	addr := flag.String("addr", ":4000", "HTTP network address")
-	flag.Parse()
+	// addr := flag.String("addr", ":4000", "HTTP network address")
+	// flag.Parse()
 
 	logger.Init()
 
-	server := api.NewServer(*addr)
-	server.Run()
+	db, err := storage.NewPostgresStore(os.Getenv("DSN"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("%+v\n", db)
+
+	// server := api.NewServer(*addr, db)
+	// server.Run()
 }

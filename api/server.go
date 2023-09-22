@@ -20,6 +20,7 @@ var templateFiles = []string{
 
 type Server struct {
 	listenAddress string
+	store         Storage
 	router        *http.ServeMux
 	infoLog       *log.Logger
 	errorLog      *log.Logger
