@@ -16,7 +16,7 @@ func main() {
 
 	logger.Init()
 
-	db, err := storage.NewPostgresStore(os.Getenv("DSN"))
+	db, err := storage.NewPostgresDB(os.Getenv("DSN"))
 	if err != nil {
 		log.Fatal(err)
 	}

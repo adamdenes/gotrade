@@ -15,11 +15,11 @@ type Storage interface {
 	GetCandleByID(int) (*models.Kline, error)
 }
 
-type PostgresStore struct {
+type PostgresDB struct {
 	db *sql.DB
 }
 
-func NewPostgresStore(dsn string) (*PostgresStore, error) {
+func NewPostgresDB(dsn string) (*PostgresDB, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		log.Fatal(err)
@@ -29,14 +29,14 @@ func NewPostgresStore(dsn string) (*PostgresStore, error) {
 		return nil, err
 	}
 
-	return &PostgresStore{db: db}, nil
+	return &PostgresDB{db: db}, nil
 }
 
-func (p *PostgresStore) Init() error {
+func (p *PostgresDB) Init() error {
 	return p.CreateCandleTable()
 }
 
-func (p *PostgresStore) CreateCandleTable() error {
+func (p *PostgresDB) CreateCandleTable() error {
 	query := `CREATE TABLE IF NOT EXISTS kline_data (
 		id serial PRIMARY KEY,
 		open_time TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -56,11 +56,11 @@ func (p *PostgresStore) CreateCandleTable() error {
 	return err
 }
 
-func (p *PostgresStore) Close() {
+func (p *PostgresDB) Close() {
 	p.db.Close()
 }
 
-func (p *PostgresStore) CreateCandle(*models.Kline) error         { return nil }
-func (p *PostgresStore) DeleteCandle(int) error                   { return nil }
-func (p *PostgresStore) UpdateCandle(*models.Kline) error         { return nil }
-func (p *PostgresStore) GetCandleByID(int) (*models.Kline, error) { return &models.Kline{}, nil }
+func (p *PostgresDB) CreateCandle(*models.Kline) error         { return nil }
+func (p *PostgresDB) DeleteCandle(int) error                   { return nil }
+func (p *PostgresDB) UpdateCandle(*models.Kline) error         { return nil }
+func (p *PostgresDB) GetCandleByID(int) (*models.Kline, error) { return &models.Kline{}, nil }
