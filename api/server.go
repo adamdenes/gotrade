@@ -41,10 +41,8 @@ func NewServer(addr string, db storage.Storage) *Server {
 }
 
 func (s *Server) Run() {
-	s.routes()
-
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
-	err := http.ListenAndServe(s.listenAddress, s.router)
+	err := http.ListenAndServe(s.listenAddress, s.routes())
 
 	if err != nil {
 		s.errorLog.Fatalf("error listening on %s: %v", s.listenAddress, err)
@@ -55,18 +53,18 @@ func (s *Server) routes() http.Handler {
 	s.router = http.NewServeMux()
 
 	fileServer := http.FileServer(http.Dir("./web/static/"))
-
 	s.router.Handle("/static/", http.StripPrefix("/static", fileServer))
+
 	s.router.HandleFunc("/", s.indexHandler)
 	s.router.HandleFunc("/ws", s.websocketClientHandler)
 	s.router.HandleFunc("/klines", s.klinesHandler)
 	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
 
-	return s.router
+	// Chain middlewares here
+	return s.recoverPanic(s.logRequest(s.secureHeader(s.router)))
 }
 
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
-	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
 	// Send 404 if destination is not `/`
 	if r.URL.Path != "/" {
 		// http.Error(w, "404 Page not found", http.StatusNotFound)
@@ -78,15 +76,6 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
-	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
-	// Handling the query/search part here
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		// http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		s.clientError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Get the form values for further processing
 	// All symbols for streams are lowercase
 	symbol := strings.ToLower(r.FormValue("symbol"))
@@ -108,7 +97,6 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
-	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		s.clientError(w, http.StatusMethodNotAllowed)
@@ -130,16 +118,8 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
-	s.infoLog.Printf("%v %v: %v\n", r.Proto, r.Method, r.URL)
-
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		s.clientError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
-	if r.URL.Path != "/klines/live" {
-		s.notFound(w)
+	if err := r.ParseForm(); err != nil {
+		s.clientError(w, http.StatusBadRequest)
 		return
 	}
 

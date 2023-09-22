@@ -1,7 +1,7 @@
 let socket;
 
 let chart = LightweightCharts.createChart("chart-container", {
-	width: 1200,
+	// width: 1200,
     height: 600,
 	crosshair: {
 		mode: LightweightCharts.CrosshairMode.Normal,
@@ -88,7 +88,7 @@ function createWebSocketConnection(symbol, interval) {
 
         // Parse JSON String to JavaScript object
         // not sure why have to do it 2x to work
-        const jsonObject = JSON.parse(JSON.parse(event.data));
+        const jsonObject = JSON.parse(event.data);
 
         // Kline data is in 'data': {k: ...}' object
         const candleStick = jsonObject.data.k
