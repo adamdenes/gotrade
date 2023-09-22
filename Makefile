@@ -8,7 +8,7 @@ BINARY_NAME=gotrade
 DB_CONTAINER_NAME=postgres
 DB_NAME=binance_db
 DB_PORT=5432
-DB_USER=root
+DB_USER=web
 
 build:
 	@echo "Building binary..."
@@ -20,8 +20,17 @@ test:
 run: build
 	./bin/$(BINARY_NAME)
 
+stop: 
+	@echo "Stopping server..."
+	@-pkill -SIGTERM -f "./bin/$(BINARY_NAME)"
+	@echo "Server stopped!"
+
 help:
 	@echo "Available targets:"
+	@echo "  build              - Build project"
+	@echo "  run                - Build and run project"
+	@echo "  test               - Test all go test files"
+	@echo "  help               - Print this message"
 	@echo "  start_db           - Start the PostgreSQL Docker container"
 	@echo "  stop_db            - Stop the PostgreSQL Docker container"
 	@echo "  connect_db         - Connect to the PostgreSQL database using psql"
@@ -37,4 +46,4 @@ stop_db:
 connect_db:
 	docker exec -it $(DB_CONTAINER_NAME) psql -U $(DB_USER) -d $(DB_NAME) -p $(DB_PORT)
 
-.PHONY: build test run start_db stop_db connect_db
+.PHONY: build test run stop start_db stop_db connect_db
