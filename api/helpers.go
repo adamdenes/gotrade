@@ -22,6 +22,7 @@ func (s *Server) notFound(w http.ResponseWriter) {
 	s.clientError(w, http.StatusNotFound)
 }
 
+// LOOK into template cache
 func (s *Server) render(w http.ResponseWriter, data any) {
 	// Parse the HTML template
 	ts, err := template.ParseFiles(templateFiles...)

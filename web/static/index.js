@@ -46,7 +46,6 @@ searchButton.addEventListener("click", function(event) {
         .catch(err => console.log("error in fetch:", err))
 
     createWebSocketConnection(symbol, interval)
-
 });
 
 chart.timeScale().fitContent();

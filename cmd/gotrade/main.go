@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"log"
 	"os"
 
 	"github.com/adamdenes/gotrade/api"
@@ -18,11 +17,11 @@ func main() {
 
 	db, err := storage.NewPostgresDB(os.Getenv("DSN"))
 	if err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 
 	if err := db.Init(); err != nil {
-		log.Fatal(err)
+		logger.Error.Fatal(err)
 	}
 	defer db.Close()
 

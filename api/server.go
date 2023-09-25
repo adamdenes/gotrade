@@ -203,7 +203,7 @@ func receiver[T ~string | ~[]byte](in chan T, conn *websocket.Conn) {
 	for data := range in {
 		// Write the data to the WebSocket connection
 		if err := wsjson.Write(context.Background(), conn, string(data)); err != nil {
-			log.Printf("Error writing data to WebSocket: %v\n", err)
+			logger.Error.Printf("Error writing data to WebSocket: %v\n", err)
 			continue
 		}
 	}
