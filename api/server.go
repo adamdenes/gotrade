@@ -2,9 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -96,7 +93,6 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	b := NewBinance(ctx, inbound(cs))
 
 	defer s.cleanUp(w, r, conn, cancel)
-	// defer s.cleanUp(w, r, conn, cancel)
 	go receiver[[]byte](r.Context(), b.dataChannel, conn)
 }
 
@@ -116,10 +112,7 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 1. get all symbols
 	symbols, _ := getSymbols()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	json.NewEncoder(w).Encode(symbols)
+	WriteJSON(w, http.StatusOK, symbols)
 }
 
 func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
@@ -133,28 +126,14 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 	interval := r.FormValue("interval")
 
 	// GET request to binance
-	getKlinesURL := fmt.Sprintf("https://api.binance.com/api/v3/uiKlines?symbol=%s&interval=%s", symbol, interval)
-	resp, err := GET(getKlinesURL)
+	resp, err := getUiKlines(symbol, interval)
 	if err != nil {
 		s.serverError(w, err)
-	}
-	defer resp.Body.Close()
-
-	// Check the HTTP status code
-	if resp.StatusCode != http.StatusOK {
-		s.serverError(w, fmt.Errorf("Binance API request failed with status code %d", resp.StatusCode))
-		return
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		s.serverError(w, err)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(respBody)
+	w.Write(resp)
 }
 
 func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, cancel context.CancelFunc) {
