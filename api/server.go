@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -110,14 +111,15 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	/* TODO:
-	- need to get historical data from Database
-	- need to check how much data to load (limit=1000 ???)
-	- need to create db stuff
-	- need implement binance api request `GET /api/v3/klines`
-	  and store the data in db
-	*/
-	s.render(w, nil)
+	// Binance endpoint (daily / montly)
+	// https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/
+
+	// 1. get all symbols
+	symbols, _ := getSymbols()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(symbols)
 }
 
 func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
@@ -132,10 +134,9 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 
 	// GET request to binance
 	getKlinesURL := fmt.Sprintf("https://api.binance.com/api/v3/uiKlines?symbol=%s&interval=%s", symbol, interval)
-	resp, err := http.Get(getKlinesURL)
+	resp, err := GET(getKlinesURL)
 	if err != nil {
 		s.serverError(w, err)
-		return
 	}
 	defer resp.Body.Close()
 
