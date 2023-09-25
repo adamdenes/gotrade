@@ -1,8 +1,18 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
+)
+
+// RequestIDKey is a custom type used as a key for the request ID in the context.
+type RequestIDKey int
+
+const (
+	RequestIDContextKey RequestIDKey = iota
 )
 
 // Secure headers will act on every request before routing
@@ -41,4 +51,19 @@ func (s *Server) recoverPanic(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// tagRequest is a middleware that adds a unique request ID to the request's context.
+func (s *Server) tagRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Generate a unique request ID (UUID)
+		requestID := uuid.New().String()
+
+		// Add the request ID to the request's context
+		ctx := context.WithValue(r.Context(), RequestIDContextKey, requestID)
+		r = r.WithContext(ctx)
+
+		next.ServeHTTP(w, r)
+	})
+
 }
