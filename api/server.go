@@ -61,7 +61,7 @@ func (s *Server) routes() http.Handler {
 	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
 
 	// Chain middlewares here
-	return s.recoverPanic(s.logRequest(s.secureHeader(s.router)))
+	return s.recoverPanic(s.logRequest(s.secureHeader(s.tagRequest(s.router))))
 }
 
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
@@ -87,13 +87,16 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		s.serverError(w, err)
 		return
 	}
-	// Trying to subscribe to the stream
-	// Construct `Binance` with a read-only channel and start processing incoming data
-	cs := &CandleSubsciption{symbol: symbol, interval: interval}
-	b := NewBinance(context.Background(), inbound(cs))
 
-	defer s.cleanUp(w, r, conn, b)
-	go receiver[[]byte](b.dataChannel, conn)
+	// Construct `Binance` with a read-only channel and start processing incoming data
+	// Make the context 'cancellable'
+	ctx, cancel := context.WithCancel(r.Context())
+	cs := &CandleSubsciption{symbol: symbol, interval: interval}
+	b := NewBinance(ctx, inbound(cs))
+
+	defer s.cleanUp(w, r, conn, cancel)
+	// defer s.cleanUp(w, r, conn, cancel)
+	go receiver[[]byte](r.Context(), b.dataChannel, conn)
 }
 
 func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
@@ -153,21 +156,21 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(respBody)
 }
 
-func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, b *Binance) {
+func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, cancel context.CancelFunc) {
 	for {
 		msgType, msg, err := conn.Read(r.Context())
 		if err != nil {
 			switch websocket.CloseStatus(err) {
 			case websocket.StatusNormalClosure: // Disconnect by client
+				s.infoLog.Printf("WebSocket closed by client")
+			case websocket.StatusNoStatusRcvd: // Switching stream
+				s.infoLog.Printf("WebSocket switching stream")
 			case websocket.StatusGoingAway: // Closing the tab
-				s.infoLog.Printf("Received message from client: %v\n", websocket.CloseStatus(err))
-				defer b.close()
-				s.infoLog.Println("CALLED defer b.close()!")
-				return
+				s.infoLog.Printf("WebSocket going away")
 			default:
 				s.errorLog.Printf("WebSocket read error: %v - %v\n", err, websocket.CloseStatus(err))
-				return
 			}
+			return
 		}
 
 		if msgType == websocket.MessageText {
@@ -177,8 +180,7 @@ func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket
 				// Handle the custom closing message from the client
 				s.infoLog.Printf("Received closing message from client: %v\n", message)
 				conn.Close(websocket.StatusNormalClosure, "Closed by client")
-				b.close()
-				break
+				return
 			}
 		}
 	}
@@ -198,11 +200,11 @@ func inbound[T any](in *T) <-chan *T {
 	return out
 }
 
-func receiver[T ~string | ~[]byte](in chan T, conn *websocket.Conn) {
+func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websocket.Conn) {
 	// Process data received from the data channel
 	for data := range in {
 		// Write the data to the WebSocket connection
-		if err := wsjson.Write(context.Background(), conn, string(data)); err != nil {
+		if err := wsjson.Write(ctx, conn, string(data)); err != nil {
 			logger.Error.Printf("Error writing data to WebSocket: %v\n", err)
 			continue
 		}

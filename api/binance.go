@@ -35,7 +35,7 @@ func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
 		dataChannel: make(chan []byte, 1),
 	}
 
-	b.infoLog.Printf("Starting binance WebSocket instance on: %v\n", &b.ws)
+	b.infoLog.Printf("Starting binance WebSocket instance on: %v - request: %v\n", &b.ws, b.ctx.Value(RequestIDContextKey))
 	go b.handleSymbolSubscriptions(cs)
 	return b
 }
@@ -44,10 +44,8 @@ func (b *Binance) close() {
 	b.infoLog.Printf("Closing data channel: %v\n", b.dataChannel)
 	close(b.dataChannel)
 	b.infoLog.Printf("Closing Binance WebSocket connection on: %v\n", &b.ws)
-	if err := b.ws.Close(websocket.StatusNormalClosure, "Closed by client"); err != nil {
-		b.errorLog.Printf(err.Error())
-	}
-	b.infoLog.Printf("BINANCE connection closed successfully.")
+	b.ws.Close(websocket.StatusNormalClosure, "Closed by client")
+	b.infoLog.Printf("BINANCE connection closed successfully for request: %v\n", b.ctx.Value(RequestIDContextKey))
 }
 
 func (b *Binance) subscribe(subdata *CandleSubsciption) error {
@@ -77,6 +75,12 @@ func (b *Binance) handleWsLoop() {
 		b.ws.SetReadLimit(65536)
 		_, msg, err := b.ws.Read(b.ctx)
 		if err != nil {
+			if errors.Is(err, b.ctx.Err()) {
+				// StatusCode(-1) -> just closing/switching to other stream
+				b.infoLog.Println("Context cancelled successfully.")
+				b.close()
+				break
+			}
 			if errors.Is(err, net.ErrClosed) {
 				b.errorLog.Printf("Unexpected error: %v", err)
 				break
@@ -92,8 +96,10 @@ func (b *Binance) handleWsLoop() {
 }
 
 func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
+	b.infoLog.Printf("Request/Context processing -> '%v'\n", b.ctx.Value(RequestIDContextKey))
 	if err := b.subscribe(<-cs); err != nil {
 		b.errorLog.Printf("subsciption error: %v\n", err)
+		b.close()
 	}
 }
 
