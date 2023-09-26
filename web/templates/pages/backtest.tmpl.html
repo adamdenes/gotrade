@@ -1,0 +1,28 @@
+{{ define "title" }}Backtest{{ end }}
+
+{{ define "body" }}
+    {{ template "header" . }}
+    
+    <div id="backtest-form">
+        <h2>Backtest Configuration</h2>
+        <form action="/backtest" method="POST">
+            <div class="form-group">
+                <label for="symbol">Trading Pair:</label>
+                <input type="text" id="symbol" name="symbol" placeholder="Enter trading pair" required>
+            </div>
+            <div class="form-group">
+                <label for="start-time">Start Time:</label>
+                <input type="datetime-local" id="start-time" name="start-time" required>
+            </div>
+            <div class="form-group">
+                <label for="end-time">End Time:</label>
+                <input type="datetime-local" id="end-time" name="end-time" required>
+            </div>
+            <button type="submit">Start Backtest</button>
+        </form>
+    </div>
+    
+    <div id="chart-container"></div>
+
+    {{ template "script" . }}
+{{ end }}
