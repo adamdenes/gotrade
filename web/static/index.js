@@ -29,7 +29,11 @@ searchButton.addEventListener("click", function(event) {
     const interval = document.getElementById("interval").value;
 
     // klines?symbol=BNBBTC&interval=1m&limit=1000
-    fetch(`http://localhost:4000/klines/live?symbol=${symbol}&interval=${interval}`)
+    fetch(`http://localhost:4000/klines/live?symbol=${symbol}&interval=${interval}`, {
+        method: 'POST',
+        body: JSON.stringify({ symbol, interval }),
+        headers: {'Content-Type': 'application/json'},
+    })
         .then(response => response.json())
         .then(data => {
             const historicalData = data.map(d => {
@@ -45,9 +49,9 @@ searchButton.addEventListener("click", function(event) {
         })
         .catch(err => console.log("error in fetch:", err))
 
-    createWebSocketConnection(symbol, interval)
+        createWebSocketConnection(symbol, interval)
 });
-
+    
 chart.timeScale().fitContent();
 
 // Function to create a WebSocket connection
