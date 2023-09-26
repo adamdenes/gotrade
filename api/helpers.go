@@ -1,17 +1,17 @@
 package api
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 )
 
 func NewTemplateCache() (map[string]*template.Template, error) {
@@ -76,30 +76,83 @@ func (s *Server) notFound(w http.ResponseWriter) {
 	s.clientError(w, http.StatusNotFound)
 }
 
+// ----------------- MISC -----------------
+
+// `PollHistoricalData` is tasked to periodically poll binance data-api
+// for updated candels.
+func PollHistoricalData() {
+	// always get 1s interval data -> aggregate later
+	// let's start with monthly files
+	var sb strings.Builder
+	const baseUri = "https://data.binance.vision/data/spot/monthly/klines/"
+
+	// 1. perform API request
+	// - let's say for BTCUSDT
+	symbols := []string{"BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT"}
+	fmt.Printf("symbols: %+v\n", symbols)
+
+	// Binance endpoint (daily / montly)
+	// /spot/daily/klines/{SYMBOL}/{INTERVA}/{SYMBOL}-{INTERVAL}-{YEAR-MONTH-DAY}.zip
+	// /spot/monthly/klines/{SYMBOL}/{INTERVA}/{SYMBOL}-{INTERVAL}-{YEAR-MONTH}.zip
+
+	// https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1s/BTCUSDT-1s-2023-08.zip
+
+	wg := &sync.WaitGroup{}
+	wg.Add(len(symbols))
+
+	for _, symbol := range symbols {
+		sb.WriteString(baseUri)
+		sb.WriteString(symbol)
+		sb.WriteString("/1s/")
+		sb.WriteString(symbol)
+		sb.WriteString("-1s-")
+		sb.WriteString("2023-08.zip") // try with 1 month
+
+		fmt.Println("uri:", sb.String())
+		// 2. download data into ./internal/tmp/ directory
+		go downloadZIP(sb.String(), wg)
+		sb.Reset()
+	}
+
+	wg.Wait()
+
+	// 4. save into db
+}
+
 // Download kline data with 1s interval in ZIP format and reads it into memory
 // for further processing (dumping into database)
-func downloadAndReadZIP(url string) (*zip.ReadCloser, error) {
+func downloadZIP(url string, wg *sync.WaitGroup) error {
+	defer wg.Done()
+
 	// Send HTTP GET request to download the ZIP file
-	response, err := http.Get(url)
+	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer response.Body.Close()
+	defer resp.Body.Close()
 
-	// Read the response body into a byte buffer
-	buffer := new(bytes.Buffer)
-	_, err = io.Copy(buffer, response.Body)
-	if err != nil {
-		return nil, err
-	}
+	fmt.Println(resp.StatusCode)
 
-	// New reader for the in-memory ZIP archive
-	zipReader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
-	if err != nil {
-		return nil, err
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
 	}
 
-	return &zip.ReadCloser{Reader: *zipReader}, nil
+	// Create or open the destination file for writing
+	dst := "./internal/tmp/" + filepath.Base(url)
+	file, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Copy the response body to the destination file
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Downloaded ZIP file to: %s\n", dst)
+	return nil
 }
 
 func GET(url string) (*http.Response, error) {

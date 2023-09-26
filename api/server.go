@@ -120,19 +120,7 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 		// 	return
 		// }
 
-		// Binance endpoint (daily / montly)
-		// https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/
-
-		// TODO: download data here if needed
 		fmt.Printf("start=%v, end=%v, type=%T\n", start, end, start)
-		url := "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/"
-		reader, err := downloadAndReadZIP(url)
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		fmt.Printf("%+v\n", reader)
-
 	default:
 		s.clientError(w, http.StatusMethodNotAllowed)
 	}
