@@ -17,7 +17,7 @@ func main() {
 
 	tc, err := api.NewTemplateCache()
 	if err != nil {
-		logger.Error.Println(err.Error())
+		logger.Error.Fatal(err)
 	}
 
 	db, err := storage.NewPostgresDB(os.Getenv("DSN"))
