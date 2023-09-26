@@ -6,9 +6,59 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 )
+
+func NewTemplateCache() (map[string]*template.Template, error) {
+	cache := map[string]*template.Template{}
+
+	pages, err := filepath.Glob("./web/templates/pages/*.tmpl.html")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, page := range pages {
+		name := filepath.Base(page)
+
+		file := []string{
+			"./web/templates/base.tmpl.html",
+			"./web/templates/pages/chart.tmpl.html",
+			"./web/templates/partials/header.tmpl.html",
+			"./web/templates/partials/script.tmpl.html",
+			"./web/templates/partials/search_bar.tmpl.html",
+			"./web/templates/partials/dropdown_tf.tmpl.html",
+			page,
+		}
+
+		ts, err := template.ParseFiles(file...)
+		if err != nil {
+			return nil, err
+		}
+
+		cache[name] = ts
+	}
+	fmt.Printf("%+v\n", cache)
+
+	return cache, nil
+}
+
+// LOOK into template cache
+func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
+	ts, ok := s.templateCache[page]
+	if !ok {
+		s.serverError(w, fmt.Errorf("the template '%s' does not exists", page))
+		return
+	}
+
+	w.WriteHeader(status)
+	// Render the template
+	err := ts.ExecuteTemplate(w, "base", data)
+	if err != nil {
+		s.serverError(w, err)
+	}
+}
 
 func (s *Server) serverError(w http.ResponseWriter, err error) {
 	trace := fmt.Sprintf("%s\n%s", err.Error(), debug.Stack())
@@ -23,26 +73,6 @@ func (s *Server) clientError(w http.ResponseWriter, status int) {
 
 func (s *Server) notFound(w http.ResponseWriter) {
 	s.clientError(w, http.StatusNotFound)
-}
-
-// LOOK into template cache
-func (s *Server) render(w http.ResponseWriter, data any) {
-	// Parse the HTML template
-	ts, err := template.ParseFiles(templateFiles...)
-	if err != nil {
-		s.errorLog.Println(err.Error())
-		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-		s.serverError(w, err)
-		return
-	}
-	// Render the template
-	err = ts.ExecuteTemplate(w, "base", nil)
-	if err != nil {
-		s.errorLog.Println(err.Error())
-		// http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-		s.serverError(w, err)
-		return
-	}
 }
 
 // Download kline data with 1s interval in ZIP format and reads it into memory

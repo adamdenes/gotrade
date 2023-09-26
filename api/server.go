@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"html/template"
 	"log"
 	"net/http"
 	"strings"
@@ -12,29 +13,23 @@ import (
 	"nhooyr.io/websocket/wsjson"
 )
 
-var templateFiles = []string{
-	"./web/templates/base.tmpl.html",
-	"./web/templates/pages/chart.tmpl.html",
-	"./web/templates/partials/script.tmpl.html",
-	"./web/templates/partials/search_bar.tmpl.html",
-	"./web/templates/partials/dropdown_tf.tmpl.html",
-}
-
 type Server struct {
 	listenAddress string
 	store         storage.Storage
 	router        *http.ServeMux
 	infoLog       *log.Logger
 	errorLog      *log.Logger
+	templateCache map[string]*template.Template
 }
 
-func NewServer(addr string, db storage.Storage) *Server {
+func NewServer(addr string, db storage.Storage, cache map[string]*template.Template) *Server {
 	return &Server{
 		listenAddress: addr,
 		store:         db,
 		router:        &http.ServeMux{},
 		infoLog:       logger.Info,
 		errorLog:      logger.Error,
+		templateCache: cache,
 	}
 }
 
@@ -70,7 +65,7 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.render(w, nil)
+	s.render(w, http.StatusOK, "chart.tmpl.html", nil)
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
@@ -112,28 +107,43 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 1. get all symbols
 	symbols, _ := getSymbols()
-	WriteJSON(w, http.StatusOK, symbols)
-}
-
-func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		s.clientError(w, http.StatusBadRequest)
-		return
-	}
-
-	// Trading pair has to be all uppercase for REST API
-	symbol := strings.ToUpper(r.FormValue("symbol"))
-	interval := r.FormValue("interval")
-
-	// GET request to binance
-	resp, err := getUiKlines(symbol, interval)
-	if err != nil {
+	if err := WriteJSON(w, http.StatusOK, symbols); err != nil {
 		s.serverError(w, err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
+	// 2. check if `symbol` is in `symbols`
+	// symbol := strings.ToUpper(r.FormValue("symbol"))
+	// interval := r.FormValue("interval")
+
+	// 3.
+}
+
+func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.render(w, http.StatusOK, "chart.tmpl.html", nil)
+	} else if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			s.clientError(w, http.StatusBadRequest)
+			return
+		}
+
+		// Trading pair has to be all uppercase for REST API
+		symbol := strings.ToUpper(r.FormValue("symbol"))
+		interval := r.FormValue("interval")
+
+		// GET request to binance
+		resp, err := getUiKlines(symbol, interval)
+		_ = resp
+		if err != nil {
+			s.serverError(w, err)
+		}
+
+		if err := WriteJSON(w, http.StatusOK, resp); err != nil {
+			s.serverError(w, err)
+		}
+	} else {
+		s.notFound(w)
+	}
 }
 
 func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, cancel context.CancelFunc) {

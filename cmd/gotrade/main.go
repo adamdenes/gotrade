@@ -15,6 +15,11 @@ func main() {
 
 	logger.Init()
 
+	tc, err := api.NewTemplateCache()
+	if err != nil {
+		logger.Error.Println(err.Error())
+	}
+
 	db, err := storage.NewPostgresDB(os.Getenv("DSN"))
 	if err != nil {
 		logger.Error.Fatal(err)
@@ -25,6 +30,6 @@ func main() {
 	}
 	defer db.Close()
 
-	server := api.NewServer(*addr, db)
+	server := api.NewServer(*addr, db, tc)
 	server.Run()
 }
