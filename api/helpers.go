@@ -12,6 +12,9 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/adamdenes/gotrade/internal/logger"
 )
 
 func NewTemplateCache() (map[string]*template.Template, error) {
@@ -83,13 +86,28 @@ func (s *Server) notFound(w http.ResponseWriter) {
 func PollHistoricalData() {
 	// always get 1s interval data -> aggregate later
 	// let's start with monthly files
-	var sb strings.Builder
-	const baseUri = "https://data.binance.vision/data/spot/monthly/klines/"
+	var wg sync.WaitGroup
 
-	// 1. perform API request
-	// - let's say for BTCUSDT
-	symbols := []string{"BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT"}
-	fmt.Printf("symbols: %+v\n", symbols)
+	startYear := 2018
+	currYear := time.Now().Year()
+	currMonth := time.Now().Month()
+
+	symbols := []string{"BTCUSDT", "ETHBTC", "BNBUSDT", "XRPUSDT"}
+
+	// TODO: if file exist also skip it!!!
+	for _, symbol := range symbols {
+		for year := startYear; year <= currYear; year++ {
+			for month := time.January; month <= time.December; month++ {
+				wg.Add(1)
+				if currYear == year && currMonth <= month {
+					logger.Debug.Printf("Skipping: year=%v, month=%v\n", year, month)
+					continue
+				}
+				go downloadMonthlyData(symbol, year, int(month), &wg)
+			}
+		}
+	}
+	wg.Wait()
 
 	// Binance endpoint (daily / montly)
 	// /spot/daily/klines/{SYMBOL}/{INTERVA}/{SYMBOL}-{INTERVAL}-{YEAR-MONTH-DAY}.zip
@@ -97,41 +115,52 @@ func PollHistoricalData() {
 
 	// https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1s/BTCUSDT-1s-2023-08.zip
 
-	wg := &sync.WaitGroup{}
-	wg.Add(len(symbols))
-
-	for _, symbol := range symbols {
-		sb.WriteString(baseUri)
-		sb.WriteString(symbol)
-		sb.WriteString("/1s/")
-		sb.WriteString(symbol)
-		sb.WriteString("-1s-")
-		sb.WriteString("2023-08.zip") // try with 1 month
-
-		fmt.Println("uri:", sb.String())
-		// 2. download data into ./internal/tmp/ directory
-		go downloadZIP(sb.String(), wg)
-		sb.Reset()
-	}
-
-	wg.Wait()
+	// TODO: SHOULD SCRAPE the files to get all of them
+	// https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/
 
 	// 4. save into db
 }
 
-// Download kline data with 1s interval in ZIP format and reads it into memory
-// for further processing (dumping into database)
-func downloadZIP(url string, wg *sync.WaitGroup) error {
+func downloadMonthlyData(symbol string, year, month int, wg *sync.WaitGroup) {
 	defer wg.Done()
 
+	sb := constructURL(symbol, year, month)
+	logger.Debug.Printf("GET: %v\n", sb.String())
+
+	if err := downloadZIP(sb.String()); err != nil {
+		logger.Error.Printf("uri: %s -> err: %v\n", sb.String(), err)
+	}
+
+	sb.Reset()
+}
+
+func constructURL(symbol string, year, month int) *strings.Builder {
+	const baseUri = "https://data.binance.vision/data/spot/monthly/klines/"
+	sb := &strings.Builder{}
+
+	sb.WriteString(baseUri)
+	sb.WriteString(symbol)
+	sb.WriteString("/1s/")
+	sb.WriteString(symbol)
+	sb.WriteString("-1s-")
+
+	if month < 10 {
+		sb.WriteString(fmt.Sprintf("%d-0%d.zip", year, month))
+	} else {
+		sb.WriteString(fmt.Sprintf("%d-%d.zip", year, month))
+	}
+	return sb
+}
+
+// Download kline data with 1s interval in ZIP format and reads it into memory
+// for further processing (dumping into database)
+func downloadZIP(url string) error {
 	// Send HTTP GET request to download the ZIP file
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
-	fmt.Println(resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
@@ -151,7 +180,7 @@ func downloadZIP(url string, wg *sync.WaitGroup) error {
 		return err
 	}
 
-	fmt.Printf("Downloaded ZIP file to: %s\n", dst)
+	logger.Info.Printf("Downloaded ZIP file to: %s\n", dst)
 	return nil
 }
 
