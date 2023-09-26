@@ -48,7 +48,6 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 	return cache, nil
 }
 
-// LOOK into template cache
 func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
 	ts, ok := s.templateCache[page]
 	if !ok {
@@ -114,9 +113,6 @@ func PollHistoricalData() {
 	// /spot/monthly/klines/{SYMBOL}/{INTERVA}/{SYMBOL}-{INTERVAL}-{YEAR-MONTH}.zip
 
 	// https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1s/BTCUSDT-1s-2023-08.zip
-
-	// TODO: SHOULD SCRAPE the files to get all of them
-	// https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/
 
 	// 4. save into db
 }
@@ -240,6 +236,14 @@ func BuildURI(base string, query string) string {
 	return sb.String()
 }
 
+func prepareQuerString(qs string) string {
+	result := strings.Split(qs, "&")
+	symbolPart := strings.Split(result[0], "=")
+	symbolPart[1] = strings.ToUpper(symbolPart[1])
+	result[0] = strings.Join(symbolPart, "=")
+	return strings.Join(result, "&")
+}
+
 // ----------------- REST -----------------
 /* The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
 
@@ -275,8 +279,7 @@ GET /api/v3/klines
 */
 
 func getKlines(q string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
-	BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
+	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", prepareQuerString(q))
 
 	resp, err := http.Get(uri)
 	if err != nil {
@@ -312,8 +315,7 @@ GET /api/v3/uiKlines
 */
 
 func getUiKlines(q string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
-	BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
+	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", prepareQuerString(q))
 
 	resp, err := http.Get(uri)
 	if err != nil {
