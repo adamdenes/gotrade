@@ -22,7 +22,7 @@ const (
 type Binance struct {
 	ws          *websocket.Conn
 	ctx         context.Context
-	infoLog     *log.Logger
+	debugLog    *log.Logger
 	errorLog    *log.Logger
 	dataChannel chan []byte
 }
@@ -30,22 +30,22 @@ type Binance struct {
 func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
 	b := &Binance{
 		ctx:         ctx,
-		infoLog:     logger.Info,
+		debugLog:    logger.Debug,
 		errorLog:    logger.Error,
 		dataChannel: make(chan []byte, 1),
 	}
 
-	b.infoLog.Printf("Starting binance WebSocket instance on: %v - request: %v\n", &b.ws, b.ctx.Value(RequestIDContextKey))
+	b.debugLog.Printf("Starting binance WebSocket instance on: %v - request: %v\n", &b.ws, b.ctx.Value(RequestIDContextKey))
 	go b.handleSymbolSubscriptions(cs)
 	return b
 }
 
 func (b *Binance) close() {
-	b.infoLog.Printf("Closing data channel: %v\n", b.dataChannel)
+	b.debugLog.Printf("Closing data channel: %v\n", b.dataChannel)
 	close(b.dataChannel)
-	b.infoLog.Printf("Closing Binance WebSocket connection on: %v\n", &b.ws)
+	b.debugLog.Printf("Closing Binance WebSocket connection on: %v\n", &b.ws)
 	b.ws.Close(websocket.StatusNormalClosure, "Closed by client")
-	b.infoLog.Printf("BINANCE connection closed successfully for request: %v\n", b.ctx.Value(RequestIDContextKey))
+	b.debugLog.Printf("BINANCE connection closed successfully for request: %v\n", b.ctx.Value(RequestIDContextKey))
 }
 
 func (b *Binance) subscribe(subdata *CandleSubsciption) error {
@@ -70,14 +70,14 @@ func (b *Binance) subscribe(subdata *CandleSubsciption) error {
 }
 
 func (b *Binance) handleWsLoop() {
-	b.infoLog.Printf("Websocket loop started on channel: %v\n", b.dataChannel)
+	b.debugLog.Printf("Websocket loop started on channel: %v\n", b.dataChannel)
 	for {
 		b.ws.SetReadLimit(65536)
 		_, msg, err := b.ws.Read(b.ctx)
 		if err != nil {
 			if errors.Is(err, b.ctx.Err()) {
 				// StatusCode(-1) -> just closing/switching to other stream
-				b.infoLog.Println("Context cancelled successfully.")
+				b.debugLog.Println("Context cancelled successfully.")
 				b.close()
 				break
 			}
@@ -96,7 +96,7 @@ func (b *Binance) handleWsLoop() {
 }
 
 func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
-	b.infoLog.Printf("Request/Context processing -> '%v'\n", b.ctx.Value(RequestIDContextKey))
+	b.debugLog.Printf("Request/Context processing -> '%v'\n", b.ctx.Value(RequestIDContextKey))
 	if err := b.subscribe(<-cs); err != nil {
 		b.errorLog.Printf("subsciption error: %v\n", err)
 		b.close()

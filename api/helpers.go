@@ -1,7 +1,10 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -39,8 +42,6 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 
 		cache[name] = ts
 	}
-	fmt.Printf("%+v\n", cache)
-
 	return cache, nil
 }
 
@@ -77,29 +78,29 @@ func (s *Server) notFound(w http.ResponseWriter) {
 
 // Download kline data with 1s interval in ZIP format and reads it into memory
 // for further processing (dumping into database)
-// func downloadAndReadZIP(url string) (*zip.ReadCloser, error) {
-// 	// Send HTTP GET request to download the ZIP file
-// 	response, err := http.Get(url)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer response.Body.Close()
+func downloadAndReadZIP(url string) (*zip.ReadCloser, error) {
+	// Send HTTP GET request to download the ZIP file
+	response, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
 
-// 	// Read the response body into a byte buffer
-// 	buffer := new(bytes.Buffer)
-// 	_, err = io.Copy(buffer, response.Body)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	// Read the response body into a byte buffer
+	buffer := new(bytes.Buffer)
+	_, err = io.Copy(buffer, response.Body)
+	if err != nil {
+		return nil, err
+	}
 
-// 	// New reader for the in-memory ZIP archive
-// 	zipReader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	// New reader for the in-memory ZIP archive
+	zipReader, err := zip.NewReader(bytes.NewReader(buffer.Bytes()), int64(buffer.Len()))
+	if err != nil {
+		return nil, err
+	}
 
-// 	return &zip.ReadCloser{Reader: *zipReader}, nil
-// }
+	return &zip.ReadCloser{Reader: *zipReader}, nil
+}
 
 func GET(url string) (*http.Response, error) {
 	resp, err := http.Get(url)
@@ -121,6 +122,40 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	default:
 		return json.NewEncoder(w).Encode(data)
 	}
+}
+
+func ValidateSymbol(symbol string) error {
+	symbols, err := getSymbols()
+	if err != nil {
+		return err
+	}
+
+	found := false
+	for _, s := range symbols {
+		if s == symbol {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("invalid symbol")
+	}
+
+	return nil
+}
+
+func ValidateTimes(start, end string) error {
+	// Implement validation logic for start and end times here
+	// Return an error if validation fails, or nil if they are valid
+	return nil
+}
+
+func BuildURI(base string, query string) string {
+	var sb strings.Builder
+	sb.WriteString(base)
+	sb.WriteString(query)
+	return sb.String()
 }
 
 // ----------------- REST -----------------
@@ -157,13 +192,11 @@ GET /api/v3/klines
     If startTime and endTime are not sent, the most recent klines are returned.
 */
 
-func getKlines(s string, i string) ([]byte, error) {
-	var sb strings.Builder
-	sb.WriteString("https://data-api.binance.vision/api/v3/klines?")
-	sb.WriteString(fmt.Sprintf("symbol=%s", s))
-	sb.WriteString(fmt.Sprintf("&interval=%s", i))
+func getKlines(q string) ([]byte, error) {
+	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
+	BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
 
-	resp, err := http.Get(sb.String())
+	resp, err := http.Get(uri)
 	if err != nil {
 		return nil, err
 	}
@@ -196,13 +229,11 @@ GET /api/v3/uiKlines
 	limit 		INT 	NO 	Default 500; max 1000.
 */
 
-func getUiKlines(s string, i string) ([]byte, error) {
-	var sb strings.Builder
-	sb.WriteString("https://data-api.binance.vision/api/v3/uiKlines?")
-	sb.WriteString(fmt.Sprintf("symbol=%s", s))
-	sb.WriteString(fmt.Sprintf("&interval=%s", i))
+func getUiKlines(q string) ([]byte, error) {
+	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
+	BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
 
-	resp, err := http.Get(sb.String())
+	resp, err := http.Get(uri)
 	if err != nil {
 		return nil, err
 	}

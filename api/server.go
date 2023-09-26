@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -50,7 +51,7 @@ func (s *Server) routes() http.Handler {
 
 	s.router.HandleFunc("/", s.indexHandler)
 	s.router.HandleFunc("/ws", s.websocketClientHandler)
-	s.router.HandleFunc("/klines", s.klinesHandler)
+	s.router.HandleFunc("/backtest", s.klinesHandler)
 	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
 
 	// Chain middlewares here
@@ -92,30 +93,49 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
+	switch r.Method {
+	case http.MethodGet:
+		s.render(w, http.StatusOK, "backtest.tmpl.html", nil)
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			s.clientError(w, http.StatusBadRequest)
+			return
+		}
+
+		symbol := strings.ToUpper(r.FormValue("symbol"))
+		start := r.FormValue("start-time")
+		end := r.FormValue("end-time")
+
+		// Validate symbol
+		if err := ValidateSymbol(symbol); err != nil {
+			s.errorLog.Println(err)
+			s.clientError(w, http.StatusBadRequest)
+			return
+		}
+
+		// Validate start and end times
+		// if err := ValidateTimes(start, end); err != nil {
+		// 	s.errorLog.Println(err)
+		// 	s.clientError(w, http.StatusBadRequest)
+		// 	return
+		// }
+
+		// Binance endpoint (daily / montly)
+		// https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/
+
+		// TODO: download data here if needed
+		fmt.Printf("start=%v, end=%v, type=%T\n", start, end, start)
+		url := "https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/"
+		reader, err := downloadAndReadZIP(url)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		fmt.Printf("%+v\n", reader)
+
+	default:
 		s.clientError(w, http.StatusMethodNotAllowed)
-		return
 	}
-	if r.URL.Path != "/klines" {
-		s.notFound(w)
-		return
-	}
-
-	// Binance endpoint (daily / montly)
-	// https://data.binance.vision/?prefix=data/spot/monthly/klines/BTCUSDT/1s/
-
-	// 1. get all symbols
-	symbols, _ := getSymbols()
-	if err := WriteJSON(w, http.StatusOK, symbols); err != nil {
-		s.serverError(w, err)
-	}
-
-	// 2. check if `symbol` is in `symbols`
-	// symbol := strings.ToUpper(r.FormValue("symbol"))
-	// interval := r.FormValue("interval")
-
-	// 3.
 }
 
 func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
@@ -128,11 +148,11 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Trading pair has to be all uppercase for REST API
-		symbol := strings.ToUpper(r.FormValue("symbol"))
-		interval := r.FormValue("interval")
+		// symbol := strings.ToUpper(r.FormValue("symbol"))
+		// interval := r.FormValue("interval")
 
 		// GET request to binance
-		resp, err := getUiKlines(symbol, interval)
+		resp, err := getUiKlines(r.URL.RawQuery)
 		_ = resp
 		if err != nil {
 			s.serverError(w, err)
