@@ -1,9 +1,15 @@
 package storage
 
 import (
+	"archive/zip"
 	"database/sql"
+	"encoding/csv"
+	"fmt"
+	"io"
 	"log"
+	"time"
 
+	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/lib/pq"
 )
@@ -14,6 +20,7 @@ type Storage interface {
 	UpdateCandle(*models.Kline) error
 	GetCandleByID(int) (*models.Kline, error)
 	Copy([][]string) error
+	Stream(*zip.Reader) error
 }
 
 type PostgresDB struct {
@@ -69,7 +76,7 @@ func (p *PostgresDB) Close() {
 
 func (p *PostgresDB) CreateCandle(k *models.Kline) error {
 	query := `
-        INSERT INTO kline_data (
+        INSERT INTO binance.kline_data (
             open_time,
             open,
             high,
@@ -121,6 +128,7 @@ func (p *PostgresDB) Copy(records [][]string) error {
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
 		pq.CopyInSchema("binance", "kline_data", "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume"))
@@ -129,6 +137,7 @@ func (p *PostgresDB) Copy(records [][]string) error {
 	}
 	defer stmt.Close()
 
+	// Iterate through records and enqueue them for the COPY command.
 	for _, row := range records {
 		_, err := stmt.Exec(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
 		if err != nil {
@@ -136,6 +145,7 @@ func (p *PostgresDB) Copy(records [][]string) error {
 		}
 	}
 
+	// Execute the COPY command.
 	_, err = stmt.Exec()
 	if err != nil {
 		return err
@@ -146,5 +156,59 @@ func (p *PostgresDB) Copy(records [][]string) error {
 		return err
 	}
 
+	return nil
+}
+
+func (p *PostgresDB) Stream(r *zip.Reader) error {
+	startTime := time.Now()
+
+	tx, err := p.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// only 1 file is in the zip archive, no need to loop over
+	zippedFile, err := r.File[0].Open()
+	if err != nil {
+		return fmt.Errorf("error opening ZIP entry: %v", err)
+	}
+	defer zippedFile.Close()
+
+	stmt, err := tx.Prepare(
+		pq.CopyInSchema("binance", "kline_data", "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume"))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	// Read the csv here
+	csvReader := csv.NewReader(zippedFile)
+	for {
+		row, err := csvReader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("error reading CSV recrod: %v", err)
+		}
+
+		_, err = stmt.Exec(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
+		if err != nil {
+			return fmt.Errorf("error executing SQL query: %v", err)
+		}
+	}
+
+	// Execute the COPY command
+	_, err = stmt.Exec()
+	if err != nil {
+		return fmt.Errorf("error executing COPY command: %v", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	logger.Info.Printf("Finished streaming data to Postgres, it took %v\n", time.Since(startTime))
 	return nil
 }
