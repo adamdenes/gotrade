@@ -115,6 +115,7 @@ func PollHistoricalData(storage storage.Storage) {
 	wg.Wait()
 }
 
+// Concurrently make HTTP requests for given URLs (zip files), and stream them to the database
 func processMonthlyData(symbol string, year, month int, storage storage.Storage, wg *sync.WaitGroup) {
 	defer wg.Done()
 	sb := constructURL(symbol, year, month)
@@ -179,6 +180,7 @@ func stream(url string) (*zip.Reader, error) {
 	return zipReader, err
 }
 
+// Open a zip archive and return a *zip.Reader struct from it
 func streamZIP(path string) (*zip.Reader, error) {
 	zipFile, err := os.Open(path)
 	if err != nil {
@@ -198,8 +200,7 @@ func streamZIP(path string) (*zip.Reader, error) {
 	return zipReader, err
 }
 
-// Download kline data with 1s interval in ZIP format and reads it into memory
-// for further processing (dumping into database)
+// Download kline data with 1s interval in ZIP format
 func downloadZIP(url string) error {
 	// Send HTTP GET request to download the ZIP file
 	resp, err := http.Get(url)
@@ -230,6 +231,7 @@ func downloadZIP(url string) error {
 	return nil
 }
 
+// Unzip the files from donwloadZIP
 func unzipFile(zipPath, destPath string) error {
 	// Open zip file for reading
 	zipReader, err := zip.OpenReader(zipPath)
@@ -264,6 +266,7 @@ func unzipFile(zipPath, destPath string) error {
 	return nil
 }
 
+// Create a csv reader and read all rows in a single file
 func readCSVFile(filePath string) ([][]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
