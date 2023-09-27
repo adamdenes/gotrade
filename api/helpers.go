@@ -154,7 +154,8 @@ func constructURL(symbol string, year, month int) *strings.Builder {
 }
 
 // Stream will return a *zip.Reader from which the zip data can be read.
-// It enables seamless data streaming directly between HTTP and PostgresSQL.
+// It enables seamless data streaming directly between HTTP and PostgresSQL,
+// reducing memory consumption and minimizing IO operations.
 func stream(url string) (*zip.Reader, error) {
 	resp, err := http.Get(url)
 	if err != nil {
