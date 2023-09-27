@@ -49,11 +49,10 @@ func (p *PostgresDB) CreateCandleTable() error {
 	if err != nil {
 		return err
 	}
-	// 1672531200000,16541.77000000,16543.20000000,16541.73000000,16542.37000000,2.03879000,1672531200999,33726.64613940,104,1.65187000,27326.28208680,0
 
 	query := `CREATE TABLE IF NOT EXISTS binance.kline_data (
 		id serial PRIMARY KEY,
-		open_time bigint NOT NULL,
+		open_time bigint NOT NULL UNIQUE,
 		open NUMERIC(18, 8) NOT NULL,
 		high NUMERIC(18, 8) NOT NULL,
 		low NUMERIC(18, 8) NOT NULL,
@@ -190,7 +189,7 @@ func (p *PostgresDB) Stream(r *zip.Reader) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error reading CSV recrod: %v", err)
+			return fmt.Errorf("error reading CSV record: %v", err)
 		}
 
 		_, err = stmt.Exec(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
