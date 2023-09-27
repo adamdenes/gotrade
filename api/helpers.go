@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -115,51 +116,20 @@ func PollHistoricalData(storage storage.Storage) {
 }
 
 func processMonthlyData(symbol string, year, month int, storage storage.Storage, wg *sync.WaitGroup) {
+	defer wg.Done()
 	sb := constructURL(symbol, year, month)
-	src := tmpDir + filepath.Base(sb.String())
+	logger.Info.Printf("GET: %v\n", sb.String())
 
-	defer func(src string) {
-		wg.Done()
-		go func() {
-			// Delete the zip file right after it is unzipped! (wg.Done() called)
-			logger.Debug.Printf("Deleting source zip: %v\n", src)
-			if err := os.Remove(src); err != nil {
-				logger.Error.Printf("Error deleting zip file: %v\n", err)
-				return
-			}
-		}()
-	}(src)
-
-	logger.Debug.Printf("GET: %v\n", sb.String())
-
-	// Download the zip file
-	logger.Info.Printf("Downloading zip file to: %s\n", filepath.Base(sb.String()))
-	if err := downloadZIP(sb.String()); err != nil {
-		logger.Error.Printf("Error downloading from URI: %s\nerr: %v\n", sb.String(), err)
-		return
-	}
-
-	// Unzip the file
-	logger.Debug.Printf("Unzipping src: %v\n", src)
-	if err := unzipFile(src, tmpDir); err != nil {
-		logger.Error.Printf("Error unzipping file: %v\n", err)
-		return
-	}
-
-	// Read CSV
-	csvFilePath := fmt.Sprintf("%s%s-1s-%d-%02d.csv", tmpDir, symbol, year, month)
-	records, err := ReadCSVFile(csvFilePath)
+	reader, err := stream(sb.String())
 	if err != nil {
-		logger.Error.Printf("Error reading CSV file: %v\n", err)
+		logger.Error.Printf("Error streaming data over HTTP: %v\n", err)
 		return
 	}
 
-	// Copy csv data into DB
-	if err := storage.Copy(records); err != nil {
+	if err := storage.Stream(reader); err != nil {
 		logger.Error.Printf("Error inserting Kline data into the database: %v\n", err)
 		return
 	}
-
 	sb.Reset()
 }
 
@@ -175,6 +145,57 @@ func constructURL(symbol string, year, month int) *strings.Builder {
 	sb.WriteString(fmt.Sprintf("%d-%02d.zip", year, month))
 
 	return sb
+}
+
+// Stream will return a *zip.Reader from which the zip data can be read.
+// It enables seamless data streaming directly between HTTP and PostgresSQL.
+func stream(url string) (*zip.Reader, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error making HTTP request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP request failed with status code: %v", resp.Status)
+	}
+
+	// Read the entire response body into a buffer.
+	bodyBuffer := new(bytes.Buffer)
+	_, err = io.Copy(bodyBuffer, resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %v", err)
+	}
+
+	// Create a bytes.Reader from the buffer.
+	bodyReader := bytes.NewReader(bodyBuffer.Bytes())
+
+	// Get the zip reader
+	zipReader, err := zip.NewReader(bodyReader, int64(bodyBuffer.Len()))
+	if err != nil {
+		return nil, fmt.Errorf("error creating zip reader: %v", err)
+	}
+
+	return zipReader, err
+}
+
+func streamZIP(path string) (*zip.Reader, error) {
+	zipFile, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	zipSize, err := zipFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	zipReader, err := zip.NewReader(zipFile, zipSize.Size())
+	if err != nil {
+		return nil, err
+	}
+
+	return zipReader, err
 }
 
 // Download kline data with 1s interval in ZIP format and reads it into memory
@@ -243,7 +264,7 @@ func unzipFile(zipPath, destPath string) error {
 	return nil
 }
 
-func ReadCSVFile(filePath string) ([][]string, error) {
+func readCSVFile(filePath string) ([][]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
