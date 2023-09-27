@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/storage"
 )
 
 // os.TempDir() ?
@@ -86,12 +88,12 @@ func (s *Server) notFound(w http.ResponseWriter) {
 
 // `PollHistoricalData` is tasked to periodically poll binance data-api
 // for updated candels.
-func PollHistoricalData() {
+func PollHistoricalData(storage storage.Storage) {
 	// always get 1s interval data -> aggregate later
 	// let's start with monthly files
 	var wg sync.WaitGroup
 
-	startYear := 2018
+	startYear := 2023
 	currYear := time.Now().Year()
 	currMonth := time.Now().Month()
 
@@ -105,23 +107,21 @@ func PollHistoricalData() {
 					logger.Debug.Printf("Skipping: year=%v, month=%v\n", year, month)
 					continue
 				}
-				go processMonthlyData(symbol, year, int(month), &wg)
+				go processMonthlyData(symbol, year, int(month), storage, &wg)
 			}
 		}
 	}
 	wg.Wait()
-
-	// 4. save into db
 }
 
-func processMonthlyData(symbol string, year, month int, wg *sync.WaitGroup) {
+func processMonthlyData(symbol string, year, month int, storage storage.Storage, wg *sync.WaitGroup) {
 	sb := constructURL(symbol, year, month)
 	src := tmpDir + filepath.Base(sb.String())
 
 	defer func(src string) {
 		wg.Done()
 		go func() {
-			// Delete the zip file after it is unzipped! (wg.Done() called)
+			// Delete the zip file right after it is unzipped! (wg.Done() called)
 			logger.Debug.Printf("Deleting source zip: %v\n", src)
 			if err := os.Remove(src); err != nil {
 				logger.Error.Printf("Error deleting zip file: %v\n", err)
@@ -129,6 +129,7 @@ func processMonthlyData(symbol string, year, month int, wg *sync.WaitGroup) {
 			}
 		}()
 	}(src)
+
 	logger.Debug.Printf("GET: %v\n", sb.String())
 
 	// Download the zip file
@@ -145,7 +146,20 @@ func processMonthlyData(symbol string, year, month int, wg *sync.WaitGroup) {
 		return
 	}
 
-	// Read CSV and insert into DB
+	// Read CSV
+	csvFilePath := fmt.Sprintf("%s%s-1s-%d-%02d.csv", tmpDir, symbol, year, month)
+	records, err := ReadCSVFile(csvFilePath)
+	if err != nil {
+		logger.Error.Printf("Error reading CSV file: %v\n", err)
+		return
+	}
+
+	// Copy csv data into DB
+	if err := storage.Copy(records); err != nil {
+		logger.Error.Printf("Error inserting Kline data into the database: %v\n", err)
+		return
+	}
+
 	sb.Reset()
 }
 
@@ -158,12 +172,8 @@ func constructURL(symbol string, year, month int) *strings.Builder {
 	sb.WriteString("/1s/")
 	sb.WriteString(symbol)
 	sb.WriteString("-1s-")
+	sb.WriteString(fmt.Sprintf("%d-%02d.zip", year, month))
 
-	if month < 10 {
-		sb.WriteString(fmt.Sprintf("%d-0%d.zip", year, month))
-	} else {
-		sb.WriteString(fmt.Sprintf("%d-%d.zip", year, month))
-	}
 	return sb
 }
 
@@ -231,6 +241,22 @@ func unzipFile(zipPath, destPath string) error {
 
 	logger.Info.Printf("Unzipped file: %s\n", zipReader.File[0].Name)
 	return nil
+}
+
+func ReadCSVFile(filePath string) ([][]string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	csvReader := csv.NewReader(file)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return records, nil
 }
 
 func GET(url string) (*http.Response, error) {
