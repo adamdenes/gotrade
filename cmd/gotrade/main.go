@@ -30,8 +30,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Poll historical data for updates
-	go api.PollHistoricalData()
+	go api.PollHistoricalData(db)
 
 	server := api.NewServer(*addr, db, tc)
 	server.Run()
