@@ -100,6 +100,11 @@ func PollHistoricalData(storage storage.Storage) {
 
 	symbols := []string{"BTCUSDT"} //, "ETHBTC", "BNBUSDT", "XRPUSDT"}
 
+	// TODO: before making GET requests try to check if update is needed
+	// - query SQL for the last open_time/close_time
+	// - convert it back to YYYY-MM-DD format
+	// - if YYYY-MM > currYear-currMonth -> update
+	// - else -> sleep
 	for _, symbol := range symbols {
 		for year := startYear; year <= currYear; year++ {
 			for month := time.January; month <= time.December; month++ {
