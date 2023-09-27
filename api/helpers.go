@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/adamdenes/gotrade/internal/logger"
 )
+
+// os.TempDir() ?
+const tmpDir string = "./internal/tmp/"
 
 func NewTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
@@ -91,9 +95,8 @@ func PollHistoricalData() {
 	currYear := time.Now().Year()
 	currMonth := time.Now().Month()
 
-	symbols := []string{"BTCUSDT", "ETHBTC", "BNBUSDT", "XRPUSDT"}
+	symbols := []string{"BTCUSDT"} //, "ETHBTC", "BNBUSDT", "XRPUSDT"}
 
-	// TODO: if file exist also skip it!!!
 	for _, symbol := range symbols {
 		for year := startYear; year <= currYear; year++ {
 			for month := time.January; month <= time.December; month++ {
@@ -102,31 +105,47 @@ func PollHistoricalData() {
 					logger.Debug.Printf("Skipping: year=%v, month=%v\n", year, month)
 					continue
 				}
-				go downloadMonthlyData(symbol, year, int(month), &wg)
+				go processMonthlyData(symbol, year, int(month), &wg)
 			}
 		}
 	}
 	wg.Wait()
 
-	// Binance endpoint (daily / montly)
-	// /spot/daily/klines/{SYMBOL}/{INTERVA}/{SYMBOL}-{INTERVAL}-{YEAR-MONTH-DAY}.zip
-	// /spot/monthly/klines/{SYMBOL}/{INTERVA}/{SYMBOL}-{INTERVAL}-{YEAR-MONTH}.zip
-
-	// https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1s/BTCUSDT-1s-2023-08.zip
-
 	// 4. save into db
 }
 
-func downloadMonthlyData(symbol string, year, month int, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func processMonthlyData(symbol string, year, month int, wg *sync.WaitGroup) {
 	sb := constructURL(symbol, year, month)
+	src := tmpDir + filepath.Base(sb.String())
+
+	defer func(src string) {
+		wg.Done()
+		go func() {
+			// Delete the zip file after it is unzipped! (wg.Done() called)
+			logger.Debug.Printf("Deleting source zip: %v\n", src)
+			if err := os.Remove(src); err != nil {
+				logger.Error.Printf("Error deleting zip file: %v\n", err)
+				return
+			}
+		}()
+	}(src)
 	logger.Debug.Printf("GET: %v\n", sb.String())
 
+	// Download the zip file
+	logger.Info.Printf("Downloading zip file to: %s\n", filepath.Base(sb.String()))
 	if err := downloadZIP(sb.String()); err != nil {
-		logger.Error.Printf("uri: %s -> err: %v\n", sb.String(), err)
+		logger.Error.Printf("Error downloading from URI: %s\nerr: %v\n", sb.String(), err)
+		return
 	}
 
+	// Unzip the file
+	logger.Debug.Printf("Unzipping src: %v\n", src)
+	if err := unzipFile(src, tmpDir); err != nil {
+		logger.Error.Printf("Error unzipping file: %v\n", err)
+		return
+	}
+
+	// Read CSV and insert into DB
 	sb.Reset()
 }
 
@@ -163,7 +182,7 @@ func downloadZIP(url string) error {
 	}
 
 	// Create or open the destination file for writing
-	dst := "./internal/tmp/" + filepath.Base(url)
+	dst := tmpDir + filepath.Base(url)
 	file, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -176,7 +195,41 @@ func downloadZIP(url string) error {
 		return err
 	}
 
-	logger.Info.Printf("Downloaded ZIP file to: %s\n", dst)
+	logger.Info.Printf("Downloaded zip file to: %s\n", dst)
+	return nil
+}
+
+func unzipFile(zipPath, destPath string) error {
+	// Open zip file for reading
+	zipReader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+
+	for _, file := range zipReader.File {
+		// Create new file for writing
+		outFile, err := os.Create(destPath + "/" + file.Name)
+		if err != nil {
+			return err
+		}
+		defer outFile.Close()
+
+		// Open file from archive
+		zipFile, err := file.Open()
+		if err != nil {
+			return err
+		}
+		defer zipFile.Close()
+
+		// Copy content into the new file
+		_, err = io.Copy(outFile, zipFile)
+		if err != nil {
+			return err
+		}
+	}
+
+	logger.Info.Printf("Unzipped file: %s\n", zipReader.File[0].Name)
 	return nil
 }
 
