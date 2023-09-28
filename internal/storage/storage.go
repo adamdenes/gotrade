@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,6 +22,7 @@ type Storage interface {
 	GetCandleByID(int) (*models.Kline, error)
 	Copy([][]string) error
 	Stream(*zip.Reader) error
+	QueryLastCloseTime() (int64, error)
 }
 
 type PostgresDB struct {
@@ -210,4 +212,20 @@ func (p *PostgresDB) Stream(r *zip.Reader) error {
 
 	logger.Info.Printf("Finished streaming data to Postgres, it took %v\n", time.Since(startTime))
 	return nil
+}
+
+func (p *PostgresDB) QueryLastCloseTime() (int64, error) {
+	query := "SELECT open_time FROM binance.kline_data ORDER BY close_time DESC LIMIT 1"
+
+	var lastCloseTime int64
+
+	err := p.db.QueryRow(query).Scan(&lastCloseTime)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return -1, err
+		}
+		return -1, err
+	}
+
+	return lastCloseTime, nil
 }
