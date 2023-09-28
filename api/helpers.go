@@ -3,12 +3,14 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,30 +92,72 @@ func (s *Server) notFound(w http.ResponseWriter) {
 // `PollHistoricalData` is tasked to periodically poll binance data-api
 // for updated candels.
 func PollHistoricalData(storage storage.Storage) {
+	var startDate, endDate time.Time
+
+	for {
+		// Query SQL for the last close_time
+		ct, err := storage.QueryLastCloseTime()
+		if err != nil {
+			if err == sql.ErrNoRows {
+				logger.Info.Println("Database is empty. Full update needed.")
+				// Poll one year worth of data
+				startDate = time.Now().AddDate(-1, 0, 0)
+				endDate = time.Now()
+				logger.Debug.Printf("startDate=%v, endDate=%v\n", startDate, endDate)
+				update(storage, startDate, endDate)
+			} else {
+				logger.Error.Panicf("error getting last close_time: %v\n", err)
+			}
+		}
+
+		epoch := time.UnixMilli(ct)
+		var (
+			eYear  int        = epoch.Year()
+			eMonth time.Month = epoch.Month()
+			year   int        = time.Now().Year()
+			month  time.Month = time.Now().Month()
+		)
+		// Monthly-generated data will be updated on the first day of the following month.
+		if eYear <= year && eMonth < month {
+			logger.Info.Println("PARTIAL database update needed")
+
+			yearDiff := int(math.Abs(float64(eYear) - float64(year)))
+			monthDiff := int(math.Abs(float64(eMonth) - float64(month)))
+			startDate = epoch
+			endDate = epoch.AddDate(yearDiff, monthDiff, 0)
+
+			logger.Debug.Printf("yearDiff=%v, monthDiff=%v, startDate=%v, endDate=%v\n", yearDiff, monthDiff, startDate, endDate)
+			update(storage, startDate, endDate)
+		} else {
+			// Wait 24 hours and start again
+			logger.Info.Println("Database is up to date! Polling is going to sleep...")
+			time.Sleep(time.Hour * 24)
+		}
+	}
+}
+
+func update(s storage.Storage, startDate, endDate time.Time) {
 	// always get 1s interval data -> aggregate later
-	// let's start with monthly files
 	var wg sync.WaitGroup
 
-	startYear := 2023
-	currYear := time.Now().Year()
-	currMonth := time.Now().Month()
+	currYear := endDate.Year()
+	currMonth := endDate.Month()
+	startYear := startDate.Year()
+	startMonth := startDate.Month()
 
 	symbols := []string{"BTCUSDT"} //, "ETHBTC", "BNBUSDT", "XRPUSDT"}
 
-	// TODO: before making GET requests try to check if update is needed
-	// - query SQL for the last open_time/close_time
-	// - convert it back to YYYY-MM-DD format
-	// - if YYYY-MM > currYear-currMonth -> update
-	// - else -> sleep
 	for _, symbol := range symbols {
-		for year := startYear; year <= currYear; year++ {
-			for month := time.January; month <= time.December; month++ {
+		for y := startYear; y <= currYear; y++ {
+			// Loop from start month to end of the year (December)
+			for m := time.January; m <= time.December; m++ {
+				logger.Debug.Printf("Iterating over: year=%v, month=%v\n", y, m)
 				wg.Add(1)
-				if currYear == year && currMonth <= month {
-					logger.Debug.Printf("Skipping: year=%v, month=%v\n", year, month)
+				if y <= currYear && startMonth > m || currYear == y && currMonth <= m {
+					logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
 					continue
 				}
-				go processMonthlyData(symbol, year, int(month), storage, &wg)
+				go processMonthlyData(symbol, y, int(m), s, &wg)
 			}
 		}
 	}
@@ -354,6 +398,20 @@ func prepareQuerString(qs string) string {
 }
 
 // ----------------- REST -----------------
+
+/* IP Limits
+
+   - Every request will contain X-MBX-USED-WEIGHT-(intervalNum)(intervalLetter) in the response headers which has the current used weight for the IP for all request rate limiters defined.
+   - Each route has a weight which determines for the number of requests each endpoint counts for. Heavier endpoints and endpoints that do operations on multiple symbols will have a heavier weight.
+   - When a 429 is received, it's your obligation as an API to back off and not spam the API.
+   - Repeatedly violating rate limits and/or failing to back off after receiving 429s will result in an automated IP ban (HTTP status 418).
+   - IP bans are tracked and scale in duration for repeat offenders, from 2 minutes to 3 days.
+   - A Retry-After header is sent with a 418 or 429 responses and will give the number of seconds required to wait, in the case of a 429, to prevent a ban, or, in the case of a 418, until the ban is over.
+   - The limits on the API are based on the IPs, not the API keys.
+*/
+
+// TODO: implement
+
 /* The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
 
    GET /api/v3/aggTrades
