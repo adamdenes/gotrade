@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/adamdenes/gotrade/internal/logger"
@@ -20,9 +22,9 @@ type Storage interface {
 	DeleteCandle(int) error
 	UpdateCandle(*models.Kline) error
 	GetCandleByID(int) (*models.Kline, error)
-	Copy([][]string) error
+	Copy([]byte, *string, *string) error
 	Stream(*zip.Reader) error
-	QueryLastCloseTime() (int64, error)
+	QueryLastRow() (*models.KlineRequest, error)
 }
 
 type PostgresDB struct {
@@ -54,6 +56,8 @@ func (p *PostgresDB) CreateCandleTable() error {
 
 	query := `CREATE TABLE IF NOT EXISTS binance.kline_data (
 		id serial PRIMARY KEY,
+		symbol VARCHAR(10) NOT NULL,
+		interval VARCHAR(3) NOT NULL,
 		open_time bigint NOT NULL UNIQUE,
 		open NUMERIC(18, 8) NOT NULL,
 		high NUMERIC(18, 8) NOT NULL,
@@ -78,6 +82,8 @@ func (p *PostgresDB) Close() {
 func (p *PostgresDB) CreateCandle(k *models.Kline) error {
 	query := `
         INSERT INTO binance.kline_data (
+			symbol,
+			interval,
             open_time,
             open,
             high,
@@ -101,6 +107,8 @@ func (p *PostgresDB) CreateCandle(k *models.Kline) error {
 	defer stmt.Close()
 
 	_, err = stmt.Exec(
+		k.Symbol,
+		k.Interval,
 		k.OpenTime,
 		k.Open,
 		k.High,
@@ -124,7 +132,7 @@ func (p *PostgresDB) DeleteCandle(int) error                   { return nil }
 func (p *PostgresDB) UpdateCandle(*models.Kline) error         { return nil }
 func (p *PostgresDB) GetCandleByID(int) (*models.Kline, error) { return &models.Kline{}, nil }
 
-func (p *PostgresDB) Copy(records [][]string) error {
+func (p *PostgresDB) Copy(r []byte, name *string, interval *string) error {
 	tx, err := p.db.Begin()
 	if err != nil {
 		return err
@@ -132,21 +140,39 @@ func (p *PostgresDB) Copy(records [][]string) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		pq.CopyInSchema("binance", "kline_data", "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume"))
+		pq.CopyInSchema("binance", "kline_data", "symbol", "interval", "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume"))
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	// Iterate through records and enqueue them for the COPY command.
-	for _, row := range records {
-		_, err := stmt.Exec(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
+	// Unmarshal the data into a slice of slices
+	var rawData [][]interface{}
+	if err := json.Unmarshal(r, &rawData); err != nil {
+		return err
+	}
+
+	// Iterate over the records
+	for _, record := range rawData {
+		// Process each record
+		openTime := int64(record[0].(float64))
+		open := record[1].(string)
+		high := record[2].(string)
+		low := record[3].(string)
+		close := record[4].(string)
+		volume := record[5].(string)
+		closeTime := int64(record[6].(float64))
+		quoteVolume := record[7].(string)
+		count := int(record[8].(float64))
+		takerBuyVolume := record[9].(string)
+		takerBuyQuoteVolume := record[10].(string)
+
+		_, err = stmt.Exec(name, interval, openTime, open, high, low, close, volume, closeTime, quoteVolume, count, takerBuyVolume, takerBuyQuoteVolume)
 		if err != nil {
 			return err
 		}
 	}
 
-	// Execute the COPY command.
 	_, err = stmt.Exec()
 	if err != nil {
 		return err
@@ -170,6 +196,7 @@ func (p *PostgresDB) Stream(r *zip.Reader) error {
 	defer tx.Rollback()
 
 	// only 1 file is in the zip archive, no need to loop over
+	zipSlice := strings.Split(r.File[0].Name, "-") // get name and interval
 	zippedFile, err := r.File[0].Open()
 	if err != nil {
 		return fmt.Errorf("error opening ZIP entry: %v", err)
@@ -177,7 +204,7 @@ func (p *PostgresDB) Stream(r *zip.Reader) error {
 	defer zippedFile.Close()
 
 	stmt, err := tx.Prepare(
-		pq.CopyInSchema("binance", "kline_data", "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume"))
+		pq.CopyInSchema("binance", "kline_data", "symbol", "interval", "open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "count", "taker_buy_volume", "taker_buy_quote_volume"))
 	if err != nil {
 		return err
 	}
@@ -194,7 +221,7 @@ func (p *PostgresDB) Stream(r *zip.Reader) error {
 			return fmt.Errorf("error reading CSV record: %v", err)
 		}
 
-		_, err = stmt.Exec(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
+		_, err = stmt.Exec(zipSlice[0], zipSlice[1], row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
 		if err != nil {
 			return fmt.Errorf("error executing SQL query: %v", err)
 		}
@@ -214,18 +241,17 @@ func (p *PostgresDB) Stream(r *zip.Reader) error {
 	return nil
 }
 
-func (p *PostgresDB) QueryLastCloseTime() (int64, error) {
-	query := "SELECT open_time FROM binance.kline_data ORDER BY close_time DESC LIMIT 1"
+func (p *PostgresDB) QueryLastRow() (*models.KlineRequest, error) {
+	query := "SELECT symbol, interval, open_time, close_time FROM binance.kline_data ORDER BY open_time DESC LIMIT 1"
+	d := new(models.KlineRequest)
 
-	var lastCloseTime int64
-
-	err := p.db.QueryRow(query).Scan(&lastCloseTime)
+	err := p.db.QueryRow(query).Scan(&d.Symbol, &d.Interval, &d.OpenTime, &d.CloseTime)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return -1, err
+			return nil, err
 		}
-		return -1, err
+		return nil, err
 	}
 
-	return lastCloseTime, nil
+	return d, nil
 }
