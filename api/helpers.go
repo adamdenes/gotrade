@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -96,7 +96,8 @@ func PollHistoricalData(storage storage.Storage) {
 
 	for {
 		// Query SQL for the last close_time
-		ct, err := storage.QueryLastCloseTime()
+		row, err := storage.QueryLastRow()
+
 		if err != nil {
 			if err == sql.ErrNoRows {
 				logger.Info.Println("Database is empty. Full update needed.")
@@ -104,13 +105,13 @@ func PollHistoricalData(storage storage.Storage) {
 				startDate = time.Now().AddDate(-1, 0, 0)
 				endDate = time.Now()
 				logger.Debug.Printf("startDate=%v, endDate=%v\n", startDate, endDate)
-				update(storage, startDate, endDate)
+				update(storage, true, startDate, endDate)
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}
 		}
 
-		epoch := time.UnixMilli(ct)
+		epoch := time.UnixMilli(row.CloseTime)
 		var (
 			eYear  int        = epoch.Year()
 			eMonth time.Month = epoch.Month()
@@ -120,23 +121,39 @@ func PollHistoricalData(storage storage.Storage) {
 		// Monthly-generated data will be updated on the first day of the following month.
 		if eYear <= year && eMonth < month {
 			logger.Info.Println("PARTIAL database update needed")
+			// Next second
+			row.OpenTime = row.CloseTime + 1
+			row.CloseTime = row.OpenTime + 999
 
-			yearDiff := int(math.Abs(float64(eYear) - float64(year)))
-			monthDiff := int(math.Abs(float64(eMonth) - float64(month)))
-			startDate = epoch
-			endDate = epoch.AddDate(yearDiff, monthDiff, 0)
+			uri := BuildURI(
+				"https://data-api.binance.vision/api/v3/klines?",
+				"symbol=", row.Symbol,
+				"&interval=", row.Interval,
+				"&startTime=", fmt.Sprintf("%d", row.OpenTime),
+				"&limit=1000",
+			)
 
-			logger.Debug.Printf("yearDiff=%v, monthDiff=%v, startDate=%v, endDate=%v\n", yearDiff, monthDiff, startDate, endDate)
-			update(storage, startDate, endDate)
+			logger.Info.Printf("startTime=%v endTime=%v\n", row.OpenTime, row.CloseTime)
+			b, err := Query(uri)
+			if err != nil {
+				logger.Error.Printf("Error making query: %v\n", err)
+				return
+			}
+
+			if err := storage.Copy(b, &row.Symbol, &row.Interval); err != nil {
+				logger.Error.Printf("Error inserting Kline data into the database: %v\n", err)
+				return
+			}
 		} else {
 			// Wait 24 hours and start again
 			logger.Info.Println("Database is up to date! Polling is going to sleep...")
-			time.Sleep(time.Hour * 24)
+			// time.Sleep(time.Hour * 24)
+			time.Sleep(time.Minute * 2)
 		}
 	}
 }
 
-func update(s storage.Storage, startDate, endDate time.Time) {
+func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 	// always get 1s interval data -> aggregate later
 	var wg sync.WaitGroup
 
@@ -151,11 +168,17 @@ func update(s storage.Storage, startDate, endDate time.Time) {
 		for y := startYear; y <= currYear; y++ {
 			// Loop from start month to end of the year (December)
 			for m := time.January; m <= time.December; m++ {
-				logger.Debug.Printf("Iterating over: year=%v, month=%v\n", y, m)
 				wg.Add(1)
-				if y <= currYear && startMonth > m || currYear == y && currMonth <= m {
-					logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
-					continue
+				if isFull {
+					if y < currYear && startMonth > m || currYear == y && currMonth <= m {
+						logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
+						continue
+					}
+				} else {
+					if y <= currYear && startMonth > m || currYear == y && currMonth <= m {
+						logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
+						continue
+					}
 				}
 				go processMonthlyData(symbol, y, int(m), s, &wg)
 			}
@@ -167,10 +190,17 @@ func update(s storage.Storage, startDate, endDate time.Time) {
 // Concurrently make HTTP requests for given URLs (zip files), and stream them to the database
 func processMonthlyData(symbol string, year, month int, storage storage.Storage, wg *sync.WaitGroup) {
 	defer wg.Done()
-	sb := constructURL(symbol, year, month)
-	logger.Info.Printf("GET: %v\n", sb.String())
+	uri := BuildURI("https://data.binance.vision/data/spot/monthly/klines/",
+		symbol,
+		"/1s/",
+		symbol,
+		"-1s-",
+		fmt.Sprintf("%d-%02d.zip", year, month),
+	)
+	// sb := constructURL(symbol, year, month)
+	logger.Info.Printf("GET: %v\n", uri)
 
-	reader, err := stream(sb.String())
+	reader, err := stream(uri)
 	if err != nil {
 		logger.Error.Printf("Error streaming data over HTTP: %v\n", err)
 		return
@@ -180,47 +210,20 @@ func processMonthlyData(symbol string, year, month int, storage storage.Storage,
 		logger.Error.Printf("Error inserting Kline data into the database: %v\n", err)
 		return
 	}
-	sb.Reset()
-}
-
-func constructURL(symbol string, year, month int) *strings.Builder {
-	const baseUri = "https://data.binance.vision/data/spot/monthly/klines/"
-	sb := &strings.Builder{}
-
-	sb.WriteString(baseUri)
-	sb.WriteString(symbol)
-	sb.WriteString("/1s/")
-	sb.WriteString(symbol)
-	sb.WriteString("-1s-")
-	sb.WriteString(fmt.Sprintf("%d-%02d.zip", year, month))
-
-	return sb
 }
 
 // Stream will return a *zip.Reader from which the zip data can be read.
 // It enables seamless data streaming directly between HTTP and PostgresSQL,
 // reducing memory consumption and minimizing IO operations.
 func stream(url string) (*zip.Reader, error) {
-	resp, err := http.Get(url)
+	b, err := Query(url)
 	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request: %v", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP request failed with status code: %v", resp.Status)
-	}
-
 	// Read the entire response body into a buffer.
-	bodyBuffer := new(bytes.Buffer)
-	_, err = io.Copy(bodyBuffer, resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %v", err)
-	}
-
+	bodyBuffer := bytes.NewBuffer(b)
 	// Create a bytes.Reader from the buffer.
 	bodyReader := bytes.NewReader(bodyBuffer.Bytes())
-
 	// Get the zip reader
 	zipReader, err := zip.NewReader(bodyReader, int64(bodyBuffer.Len()))
 	if err != nil {
@@ -253,14 +256,9 @@ func streamZIP(path string) (*zip.Reader, error) {
 // Download kline data with 1s interval in ZIP format
 func downloadZIP(url string) error {
 	// Send HTTP GET request to download the ZIP file
-	resp, err := http.Get(url)
+	resp, err := Query(url)
 	if err != nil {
 		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
 	}
 
 	// Create or open the destination file for writing
@@ -271,8 +269,9 @@ func downloadZIP(url string) error {
 	}
 	defer file.Close()
 
+	b := bytes.NewReader(resp)
 	// Copy the response body to the destination file
-	_, err = io.Copy(file, resp.Body)
+	_, err = io.Copy(file, b)
 	if err != nil {
 		return err
 	}
@@ -333,14 +332,6 @@ func readCSVFile(filePath string) ([][]string, error) {
 	return records, nil
 }
 
-func GET(url string) (*http.Response, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
-}
-
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Add("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -382,19 +373,13 @@ func ValidateTimes(start, end string) error {
 	return nil
 }
 
-func BuildURI(base string, query string) string {
+func BuildURI(base string, query ...string) string {
 	var sb strings.Builder
 	sb.WriteString(base)
-	sb.WriteString(query)
+	for _, q := range query {
+		sb.WriteString(q)
+	}
 	return sb.String()
-}
-
-func prepareQuerString(qs string) string {
-	result := strings.Split(qs, "&")
-	symbolPart := strings.Split(result[0], "=")
-	symbolPart[1] = strings.ToUpper(symbolPart[1])
-	result[0] = strings.Join(symbolPart, "=")
-	return strings.Join(result, "&")
 }
 
 // ----------------- REST -----------------
@@ -410,7 +395,45 @@ func prepareQuerString(qs string) string {
    - The limits on the API are based on the IPs, not the API keys.
 */
 
-// TODO: implement
+// Query makes a GET request for the given query string/url with an additional backoff timer.
+// Once a "Retry-After" header is received, the query mechanism will go to sleep.
+func Query(qs string) ([]byte, error) {
+	resp, err := http.Get(qs)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	logger.Debug.Printf("HTTP Status code: %q, X-Mbx-Used-Weight: %q, Retry-After: %q\n",
+		resp.StatusCode, resp.Header.Get("X-Mbx-Used-Weight"),
+		resp.Header.Get("Retry-After"))
+	if resp.StatusCode == http.StatusTooManyRequests {
+		logger.Error.Printf("RETRY AFTER RECEIVED: %q\n", resp.Header.Values("Retry-After"))
+		// Get the backoff timer from respons body
+		timer, err := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		logger.Error.Printf("%v Retry-After received, backing off for: %d\n", resp.StatusCode, timer)
+		backoff(timer)
+		return nil, fmt.Errorf("back off ended")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
+	}
+
+	r, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, err
+}
+
+func backoff(t int64) {
+	time.Sleep(time.Duration(t))
+}
 
 /* The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
 
@@ -446,26 +469,12 @@ GET /api/v3/klines
 */
 
 func getKlines(q string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", prepareQuerString(q))
-
-	resp, err := http.Get(uri)
+	uri := BuildURI("https://data-api.binance.vision/api/v3/klines?", q)
+	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	// Check the HTTP status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
-	}
-
-	// Parse the JSON response
-	r, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
+	return resp, nil
 }
 
 /*
@@ -482,26 +491,12 @@ GET /api/v3/uiKlines
 */
 
 func getUiKlines(q string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", prepareQuerString(q))
-
-	resp, err := http.Get(uri)
+	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
+	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	// Check the HTTP status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
-	}
-
-	// Parse the JSON response
-	r, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
+	return resp, nil
 }
 
 /*
@@ -518,16 +513,9 @@ GET /api/v3/exchangeInfo
 */
 
 func getSymbols() ([]string, error) {
-	// Send a GET request to the Binance API endpoint
-	resp, err := http.Get("https://data-api.binance.vision/api/v3/exchangeInfo")
+	resp, err := Query("https://data-api.binance.vision/api/v3/exchangeInfo")
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Check the HTTP status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
 	}
 
 	// Define a struct to unmarshal the JSON response
@@ -538,7 +526,7 @@ func getSymbols() ([]string, error) {
 	}
 
 	// Parse the JSON response
-	err = json.NewDecoder(resp.Body).Decode(&exchangeInfo)
+	err = json.Unmarshal(resp, &exchangeInfo)
 	if err != nil {
 		return nil, err
 	}
