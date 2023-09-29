@@ -411,7 +411,8 @@ func BuildURI(base string, query ...string) string {
 */
 
 // Query makes a GET request for the given query string/url with an additional backoff timer.
-// Once a "Retry-After" header is received, the query mechanism will go to sleep.
+// Once a "Retry-After" header is received, the query mechanism will go to sleep. The caller
+// has to implement retry mechanism.
 func Query(qs string) ([]byte, error) {
 	resp, err := http.Get(qs)
 	if err != nil {
