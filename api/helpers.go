@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
 )
 
@@ -119,6 +120,9 @@ func PollHistoricalData(storage storage.Storage) {
 			month  time.Month = time.Now().Month()
 		)
 		// Monthly-generated data will be updated on the first day of the following month.
+		// For streaming ZIP files, we could simply wait for the next month's release. However,
+		// if there would be data gaps mid-month for whatever reason, streaming would'nt be able to update the DB.
+		// That is why we make GET requests for 1000 data points each iteration, and gradually update the DB.
 		if eYear <= year && eMonth < month {
 			logger.Info.Println("PARTIAL database update needed")
 			// Next second
@@ -136,6 +140,10 @@ func PollHistoricalData(storage storage.Storage) {
 			logger.Info.Printf("startTime=%v endTime=%v\n", row.OpenTime, row.CloseTime)
 			b, err := Query(uri)
 			if err != nil {
+				if re, ok := err.(*models.RequestError); ok && err != nil {
+					time.Sleep(re.Timer * time.Second)
+					continue
+				}
 				logger.Error.Printf("Error making query: %v\n", err)
 				return
 			}
@@ -147,8 +155,7 @@ func PollHistoricalData(storage storage.Storage) {
 		} else {
 			// Wait 24 hours and start again
 			logger.Info.Println("Database is up to date! Polling is going to sleep...")
-			// time.Sleep(time.Hour * 24)
-			time.Sleep(time.Minute * 2)
+			time.Sleep(time.Hour * 24)
 		}
 	}
 }
@@ -404,9 +411,11 @@ func Query(qs string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	logger.Debug.Printf("HTTP Status code: %q, X-Mbx-Used-Weight: %q, Retry-After: %q\n",
-		resp.StatusCode, resp.Header.Get("X-Mbx-Used-Weight"),
-		resp.Header.Get("Retry-After"))
+	logger.Debug.Printf("HTTP Status code: %v, X-Mbx-Used-Weight: %q, Retry-After: %q\n",
+		resp.StatusCode,
+		resp.Header.Get("X-Mbx-Used-Weight"),
+		resp.Header.Get("Retry-After"),
+	)
 	if resp.StatusCode == http.StatusTooManyRequests {
 		logger.Error.Printf("RETRY AFTER RECEIVED: %q\n", resp.Header.Values("Retry-After"))
 		// Get the backoff timer from respons body
@@ -415,12 +424,13 @@ func Query(qs string) ([]byte, error) {
 			return nil, err
 		}
 		logger.Error.Printf("%v Retry-After received, backing off for: %d\n", resp.StatusCode, timer)
-		backoff(timer)
-		return nil, fmt.Errorf("back off ended")
+
+		rerr := &models.RequestError{Err: errors.New("ErrBackOff"), Timer: time.Duration(timer), Status: resp.StatusCode}
+		return nil, rerr
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP request failed with status code %d", resp.StatusCode)
+		return nil, err
 	}
 
 	r, err := io.ReadAll(resp.Body)
@@ -428,11 +438,7 @@ func Query(qs string) ([]byte, error) {
 		return nil, err
 	}
 
-	return r, err
-}
-
-func backoff(t int64) {
-	time.Sleep(time.Duration(t))
+	return r, nil
 }
 
 /* The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
