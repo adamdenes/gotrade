@@ -137,7 +137,6 @@ func PollHistoricalData(storage storage.Storage) {
 				"&limit=1000",
 			)
 
-			logger.Info.Printf("startTime=%v endTime=%v\n", row.OpenTime, row.CloseTime)
 			b, err := Query(uri)
 			if err != nil {
 				if re, ok := err.(*models.RequestError); ok && err != nil {
@@ -384,7 +383,16 @@ func BuildURI(base string, query ...string) string {
 	var sb strings.Builder
 	sb.WriteString(base)
 	for _, q := range query {
-		sb.WriteString(q)
+		// Check if the query string starts with "symbol="
+		if strings.HasPrefix(q, "symbol=") {
+			parts := strings.Split(q, "&")
+			part := strings.Split(parts[0], "=")
+			part[1] = strings.ToUpper(part[1])
+			parts[0] = strings.Join(part, "=")
+			sb.WriteString(strings.Join(parts, "&"))
+		} else {
+			sb.WriteString(q)
+		}
 	}
 	return sb.String()
 }
@@ -519,7 +527,8 @@ GET /api/v3/exchangeInfo
 */
 
 func getSymbols() ([]string, error) {
-	resp, err := Query("https://data-api.binance.vision/api/v3/exchangeInfo")
+	uri := BuildURI("https://data-api.binance.vision/api/v3/exchangeInfo")
+	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
 	}
