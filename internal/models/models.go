@@ -1,6 +1,8 @@
 package models
 
 type Kline struct {
+	Symbol                string `json:"symbol"`
+	Interval              string `json:"interval"`
 	OpenTime              int64  `json:"open_time"`
 	Open                  string `json:"open"`
 	High                  string `json:"high"`
@@ -13,4 +15,11 @@ type Kline struct {
 	TakerBuyBaseAssetVol  string `json:"taker_buy_volume"`
 	TakerBuyQuoteAssetVol string `json:"taker_buy_quote_volume"`
 	Ignore                string `json:"-"`
+}
+
+type KlineRequest struct {
+	Symbol    string `json:"symbol"`
+	Interval  string `json:"interval"`
+	OpenTime  int64  `json:"open_time"`
+	CloseTime int64  `json:"close_time"`
 }
