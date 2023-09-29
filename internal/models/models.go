@@ -1,5 +1,9 @@
 package models
 
+import (
+	"time"
+)
+
 type Kline struct {
 	Symbol                string `json:"symbol"`
 	Interval              string `json:"interval"`
@@ -22,4 +26,14 @@ type KlineRequest struct {
 	Interval  string `json:"interval"`
 	OpenTime  int64  `json:"open_time"`
 	CloseTime int64  `json:"close_time"`
+}
+
+type RequestError struct {
+	Err    error
+	Status int
+	Timer  time.Duration
+}
+
+func (e *RequestError) Error() string {
+	return e.Err.Error()
 }
