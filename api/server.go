@@ -192,11 +192,6 @@ func (s *Server) cleanUp(
 	}
 }
 
-type CandleSubsciption struct {
-	symbol   string
-	interval string
-}
-
 func inbound[T any](in *T) <-chan *T {
 	out := make(chan *T)
 	go func() {
