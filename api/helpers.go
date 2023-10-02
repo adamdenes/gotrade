@@ -377,10 +377,27 @@ func ValidateSymbol(symbol string) error {
 	return nil
 }
 
-func ValidateTimes(start, end string) error {
-	// Implement validation logic for start and end times here
-	// Return an error if validation fails, or nil if they are valid
-	return nil
+// Return an error if time input validation fails, or nil if they are valid
+func ValidateTimes(start, end string) ([]time.Time, error) {
+	var t []time.Time
+
+	st, err := stringToTime(start)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start time format: %v", err)
+	}
+
+	et, err := stringToTime(end)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end time format: %v", err)
+	}
+
+	t = append(t, st, et)
+	return t, nil
+}
+
+func stringToTime(str string) (time.Time, error) {
+	const layout = "2006-01-02T15:04"
+	return time.Parse(layout, str)
 }
 
 func BuildURI(base string, query ...string) string {
