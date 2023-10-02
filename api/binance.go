@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/models"
 	"nhooyr.io/websocket"
 )
 
@@ -27,7 +28,7 @@ type Binance struct {
 	dataChannel chan []byte
 }
 
-func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
+func NewBinance(ctx context.Context, cs <-chan *models.CandleSubsciption) *Binance {
 	b := &Binance{
 		ctx:         ctx,
 		debugLog:    logger.Debug,
@@ -35,7 +36,11 @@ func NewBinance(ctx context.Context, cs <-chan *CandleSubsciption) *Binance {
 		dataChannel: make(chan []byte, 1),
 	}
 
-	b.debugLog.Printf("Starting binance WebSocket instance on: %v - request: %v\n", &b.ws, b.ctx.Value(RequestIDContextKey))
+	b.debugLog.Printf(
+		"Starting binance WebSocket instance on: %v - request: %v\n",
+		&b.ws,
+		b.ctx.Value(RequestIDContextKey),
+	)
 	go b.handleSymbolSubscriptions(cs)
 	return b
 }
@@ -45,15 +50,18 @@ func (b *Binance) close() {
 	close(b.dataChannel)
 	b.debugLog.Printf("Closing Binance WebSocket connection on: %v\n", &b.ws)
 	b.ws.Close(websocket.StatusNormalClosure, "Closed by client")
-	b.debugLog.Printf("BINANCE connection closed successfully for request: %v\n", b.ctx.Value(RequestIDContextKey))
+	b.debugLog.Printf(
+		"BINANCE connection closed successfully for request: %v\n",
+		b.ctx.Value(RequestIDContextKey),
+	)
 }
 
-func (b *Binance) subscribe(subdata *CandleSubsciption) error {
+func (b *Binance) subscribe(subdata *models.CandleSubsciption) error {
 	header := make(http.Header)
 	header.Add("APCA-API-KEY-ID", os.Getenv(apiKey))
 	header.Add("APCA-API-SECRET-KEY", os.Getenv(apiSecret))
 
-	endpoint := createWsEndpoint(subdata.symbol, subdata.interval)
+	endpoint := createWsEndpoint(subdata.Symbol, subdata.Interval)
 
 	conn, _, err := websocket.Dial(b.ctx, endpoint, &websocket.DialOptions{
 		HTTPHeader: header,
@@ -95,7 +103,7 @@ func (b *Binance) handleWsLoop() {
 	}
 }
 
-func (b *Binance) handleSymbolSubscriptions(cs <-chan *CandleSubsciption) {
+func (b *Binance) handleSymbolSubscriptions(cs <-chan *models.CandleSubsciption) {
 	b.debugLog.Printf("Request/Context processing -> '%v'\n", b.ctx.Value(RequestIDContextKey))
 	if err := b.subscribe(<-cs); err != nil {
 		b.errorLog.Printf("subsciption error: %v\n", err)
