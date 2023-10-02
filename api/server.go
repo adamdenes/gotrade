@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -114,13 +113,22 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Validate start and end times
-		// if err := ValidateTimes(start, end); err != nil {
-		// 	s.errorLog.Println(err)
-		// 	s.clientError(w, http.StatusBadRequest)
-		// 	return
-		// }
+		timeSlice, err := ValidateTimes(start, end)
+		if err != nil {
+			s.errorLog.Println(err)
+			s.clientError(w, http.StatusBadRequest)
+			return
+		}
 
-		fmt.Printf("start=%v, end=%v, type=%T\n", start, end, start)
+		data, err := s.store.FetchData(symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
+		if err != nil {
+			s.errorLog.Println(err)
+			s.clientError(w, http.StatusInternalServerError)
+			return
+		}
+
+		// TODO: make it more efficient. Pulling large dataset is VERY slow
+		WriteJSON(w, http.StatusOK, data)
 	default:
 		s.clientError(w, http.StatusMethodNotAllowed)
 	}
@@ -136,9 +144,6 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Trading pair has to be all uppercase for REST API
-		// symbol := strings.ToUpper(r.FormValue("symbol"))
-		// interval := r.FormValue("interval")
-
 		// GET request to binance
 		resp, err := getUiKlines(r.URL.RawQuery)
 		_ = resp
