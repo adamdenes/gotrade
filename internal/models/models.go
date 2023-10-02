@@ -4,6 +4,11 @@ import (
 	"time"
 )
 
+type CandleSubsciption struct {
+	symbol   string
+	interval string
+}
+
 type Kline struct {
 	Symbol                string `json:"symbol"`
 	Interval              string `json:"interval"`
