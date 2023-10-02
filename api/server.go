@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -84,7 +85,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	// Construct `Binance` with a read-only channel and start processing incoming data
 	// Make the context 'cancellable'
 	ctx, cancel := context.WithCancel(r.Context())
-	cs := &CandleSubsciption{symbol: symbol, interval: interval}
+	cs := &models.CandleSubsciption{Symbol: symbol, Interval: interval}
 	b := NewBinance(ctx, inbound(cs))
 
 	defer s.cleanUp(w, r, conn, cancel)

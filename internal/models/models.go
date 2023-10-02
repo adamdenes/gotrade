@@ -5,8 +5,8 @@ import (
 )
 
 type CandleSubsciption struct {
-	symbol   string
-	interval string
+	Symbol   string
+	Interval string
 }
 
 type Kline struct {
