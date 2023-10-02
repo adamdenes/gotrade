@@ -37,7 +37,6 @@ func NewServer(addr string, db storage.Storage, cache map[string]*template.Templ
 func (s *Server) Run() {
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
 	err := http.ListenAndServe(s.listenAddress, s.routes())
-
 	if err != nil {
 		s.errorLog.Fatalf("error listening on %s: %v", s.listenAddress, err)
 	}
@@ -154,7 +153,12 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket.Conn, cancel context.CancelFunc) {
+func (s *Server) cleanUp(
+	w http.ResponseWriter,
+	r *http.Request,
+	conn *websocket.Conn,
+	cancel context.CancelFunc,
+) {
 	for {
 		msgType, msg, err := conn.Read(r.Context())
 		if err != nil {
@@ -166,7 +170,11 @@ func (s *Server) cleanUp(w http.ResponseWriter, r *http.Request, conn *websocket
 			case websocket.StatusGoingAway: // Closing the tab
 				s.infoLog.Printf("WebSocket going away")
 			default:
-				s.errorLog.Printf("WebSocket read error: %v - %v\n", err, websocket.CloseStatus(err))
+				s.errorLog.Printf(
+					"WebSocket read error: %v - %v\n",
+					err,
+					websocket.CloseStatus(err),
+				)
 			}
 			return
 		}

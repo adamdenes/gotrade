@@ -98,7 +98,6 @@ func PollHistoricalData(storage storage.Storage) {
 	for {
 		// Query SQL for the last close_time
 		row, err := storage.QueryLastRow()
-
 		if err != nil {
 			if err == sql.ErrNoRows {
 				logger.Info.Println("Database is empty. Full update needed.")
@@ -194,7 +193,12 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 }
 
 // Concurrently make HTTP requests for given URLs (zip files), and stream them to the database
-func processMonthlyData(symbol string, year, month int, storage storage.Storage, wg *sync.WaitGroup) {
+func processMonthlyData(
+	symbol string,
+	year, month int,
+	storage storage.Storage,
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
 	uri := BuildURI("https://data.binance.vision/data/spot/monthly/klines/",
 		symbol,
@@ -432,10 +436,17 @@ func Query(qs string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		logger.Error.Printf("%v Retry-After received, backing off for: %d\n", resp.StatusCode, timer)
+		logger.Error.Printf(
+			"%v Retry-After received, backing off for: %d\n",
+			resp.StatusCode,
+			timer,
+		)
 
-		rerr := &models.RequestError{Err: errors.New("ErrBackOff"), Timer: time.Duration(timer), Status: resp.StatusCode}
-		return nil, rerr
+		return nil, &models.RequestError{
+			Err:    errors.New("ErrBackOff"),
+			Timer:  time.Duration(timer),
+			Status: resp.StatusCode,
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
