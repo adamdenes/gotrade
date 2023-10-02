@@ -17,7 +17,7 @@ build:
 	$(GOBUILD) -o ./bin/$(BINARY_NAME) -v cmd/gotrade/main.go
 
 test:
-	$(GOTEST) ./...
+	$(GOTEST) -v ./...
 
 run: build
 	./bin/$(BINARY_NAME)
