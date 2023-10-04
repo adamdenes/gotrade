@@ -1,0 +1,14 @@
+{{ define "backtest" }}
+<div id="data-display">
+<h2>Backtest Configuration</h2>
+    <form id="backtest-form" action="/fetch-data" method="POST">
+        <label for="symbol">Trading Pair:</label>
+        <input type="text" id="symbol" name="symbol" placeholder="Enter trading pair" required>
+        <label for="open_time">Start Time:</label>
+        <input type="datetime-local" id="open_time" name="open_time" required>
+        <label for="close_time">End Time:</label>
+        <input type="datetime-local" id="close_time" name="close_time" required>
+        <button id="backtest-btn" type=button>Submit</button>
+    </form>
+</div>
+{{ end }}
