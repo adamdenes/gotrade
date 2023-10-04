@@ -14,50 +14,26 @@ let chart = LightweightCharts.createChart("chart-container", {
 
 let candleSeries = chart.addCandlestickSeries();
 
-// Get a reference to the search button element
-const searchButton = document.getElementById("search-btn");
+document.addEventListener("DOMContentLoaded", function () {
+  // Get a reference to the search button element
+  const searchButton = document.getElementById("search-btn");
+  const backtestButton = document.getElementById("backtest-btn");
+  // I need this hack otherwise doesn't work
+  backtestButton.setAttribute("onclick", "getBacktest()");
 
-// Add a click event listener to the search button
-searchButton.addEventListener("click", function (event) {
-  event.preventDefault();
+  chart.timeScale().fitContent();
 
-  // Reset the CandleSeries before loading data again
-  candleSeries.setData([]);
+  // Add a click event listener to the search button
+  searchButton.addEventListener("click", function (event) {
+    event.preventDefault();
+    getLive();
+  });
 
-  // Get the selected trading pair and interval from the form
-  const symbol = document.getElementById("symbol-chart").value;
-  const interval = document.getElementById("interval-chart").value;
-
-  // klines?symbol=BNBBTC&interval=1m&limit=1000
-  fetch("/klines/live", {
-    method: "POST",
-    body: JSON.stringify({
-      symbol: symbol,
-      interval: interval,
-    }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      const historicalData = data.map((d) => {
-        return {
-          time: d[0] / 1000,
-          open: parseFloat(d[1]),
-          high: parseFloat(d[2]),
-          low: parseFloat(d[3]),
-          close: parseFloat(d[4]),
-        };
-      });
-      candleSeries.setData(historicalData);
-    })
-    .catch((err) => console.log("error in fetch:", err));
-
-  createWebSocketConnection(symbol, interval);
+  backtestButton.addEventListener("click", function (event) {
+    event.preventDefault();
+    getBacktest();
+  });
 });
-
-chart.timeScale().fitContent();
 
 // Function to create a WebSocket connection
 function createWebSocketConnection(symbol, interval) {
@@ -117,41 +93,78 @@ function createWebSocketConnection(symbol, interval) {
   };
 }
 
-const backtestButton = document.getElementById("backtest-btn");
-
-backtestButton.addEventListener("submit", function (event) {
-  event.preventDefault();
-
-  const symbol = document.querySelector("#symbol").value;
-  const startTime = document.querySelector("#open_time").value;
-  const endTime = document.querySelector("#close_time").value;
-
-  console.log(symbol, startTime, endTime);
-
+function getLive() {
+  // Reset the CandleSeries before loading data again
   candleSeries.setData([]);
 
-  const requestData = {
-    symbol: symbol,
-    interval: "",
-    open_time: new Date(startTime).getTime(),
-    close_time: new Date(endTime).getTime(),
-  };
-  console.log(requestData);
+  // Get the selected trading pair and interval from the form
+  const symbol = document.getElementById("symbol-chart").value;
+  const interval = document.getElementById("interval-chart").value;
 
-  fetch("/backtest", {
+  // klines?symbol=BNBBTC&interval=1m&limit=1000
+  fetch("/klines/live", {
     method: "POST",
-    body: JSON.stringify({ requestData }),
+    body: JSON.stringify({
+      symbol: symbol,
+      interval: interval,
+    }),
     headers: {
       "Content-Type": "application/json",
     },
   })
-    .then(function (response) {
-      return response.json();
-    })
+    .then((response) => response.json())
     .then((data) => {
-      console.log(data);
+      const historicalData = data.map((d) => {
+        return {
+          time: d[0] / 1000,
+          open: parseFloat(d[1]),
+          high: parseFloat(d[2]),
+          low: parseFloat(d[3]),
+          close: parseFloat(d[4]),
+        };
+      });
+      candleSeries.setData(historicalData);
+    })
+    .catch((err) => console.log("error in fetch:", err));
+
+  createWebSocketConnection(symbol, interval);
+}
+
+function getBacktest() {
+  console.log("I'VE BEEN CLICKED");
+  const symbol = document.querySelector("#symbol").value;
+  const startTime = document.querySelector("#open_time").value;
+  const endTime = document.querySelector("#close_time").value;
+
+  candleSeries.setData([]);
+
+  fetch("/fetch-data", {
+    method: "POST",
+    body: JSON.stringify({
+      symbol: symbol,
+      interval: "",
+      open_time: new Date(startTime).getTime(),
+      close_time: new Date(endTime).getTime(),
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      const historicalData = data.map((d) => {
+        return {
+          time: d[0] / 1000,
+          open: parseFloat(d[1]),
+          high: parseFloat(d[2]),
+          low: parseFloat(d[3]),
+          close: parseFloat(d[4]),
+        };
+      });
+      console.log(historicalData);
+      candleSeries.setData(historicalData);
     })
     .catch(function (error) {
       console.error("Error:", error);
     });
-});
+}
