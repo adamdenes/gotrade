@@ -1,6 +1,8 @@
 package models
 
 import (
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -29,8 +31,27 @@ type Kline struct {
 type KlineRequest struct {
 	Symbol    string `json:"symbol"`
 	Interval  string `json:"interval"`
-	OpenTime  int64  `json:"open_time"`
-	CloseTime int64  `json:"close_time"`
+	OpenTime  int64  `json:"open_time,omitempty"`
+	CloseTime int64  `json:"close_time,omitempty"`
+}
+
+func (kr *KlineRequest) String() string {
+	var parts []string
+
+	if kr.Symbol != "" {
+		parts = append(parts, fmt.Sprintf("symbol=%s", strings.ToUpper(kr.Symbol)))
+	}
+	if kr.Interval != "" {
+		parts = append(parts, fmt.Sprintf("interval=%s", kr.Interval))
+	}
+	if kr.OpenTime != 0 {
+		parts = append(parts, fmt.Sprintf("startTime=%d", kr.OpenTime))
+	}
+	if kr.CloseTime != 0 {
+		parts = append(parts, fmt.Sprintf("endTime=%d", kr.CloseTime))
+	}
+
+	return fmt.Sprintf("%s", strings.Join(parts, "&"))
 }
 
 type RequestError struct {
