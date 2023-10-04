@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
@@ -120,15 +121,50 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		data, err := s.store.FetchData(symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
-		if err != nil {
-			s.errorLog.Println(err)
-			s.clientError(w, http.StatusInternalServerError)
-			return
+		// Sending chunked data to avoid transferring large files
+		w.Header().Set("Transfer-Encoding", "chunked")
+
+		startChunk := timeSlice[0].UnixMilli()
+		endChunk := timeSlice[1].UnixMilli()
+
+		next := func() ([]*models.Kline, error) {
+			nextChunk := startChunk + 860000
+
+			if endChunk-startChunk <= 860000 {
+				s.infoLog.Println("changing next to end")
+				nextChunk = endChunk
+			}
+			s.infoLog.Printf("start=%v, next=%v, end=%v", startChunk, nextChunk, endChunk)
+			chunk, err := s.store.FetchData(
+				symbol,
+				startChunk,
+				nextChunk,
+			)
+			if err != nil {
+				return nil, err
+			}
+			startChunk = nextChunk
+
+			return chunk, nil
+		}
+
+		for {
+			klines, err := next()
+			if err != nil {
+				s.serverError(w, err)
+				break
+			}
+			if len(klines) == 0 {
+				s.errorLog.Println("No more chunks to be received..., endtime was ->", endChunk)
+				break
+			}
+			if err := WriteJSON(w, http.StatusOK, klines); err != nil {
+				s.serverError(w, err)
+			}
 		}
 
 		// TODO: make it more efficient. Pulling large dataset is VERY slow
-		WriteJSON(w, http.StatusOK, data)
+		// WriteJSON(w, http.StatusOK, data)
 	default:
 		s.clientError(w, http.StatusMethodNotAllowed)
 	}
@@ -143,10 +179,16 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		kr := &models.KlineRequest{}
+		err := json.NewDecoder(r.Body).Decode(kr)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+
 		// Trading pair has to be all uppercase for REST API
 		// GET request to binance
-		resp, err := getUiKlines(r.URL.RawQuery)
-		_ = resp
+		resp, err := getUiKlines(kr.String())
 		if err != nil {
 			s.serverError(w, err)
 		}

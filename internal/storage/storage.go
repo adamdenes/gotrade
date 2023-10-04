@@ -357,6 +357,8 @@ func (p *PostgresDB) QueryLastRow() (*models.KlineRequest, error) {
 }
 
 func (p *PostgresDB) FetchData(symbol string, startTime, endTime int64) ([]*models.Kline, error) {
+	start := time.Now()
+
 	query := `SELECT 
         symbol, 
         interval, 
@@ -396,5 +398,6 @@ func (p *PostgresDB) FetchData(symbol string, startTime, endTime int64) ([]*mode
 		return nil, err
 	}
 
+	logger.Info.Printf("Finished streaming data to client, it took %v\n", time.Since(start))
 	return klines, nil
 }
