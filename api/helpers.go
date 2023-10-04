@@ -41,6 +41,7 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 		file := []string{
 			"./web/templates/base.tmpl.html",
 			"./web/templates/pages/chart.tmpl.html",
+			"./web/templates/pages/backtest.tmpl.html",
 			"./web/templates/partials/header.tmpl.html",
 			"./web/templates/partials/script.tmpl.html",
 			"./web/templates/partials/search_bar.tmpl.html",
@@ -95,6 +96,8 @@ func (s *Server) notFound(w http.ResponseWriter) {
 func PollHistoricalData(storage storage.Storage) {
 	var startDate, endDate time.Time
 
+	printCount := 0
+
 	for {
 		// Query SQL for the last close_time
 		row, err := storage.QueryLastRow()
@@ -113,17 +116,32 @@ func PollHistoricalData(storage storage.Storage) {
 
 		epoch := time.UnixMilli(row.CloseTime)
 		var (
-			eYear  int        = epoch.Year()
-			eMonth time.Month = epoch.Month()
-			year   int        = time.Now().Year()
-			month  time.Month = time.Now().Month()
+			eYear    int        = epoch.Year()
+			eMonth   time.Month = epoch.Month()
+			eDay     int        = epoch.Day()
+			year     int        = time.Now().Year()
+			month    time.Month = time.Now().Month()
+			firstDay int        = time.Date(year, month, 1, 0, 0, 0, 0, time.Local).Day()
 		)
 		// Monthly-generated data will be updated on the first day of the following month.
 		// For streaming ZIP files, we could simply wait for the next month's release. However,
 		// if there would be data gaps mid-month for whatever reason, streaming would'nt be able to update the DB.
 		// That is why we make GET requests for 1000 data points each iteration, and gradually update the DB.
+		logger.Info.Printf(
+			"%v %v.%02d <-> %v %v.%02d\n",
+			eYear,
+			eMonth,
+			eDay,
+			year,
+			month,
+			firstDay,
+		)
 		if eYear <= year && eMonth < month {
-			logger.Info.Println("PARTIAL database update needed")
+			if printCount == 1 {
+				logger.Info.Println("PARTIAL database update needed")
+			}
+
+			printCount++
 			// Next second
 			row.OpenTime = row.CloseTime + 1
 			row.CloseTime = row.OpenTime + 999
@@ -441,12 +459,12 @@ func Query(qs string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	logger.Debug.Printf("HTTP Status code: %v, X-Mbx-Used-Weight: %q, Retry-After: %q\n",
-		resp.StatusCode,
-		resp.Header.Get("X-Mbx-Used-Weight"),
-		resp.Header.Get("Retry-After"),
-	)
 	if resp.StatusCode == http.StatusTooManyRequests {
+		logger.Debug.Printf("HTTP Status code: %v, X-Mbx-Used-Weight: %q, Retry-After: %q\n",
+			resp.StatusCode,
+			resp.Header.Get("X-Mbx-Used-Weight"),
+			resp.Header.Get("Retry-After"),
+		)
 		logger.Error.Printf("RETRY AFTER RECEIVED: %q\n", resp.Header.Values("Retry-After"))
 		// Get the backoff timer from respons body
 		timer, err := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 64)
@@ -511,8 +529,8 @@ GET /api/v3/klines
     If startTime and endTime are not sent, the most recent klines are returned.
 */
 
-func getKlines(q string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/klines?", q)
+func getKlines(q ...string) ([]byte, error) {
+	uri := BuildURI("https://data-api.binance.vision/api/v3/klines?", q...)
 	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
@@ -533,8 +551,8 @@ GET /api/v3/uiKlines
 	limit 		INT 	NO 	Default 500; max 1000.
 */
 
-func getUiKlines(q string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q)
+func getUiKlines(q ...string) ([]byte, error) {
+	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q...)
 	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
