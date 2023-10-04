@@ -19,7 +19,7 @@ const (
 func (s *Server) secureHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().
-			Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self' unpkg.com;")
+			Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self' 'unsafe-inline' unpkg.com;")
 		w.Header().Set("Referrer-Policy", "origin-when-cross-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "deny")
