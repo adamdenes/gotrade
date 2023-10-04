@@ -30,7 +30,7 @@ type Kline struct {
 
 type KlineRequest struct {
 	Symbol    string `json:"symbol"`
-	Interval  string `json:"interval"`
+	Interval  string `json:"interval,omitempty"`
 	OpenTime  int64  `json:"open_time,omitempty"`
 	CloseTime int64  `json:"close_time,omitempty"`
 }

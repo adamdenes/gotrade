@@ -1,15 +1,15 @@
 let socket;
 
 let chart = LightweightCharts.createChart("chart-container", {
-	// width: 1200,
-    // height: 600,
-	crosshair: {
-		mode: LightweightCharts.CrosshairMode.Normal,
-	},
-    timeScale: {
-        timeVisible: true,
-        secondsVisible: true
-    }
+  // width: 1200,
+  // height: 600,
+  crosshair: {
+    mode: LightweightCharts.CrosshairMode.Normal,
+  },
+  timeScale: {
+    timeVisible: true,
+    secondsVisible: true,
+  },
 });
 
 let candleSeries = chart.addCandlestickSeries();
@@ -18,92 +18,140 @@ let candleSeries = chart.addCandlestickSeries();
 const searchButton = document.getElementById("search-btn");
 
 // Add a click event listener to the search button
-searchButton.addEventListener("click", function(event) {
-    event.preventDefault();
+searchButton.addEventListener("click", function (event) {
+  event.preventDefault();
 
-    // Reset the CandleSeries before loading data again
-    candleSeries.setData([])
+  // Reset the CandleSeries before loading data again
+  candleSeries.setData([]);
 
-    // Get the selected trading pair and interval from the form
-    const symbol = document.getElementById("symbol").value;
-    const interval = document.getElementById("interval").value;
+  // Get the selected trading pair and interval from the form
+  const symbol = document.getElementById("symbol-chart").value;
+  const interval = document.getElementById("interval-chart").value;
 
-    // klines?symbol=BNBBTC&interval=1m&limit=1000
-    fetch(`http://localhost:4000/klines/live?symbol=${symbol}&interval=${interval}`, {
-        method: 'POST',
-        body: JSON.stringify({ symbol, interval }),
-        headers: {'Content-Type': 'application/json'},
+  // klines?symbol=BNBBTC&interval=1m&limit=1000
+  fetch("/klines/live", {
+    method: "POST",
+    body: JSON.stringify({
+      symbol: symbol,
+      interval: interval,
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      const historicalData = data.map((d) => {
+        return {
+          time: d[0] / 1000,
+          open: parseFloat(d[1]),
+          high: parseFloat(d[2]),
+          low: parseFloat(d[3]),
+          close: parseFloat(d[4]),
+        };
+      });
+      candleSeries.setData(historicalData);
     })
-        .then(response => response.json())
-        .then(data => {
-            const historicalData = data.map(d => {
-                return {
-                    time:  d[0] / 1000,
-                    open:  parseFloat(d[1]),
-                    high:  parseFloat(d[2]),
-                    low:   parseFloat(d[3]),
-                    close: parseFloat(d[4])
-                }
-            });
-            candleSeries.setData(historicalData)
-        })
-        .catch(err => console.log("error in fetch:", err))
+    .catch((err) => console.log("error in fetch:", err));
 
-        createWebSocketConnection(symbol, interval)
+  createWebSocketConnection(symbol, interval);
 });
-    
+
 chart.timeScale().fitContent();
 
 // Function to create a WebSocket connection
 function createWebSocketConnection(symbol, interval) {
-    // Close the existing WebSocket connection, if it exists
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        console.log("WebSocket stream already open. Closing it...")
-        socket.send("CLOSE")
-        socket.close();
+  // Close the existing WebSocket connection, if it exists
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    console.log("WebSocket stream already open. Closing it...");
+    socket.send("CLOSE");
+    socket.close();
+  }
+  // Create a WebSocket connection
+  socket = new WebSocket(
+    `ws://localhost:4000/ws?symbol=${symbol}&interval=${interval}`,
+  );
+
+  // Event handler for when the connection is opened
+  socket.onopen = function (event) {
+    console.log("WebSocket connection opened.");
+  };
+
+  // Event handler for when the connection is closed
+  socket.onclose = function (event) {
+    if (event.wasClean) {
+      console.log(
+        `WebSocket connection closed cleanly, code=${event.code}, reason=${event.reason}`,
+      );
+    } else {
+      console.error("WebSocket connection abruptly closed.");
     }
-    // Create a WebSocket connection
-    socket = new WebSocket(`ws://localhost:4000/ws?symbol=${symbol}&interval=${interval}`);
+  };
 
-    // Event handler for when the connection is opened
-    socket.onopen = function(event) {
-        console.log("WebSocket connection opened.");
-    };
+  // Event handler for WebSocket errors
+  socket.onerror = function (error) {
+    console.error("WebSocket error:", error);
+  };
 
-    // Event handler for when the connection is closed
-    socket.onclose = function(event) {
-        if (event.wasClean) {
-            console.log(`WebSocket connection closed cleanly, code=${event.code}, reason=${event.reason}`);
-        } else {
-            console.error("WebSocket connection abruptly closed.");
-        }
-    };
+  // Event handler for when a message is received from the server
+  socket.onmessage = function (event) {
+    // console.log("Message received from server:", event.data);
+    // Handle the received message here
 
-    // Event handler for WebSocket errors
-    socket.onerror = function(error) {
-        console.error("WebSocket error:", error);
-    };
+    // Parse JSON String to JavaScript object
+    // have to parse 2x due to JSON string
+    const jsonString = JSON.parse(event.data);
+    const jsonObject = JSON.parse(jsonString);
 
-    // Event handler for when a message is received from the server
-    socket.onmessage = function(event) {
-        // console.log("Message received from server:", event.data);
-        // Handle the received message here
+    // Kline data is in 'data': {k: ...}' object
+    const candleStick = jsonObject.data.k;
+    console.log(candleStick);
 
-        // Parse JSON String to JavaScript object
-        // have to parse 2x due to JSON string 
-        const jsonString = JSON.parse(event.data)
-        const jsonObject = JSON.parse(jsonString);
+    candleSeries.update({
+      time: candleStick.t / 1000,
+      open: candleStick.o,
+      high: candleStick.h,
+      low: candleStick.l,
+      close: candleStick.c,
+    });
+  };
+}
 
-        // Kline data is in 'data': {k: ...}' object
-        const candleStick = jsonObject.data.k
-        console.log(candleStick)
+const backtestButton = document.getElementById("backtest-btn");
 
-        candleSeries.update({
-            time:  candleStick.t / 1000,
-            open:  candleStick.o,
-            high:  candleStick.h,
-            low:   candleStick.l,
-            close: candleStick.c
-        })
-    };
-};
+backtestButton.addEventListener("submit", function (event) {
+  event.preventDefault();
+
+  const symbol = document.querySelector("#symbol").value;
+  const startTime = document.querySelector("#open_time").value;
+  const endTime = document.querySelector("#close_time").value;
+
+  console.log(symbol, startTime, endTime);
+
+  candleSeries.setData([]);
+
+  const requestData = {
+    symbol: symbol,
+    interval: "",
+    open_time: new Date(startTime).getTime(),
+    close_time: new Date(endTime).getTime(),
+  };
+  console.log(requestData);
+
+  fetch("/backtest", {
+    method: "POST",
+    body: JSON.stringify({ requestData }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  })
+    .then(function (response) {
+      return response.json();
+    })
+    .then((data) => {
+      console.log(data);
+    })
+    .catch(function (error) {
+      console.error("Error:", error);
+    });
+});

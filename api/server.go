@@ -102,9 +102,9 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		symbol := strings.ToUpper(r.FormValue("symbol"))
-		start := r.FormValue("start-time")
-		end := r.FormValue("end-time")
+		symbol := strings.ToUpper(r.PostFormValue("symbol"))
+		ot := r.PostFormValue("open_time")
+		ct := r.PostFormValue("close_time")
 
 		// Validate symbol
 		if err := ValidateSymbol(symbol); err != nil {
@@ -114,7 +114,7 @@ func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Validate start and end times
-		timeSlice, err := ValidateTimes(start, end)
+		timeSlice, err := ValidateTimes(ot, ct)
 		if err != nil {
 			s.errorLog.Println(err)
 			s.clientError(w, http.StatusBadRequest)
