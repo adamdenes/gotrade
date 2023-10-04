@@ -43,6 +43,7 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 			"./web/templates/pages/chart.tmpl.html",
 			"./web/templates/pages/backtest.tmpl.html",
 			"./web/templates/partials/header.tmpl.html",
+			"./web/templates/partials/bt.tmpl.html",
 			"./web/templates/partials/script.tmpl.html",
 			"./web/templates/partials/search_bar.tmpl.html",
 			"./web/templates/partials/dropdown_tf.tmpl.html",
@@ -361,15 +362,16 @@ func readCSVFile(filePath string) ([][]string, error) {
 }
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(status)
-
 	// []byte slices are not converting correctly, so I need to type switch
 	switch data := v.(type) {
 	case []byte:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
 		_, err := w.Write(data)
 		return err
 	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
 		return json.NewEncoder(w).Encode(data)
 	}
 }
@@ -414,7 +416,17 @@ func ValidateTimes(start, end string) ([]time.Time, error) {
 }
 
 func stringToTime(str string) (time.Time, error) {
-	const layout = "2006-01-02T15:04"
+	const layout = "2006-01-02T15:04:00"
+	if _, err := strconv.Atoi(str); err == nil {
+		// Convert string to int64
+		unixTime, err := strconv.ParseInt(str, 10, 64)
+		if err != nil {
+			return time.Time{}, err
+		}
+		// Convert Unix timestamp to time.Time
+		fmt.Println(time.UnixMilli(unixTime))
+		return time.UnixMilli(unixTime), nil
+	}
 	return time.Parse(layout, str)
 }
 
