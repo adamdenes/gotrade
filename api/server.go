@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -53,6 +54,7 @@ func (s *Server) routes() http.Handler {
 	s.router.HandleFunc("/ws", s.websocketClientHandler)
 	s.router.HandleFunc("/backtest", s.klinesHandler)
 	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
+	s.router.HandleFunc("/fetch-data", s.fetchDataHandler)
 
 	// Chain middlewares here
 	return s.recoverPanic(s.logRequest(s.secureHeader(s.tagRequest(s.router))))
@@ -92,82 +94,97 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	go receiver[[]byte](r.Context(), b.dataChannel, conn)
 }
 
-func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.render(w, http.StatusOK, "backtest.tmpl.html", nil)
-	case http.MethodPost:
-		if err := r.ParseForm(); err != nil {
-			s.clientError(w, http.StatusBadRequest)
-			return
-		}
-
-		symbol := strings.ToUpper(r.PostFormValue("symbol"))
-		ot := r.PostFormValue("open_time")
-		ct := r.PostFormValue("close_time")
-
-		// Validate symbol
-		if err := ValidateSymbol(symbol); err != nil {
-			s.errorLog.Println(err)
-			s.clientError(w, http.StatusBadRequest)
-			return
-		}
-
-		// Validate start and end times
-		timeSlice, err := ValidateTimes(ot, ct)
-		if err != nil {
-			s.errorLog.Println(err)
-			s.clientError(w, http.StatusBadRequest)
-			return
-		}
-
-		// Sending chunked data to avoid transferring large files
-		w.Header().Set("Transfer-Encoding", "chunked")
-
-		startChunk := timeSlice[0].UnixMilli()
-		endChunk := timeSlice[1].UnixMilli()
-
-		next := func() ([]*models.Kline, error) {
-			nextChunk := startChunk + 860000
-
-			if endChunk-startChunk <= 860000 {
-				s.infoLog.Println("changing next to end")
-				nextChunk = endChunk
-			}
-			s.infoLog.Printf("start=%v, next=%v, end=%v", startChunk, nextChunk, endChunk)
-			chunk, err := s.store.FetchData(
-				symbol,
-				startChunk,
-				nextChunk,
-			)
-			if err != nil {
-				return nil, err
-			}
-			startChunk = nextChunk
-
-			return chunk, nil
-		}
-
-		for {
-			klines, err := next()
-			if err != nil {
-				s.serverError(w, err)
-				break
-			}
-			if len(klines) == 0 {
-				s.errorLog.Println("No more chunks to be received..., endtime was ->", endChunk)
-				break
-			}
-			if err := WriteJSON(w, http.StatusOK, klines); err != nil {
-				s.serverError(w, err)
-			}
-		}
-
-		// TODO: make it more efficient. Pulling large dataset is VERY slow
-		// WriteJSON(w, http.StatusOK, data)
-	default:
+func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		s.clientError(w, http.StatusMethodNotAllowed)
+		return
 	}
+
+	kr := &models.KlineRequest{}
+	if err := json.NewDecoder(r.Body).Decode(&kr); err != nil {
+		s.errorLog.Println(err)
+		s.clientError(w, http.StatusBadRequest)
+		return
+	}
+	fmt.Printf("%+v\n", kr)
+
+	// Validate symbol
+	if err := ValidateSymbol(kr.Symbol); err != nil {
+		s.errorLog.Println(err)
+		s.clientError(w, http.StatusBadRequest)
+		return
+	}
+
+	timeSlice, err := ValidateTimes(
+		fmt.Sprintf("%d", kr.OpenTime),
+		fmt.Sprintf("%d", kr.CloseTime),
+	)
+	if err != nil {
+		s.errorLog.Println(err)
+		s.clientError(w, http.StatusBadRequest)
+	}
+
+	resp, err := s.fetchData(kr.Symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+
+	if err := WriteJSON(w, http.StatusOK, resp); err != nil {
+		s.serverError(w, err)
+		return
+	}
+
+	// Sending chunked data to avoid transferring large files
+	// w.Header().Set("Transfer-Encoding", "chunked")
+
+	// startChunk := timeSlice[0].UnixMilli()
+	// endChunk := timeSlice[1].UnixMilli()
+	//
+	// next := func() ([]*models.Kline, error) {
+	// 	nextChunk := startChunk + 860000
+	//
+	// 	if endChunk-startChunk <= 860000 {
+	// 		s.infoLog.Println("changing next to end")
+	// 		nextChunk = endChunk
+	// 	}
+	// 	s.infoLog.Printf("start=%v, next=%v, end=%v", startChunk, nextChunk, endChunk)
+	// 	chunk, err := s.store.FetchData(
+	// 		kr.Symbol,
+	// 		startChunk,
+	// 		nextChunk,
+	// 	)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	startChunk = nextChunk
+	//
+	// 	return chunk, nil
+	// }
+	//
+	// for {
+	// 	klines, err := next()
+	// 	if err != nil {
+	// 		s.serverError(w, err)
+	// 		break
+	// 	}
+	// 	if len(klines) == 0 {
+	// 		s.errorLog.Println("No more chunks to be received..., endtime was ->", endChunk)
+	// 		break
+	// 	}
+	// 	if err := WriteJSON(w, http.StatusOK, klines); err != nil {
+	// 		s.serverError(w, err)
+	// 	}
+	// }
+}
+
+func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.clientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.render(w, http.StatusOK, "backtest.tmpl.html", nil)
 }
 
 func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
@@ -191,10 +208,12 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 		resp, err := getUiKlines(kr.String())
 		if err != nil {
 			s.serverError(w, err)
+			return
 		}
 
 		if err := WriteJSON(w, http.StatusOK, resp); err != nil {
 			s.serverError(w, err)
+			return
 		}
 	} else {
 		s.notFound(w)
@@ -258,4 +277,30 @@ func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websock
 			continue
 		}
 	}
+}
+
+func (s *Server) fetchData(symbol string, start int64, end int64) ([][]interface{}, error) {
+	klines, err := s.store.FetchData(symbol, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	var result [][]interface{}
+	for _, k := range klines {
+		item := []interface{}{
+			k.OpenTime,
+			k.Open,
+			k.High,
+			k.Low,
+			k.Close,
+			k.Volume,
+			k.CloseTime,
+			k.QuoteAssetVolume,
+			k.NumberOfTrades,
+			k.TakerBuyBaseAssetVol,
+			k.TakerBuyQuoteAssetVol,
+		}
+		result = append(result, item)
+	}
+	return result, nil
 }
