@@ -99,15 +99,12 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		s.clientError(w, http.StatusMethodNotAllowed)
 		return
 	}
-
 	kr := &models.KlineRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&kr); err != nil {
 		s.errorLog.Println(err)
 		s.clientError(w, http.StatusBadRequest)
 		return
 	}
-	fmt.Printf("%+v\n", kr)
-
 	// Validate symbol
 	if err := ValidateSymbol(kr.Symbol); err != nil {
 		s.errorLog.Println(err)
@@ -119,22 +116,27 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("%d", kr.OpenTime),
 		fmt.Sprintf("%d", kr.CloseTime),
 	)
-	if err != nil {
-		s.errorLog.Println(err)
-		s.clientError(w, http.StatusBadRequest)
-	}
 
-	resp, err := s.fetchData(kr.Symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
-	if err != nil {
-		s.serverError(w, err)
+	// Check if client is still connected.
+	select {
+	case <-r.Context().Done():
+		s.errorLog.Println("Client disconnected early.")
 		return
+	default:
+		if err != nil {
+			s.errorLog.Println(err)
+			s.clientError(w, http.StatusBadRequest)
+		}
+		resp, err := s.fetchData(kr.Symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		if err := WriteJSON(w, http.StatusOK, resp); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
-
-	if err := WriteJSON(w, http.StatusOK, resp); err != nil {
-		s.serverError(w, err)
-		return
-	}
-
 	// Sending chunked data to avoid transferring large files
 	// w.Header().Set("Transfer-Encoding", "chunked")
 
@@ -202,27 +204,33 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, err)
 			return
 		}
-
 		if err := ValidateSymbol(kr.Symbol); err != nil {
 			s.errorLog.Println(err)
 			s.clientError(w, http.StatusBadRequest)
 			return
 		}
-
-		// Trading pair has to be all uppercase for REST API
-		// GET request to binance
-		resp, err := getUiKlines(kr.String())
-		if err != nil {
-			s.serverError(w, err)
+		// Check if client is still connected.
+		select {
+		case <-r.Context().Done():
+			s.errorLog.Println("Client disconnected early.")
 			return
-		}
+		default:
+			// Trading pair has to be all uppercase for REST API
+			// GET request to binance
+			resp, err := getUiKlines(kr.String())
+			if err != nil {
+				s.serverError(w, err)
+				return
+			}
 
-		if err := WriteJSON(w, http.StatusOK, resp); err != nil {
-			s.serverError(w, err)
-			return
+			if err := WriteJSON(w, http.StatusOK, resp); err != nil {
+				s.serverError(w, err)
+				return
+			}
 		}
 	} else {
-		s.notFound(w)
+		s.clientError(w, http.StatusMethodNotAllowed)
+		return
 	}
 }
 
@@ -309,4 +317,13 @@ func (s *Server) fetchData(symbol string, start int64, end int64) ([][]interface
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func clientStillConnected(r *http.Request) bool {
+	select {
+	case <-r.Context().Done():
+		return false
+	default:
+		return true
+	}
 }
