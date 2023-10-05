@@ -18,21 +18,11 @@ document.addEventListener("DOMContentLoaded", function () {
   // Get a reference to the search button element
   const searchButton = document.getElementById("search-btn");
   const backtestButton = document.getElementById("backtest-btn");
-  // I need this hack otherwise doesn't work
-  backtestButton.setAttribute("onclick", "getBacktest()");
 
   chart.timeScale().fitContent();
 
-  // Add a click event listener to the search button
-  searchButton.addEventListener("click", function (event) {
-    event.preventDefault();
-    getLive();
-  });
-
-  backtestButton.addEventListener("click", function (event) {
-    event.preventDefault();
-    getBacktest();
-  });
+  searchButton.addEventListener("click", getLive);
+  backtestButton.addEventListener("click", getBacktest);
 });
 
 // Function to create a WebSocket connection
@@ -40,8 +30,8 @@ function createWebSocketConnection(symbol, interval) {
   // Close the existing WebSocket connection, if it exists
   if (socket && socket.readyState === WebSocket.OPEN) {
     console.log("WebSocket stream already open. Closing it...");
-    socket.send("CLOSE");
-    socket.close();
+    closeWebSocketConnection(socket);
+    return;
   }
   // Create a WebSocket connection
   socket = new WebSocket(
@@ -93,7 +83,13 @@ function createWebSocketConnection(symbol, interval) {
   };
 }
 
-function getLive() {
+function closeWebSocketConnection(socket) {
+  socket.send("CLOSE");
+  socket.close();
+}
+
+function getLive(event) {
+  event.preventDefault();
   // Reset the CandleSeries before loading data again
   candleSeries.setData([]);
 
@@ -112,7 +108,12 @@ function getLive() {
       "Content-Type": "application/json",
     },
   })
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      return response.json();
+    })
     .then((data) => {
       const historicalData = data.map((d) => {
         return {
@@ -124,14 +125,19 @@ function getLive() {
         };
       });
       candleSeries.setData(historicalData);
+      createWebSocketConnection(symbol, interval);
     })
-    .catch((err) => console.log("error in fetch:", err));
-
-  createWebSocketConnection(symbol, interval);
+    .catch((err) => {
+      console.error("error in fetch:", err);
+      // Close the ongoing WebSocket connection, if any
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        closeWebSocketConnection(socket);
+      }
+    });
 }
 
-function getBacktest() {
-  console.log("I'VE BEEN CLICKED");
+function getBacktest(event) {
+  event.preventDefault();
   const symbol = document.querySelector("#symbol").value;
   const startTime = document.querySelector("#open_time").value;
   const endTime = document.querySelector("#close_time").value;
