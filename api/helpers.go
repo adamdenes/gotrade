@@ -377,6 +377,10 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 func ValidateSymbol(symbol string) error {
+	if symbol == "" {
+		return fmt.Errorf("no symbol provided: %q", symbol)
+	}
+
 	symbols, err := getSymbols()
 	if err != nil {
 		return err
