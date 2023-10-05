@@ -22,7 +22,7 @@ type Storage interface {
 	DeleteCandle(int) error
 	UpdateCandle(*models.Kline) error
 	GetCandleByOpenTime(int) (*models.Kline, error)
-	FetchData(string, int64, int64) ([]*models.Kline, error)
+	FetchData(string, int64, int64) ([]*models.KlineSimple, error)
 	Copy([]byte, *string, *string) error
 	Stream(*zip.Reader) error
 	QueryLastRow() (*models.KlineRequest, error)
@@ -356,26 +356,41 @@ func (p *PostgresDB) QueryLastRow() (*models.KlineRequest, error) {
 	return d, nil
 }
 
-func (p *PostgresDB) FetchData(symbol string, startTime, endTime int64) ([]*models.Kline, error) {
+func (p *PostgresDB) FetchData(
+	symbol string,
+	startTime, endTime int64,
+) ([]*models.KlineSimple, error) {
 	start := time.Now()
 
+	// Only query what is used to reduce overhead
 	query := `SELECT 
-        symbol, 
-        interval, 
         open_time, 
         open, 
         high, 
         low, 
         close, 
-        volume, 
-        close_time, 
-        quote_volume, 
-        count, 
-        taker_buy_volume, 
-        taker_buy_quote_volume 
+        close_time 
         FROM binance.kline_data 
         WHERE symbol = $1 AND open_time >= $2 AND close_time <= $3
         ORDER BY open_time ASC`
+
+	// query := `SELECT
+	//        symbol,
+	//        interval,
+	//        open_time,
+	//        open,
+	//        high,
+	//        low,
+	//        close,
+	//        volume,
+	//        close_time,
+	//        quote_volume,
+	//        count,
+	//        taker_buy_volume,
+	//        taker_buy_quote_volume
+	//        FROM binance.kline_data
+	//        WHERE symbol = $1 AND open_time >= $2 AND close_time <= $3
+	//        ORDER BY open_time ASC`
 
 	rows, err := p.db.Query(query, symbol, startTime, endTime)
 	if err != nil {
@@ -383,12 +398,16 @@ func (p *PostgresDB) FetchData(symbol string, startTime, endTime int64) ([]*mode
 	}
 	defer rows.Close()
 
-	var klines []*models.Kline
+	var klines []*models.KlineSimple
 	for rows.Next() {
-		var d models.Kline
-		if err := rows.Scan(&d.Symbol, &d.Interval, &d.OpenTime, &d.Open, &d.High, &d.Low,
-			&d.Close, &d.Volume, &d.CloseTime, &d.QuoteAssetVolume,
-			&d.NumberOfTrades, &d.TakerBuyBaseAssetVol, &d.TakerBuyQuoteAssetVol); err != nil {
+		var d models.KlineSimple
+		// if err := rows.Scan(&d.Symbol, &d.Interval, &d.OpenTime, &d.Open, &d.High, &d.Low,
+		// 	&d.Close, &d.Volume, &d.CloseTime, &d.QuoteAssetVolume,
+		// 	&d.NumberOfTrades, &d.TakerBuyBaseAssetVol, &d.TakerBuyQuoteAssetVol); err != nil {
+		// 	return nil, err
+		// }
+		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close, &d.CloseTime); err != nil {
+			fmt.Println(err)
 			return nil, err
 		}
 		klines = append(klines, &d)

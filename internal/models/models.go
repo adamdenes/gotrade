@@ -54,6 +54,16 @@ func (kr *KlineRequest) String() string {
 	return fmt.Sprintf("%s", strings.Join(parts, "&"))
 }
 
+type KlineSimple struct {
+	OpenTime  int64  `json:"open_time"`
+	Open      string `json:"open"`
+	High      string `json:"high"`
+	Low       string `json:"low"`
+	Close     string `json:"close"`
+	Volume    string `json:"volume"`
+	CloseTime int64  `json:"close_time"`
+}
+
 type RequestError struct {
 	Err    error
 	Status int
