@@ -1,4 +1,5 @@
 let socket;
+let controller;
 
 let chart = LightweightCharts.createChart("chart-container", {
   // width: 1200,
@@ -15,14 +16,24 @@ let chart = LightweightCharts.createChart("chart-container", {
 let candleSeries = chart.addCandlestickSeries();
 
 document.addEventListener("DOMContentLoaded", function () {
-  // Get a reference to the search button element
-  const searchButton = document.getElementById("search-btn");
-  const backtestButton = document.getElementById("backtest-btn");
+  let searchForm;
+  let backtestForm;
 
+  if (window.location.pathname === "/backtest") {
+    backtestForm = document.getElementById("backtest-form");
+    backtestForm.addEventListener("submit", getBacktest);
+  } else if (window.location.pathname === "/klines/live") {
+    searchForm = document.getElementById("search-form");
+    searchForm.addEventListener("submit", getLive);
+  } else {
+    if (searchForm) searchForm.removeEventListener("submit", getLive);
+    if (backtestForm) backtestForm.removeEventListener("submit", getBacktest);
+  }
   chart.timeScale().fitContent();
+});
 
-  searchButton.addEventListener("click", getLive);
-  backtestButton.addEventListener("click", getBacktest);
+window.addEventListener("beforeunload", function (event) {
+  controller.abort();
 });
 
 // Function to create a WebSocket connection
@@ -97,8 +108,13 @@ function getLive(event) {
   const symbol = document.getElementById("symbol-chart").value;
   const interval = document.getElementById("interval-chart").value;
 
+  // If the user is quickly switcing pages mid-fetch 'broken pipe' error occurs on server side
+  controller = new AbortController();
+  const signal = controller.signal;
+
   // klines?symbol=BNBBTC&interval=1m&limit=1000
   fetch("/klines/live", {
+    signal: signal,
     method: "POST",
     body: JSON.stringify({
       symbol: symbol,
@@ -128,9 +144,14 @@ function getLive(event) {
       createWebSocketConnection(symbol, interval);
     })
     .catch((err) => {
-      console.error("error in fetch:", err);
+      if (err.name === "AbortError") {
+        console.log("Fetch request was aborted.");
+      } else {
+        console.error("Error:", err);
+      }
       // Close the ongoing WebSocket connection, if any
       if (socket && socket.readyState === WebSocket.OPEN) {
+        // socket is accessible from outer function scope
         closeWebSocketConnection(socket);
       }
     });
@@ -144,7 +165,12 @@ function getBacktest(event) {
 
   candleSeries.setData([]);
 
+  // If the user is quickly switcing pages mid-fetch 'broken pipe' error occurs on server side
+  controller = new AbortController();
+  const signal = controller.signal;
+
   fetch("/fetch-data", {
+    signal: signal,
     method: "POST",
     body: JSON.stringify({
       symbol: symbol,
@@ -156,7 +182,11 @@ function getBacktest(event) {
       "Content-Type": "application/json",
     },
   })
-    .then((response) => response.json())
+    .then((response) => {
+      if (response.ok) {
+        return response.json();
+      }
+    })
     .then((data) => {
       const historicalData = data.map((d) => {
         return {
@@ -170,7 +200,11 @@ function getBacktest(event) {
       console.log(historicalData);
       candleSeries.setData(historicalData);
     })
-    .catch(function (error) {
-      console.error("Error:", error);
+    .catch((err) => {
+      if (err.name === "AbortError") {
+        console.log("Fetch request was aborted.");
+      } else {
+        console.error("Error:", err);
+      }
     });
 }
