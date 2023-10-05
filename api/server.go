@@ -203,6 +203,12 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if err := ValidateSymbol(kr.Symbol); err != nil {
+			s.errorLog.Println(err)
+			s.clientError(w, http.StatusBadRequest)
+			return
+		}
+
 		// Trading pair has to be all uppercase for REST API
 		// GET request to binance
 		resp, err := getUiKlines(kr.String())
