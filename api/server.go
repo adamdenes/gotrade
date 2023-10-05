@@ -7,7 +7,10 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
@@ -116,67 +119,96 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("%d", kr.OpenTime),
 		fmt.Sprintf("%d", kr.CloseTime),
 	)
+	if err != nil {
+		s.errorLog.Println(err)
+		s.clientError(w, http.StatusBadRequest)
+	}
 
-	// Check if client is still connected.
+	var wg sync.WaitGroup
+	dataCh := make(chan []any, 31) // Assuming 31 days max
+	errCh := make(chan error)
+
+	startDate := timeSlice[0]
+	endDate := timeSlice[1].Add(24 * time.Hour)
+
+	t := time.Now()
+	for d := startDate; d.Before(endDate); d = d.Add(24 * time.Hour) {
+		nextDate := d.Add(24 * time.Hour)
+
+		if endDate.Compare(nextDate) == 0 {
+			break
+		}
+
+		wg.Add(1)
+		go s.fetchData(kr.Symbol, d.UnixMilli(), nextDate.UnixMilli(), dataCh, errCh, &wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(dataCh)
+		close(errCh)
+	}()
+
+	var batch [][]any
+	var anyError error
+	// If both channels closed, exit the loop
+	for dataCh != nil || errCh != nil {
+		select {
+		case data, ok := <-dataCh:
+			// Check if dataCh is closed
+			if !ok {
+				dataCh = nil
+				continue
+			}
+			batch = append(batch, data)
+		case err, ok := <-errCh:
+			// Check if errCh is closed
+			if !ok {
+				errCh = nil
+				continue
+			}
+			anyError = err
+		}
+	}
+	if anyError != nil {
+		s.errorLog.Println(err)
+		s.serverError(w, err)
+		return
+	}
+
+	sort.Slice(batch, func(i, j int) bool {
+		return batch[i][0].(int64) < batch[j][0].(int64)
+	})
+
+	// TODO: use context to stop downstream operations
 	select {
 	case <-r.Context().Done():
 		s.errorLog.Println("Client disconnected early.")
 		return
 	default:
-		if err != nil {
-			s.errorLog.Println(err)
-			s.clientError(w, http.StatusBadRequest)
-		}
-		resp, err := s.fetchData(kr.Symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
-		if err != nil {
-			s.serverError(w, err)
+		if err := WriteJSON(w, http.StatusOK, batch); err != nil {
+			s.errorLog.Println("Failed to write response:", err)
 			return
 		}
-		if err := WriteJSON(w, http.StatusOK, resp); err != nil {
-			s.serverError(w, err)
-			return
-		}
+		fmt.Printf("Elapsed time: %v\n", time.Since(t))
 	}
-	// Sending chunked data to avoid transferring large files
-	// w.Header().Set("Transfer-Encoding", "chunked")
 
-	// startChunk := timeSlice[0].UnixMilli()
-	// endChunk := timeSlice[1].UnixMilli()
-	//
-	// next := func() ([]*models.Kline, error) {
-	// 	nextChunk := startChunk + 860000
-	//
-	// 	if endChunk-startChunk <= 860000 {
-	// 		s.infoLog.Println("changing next to end")
-	// 		nextChunk = endChunk
-	// 	}
-	// 	s.infoLog.Printf("start=%v, next=%v, end=%v", startChunk, nextChunk, endChunk)
-	// 	chunk, err := s.store.FetchData(
-	// 		kr.Symbol,
-	// 		startChunk,
-	// 		nextChunk,
-	// 	)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	startChunk = nextChunk
-	//
-	// 	return chunk, nil
-	// }
-	//
-	// for {
-	// 	klines, err := next()
+	// Check if client is still connected.
+	// select {
+	// case <-r.Context().Done():
+	// 	s.errorLog.Println("Client disconnected early.")
+	// 	return
+	// default:
+	// 	resp, err := s.fetchData2(kr.Symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
 	// 	if err != nil {
 	// 		s.serverError(w, err)
-	// 		break
+	// 		return
 	// 	}
-	// 	if len(klines) == 0 {
-	// 		s.errorLog.Println("No more chunks to be received..., endtime was ->", endChunk)
-	// 		break
-	// 	}
-	// 	if err := WriteJSON(w, http.StatusOK, klines); err != nil {
+	// 	if err := WriteJSON(w, http.StatusOK, resp); err != nil {
 	// 		s.serverError(w, err)
+	// 		return
 	// 	}
+	// 	fmt.Printf("Elapsed time: %v\n", time.Since(t))
 	// }
 }
 
@@ -293,15 +325,23 @@ func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websock
 	}
 }
 
-func (s *Server) fetchData(symbol string, start int64, end int64) ([][]interface{}, error) {
+func (s *Server) fetchData(
+	symbol string,
+	start int64,
+	end int64,
+	dataCh chan []any,
+	errCh chan error,
+	wg *sync.WaitGroup,
+) {
+	defer wg.Done()
 	klines, err := s.store.FetchData(symbol, start, end)
 	if err != nil {
-		return nil, err
+		errCh <- err
+		return
 	}
 
-	var result [][]interface{}
 	for _, k := range klines {
-		item := []interface{}{
+		item := []any{
 			k.OpenTime,
 			k.Open,
 			k.High,
@@ -309,21 +349,37 @@ func (s *Server) fetchData(symbol string, start int64, end int64) ([][]interface
 			k.Close,
 			k.Volume,
 			k.CloseTime,
-			k.QuoteAssetVolume,
-			k.NumberOfTrades,
-			k.TakerBuyBaseAssetVol,
-			k.TakerBuyQuoteAssetVol,
+			// k.QuoteAssetVolume,
+			// k.NumberOfTrades,
+			// k.TakerBuyBaseAssetVol,
+			// k.TakerBuyQuoteAssetVol,
 		}
-		result = append(result, item)
+		dataCh <- item
 	}
-	return result, nil
 }
 
-func clientStillConnected(r *http.Request) bool {
-	select {
-	case <-r.Context().Done():
-		return false
-	default:
-		return true
-	}
-}
+// func (s *Server) fetchData2(symbol string, start int64, end int64) ([][]interface{}, error) {
+// 	klines, err := s.store.FetchData(symbol, start, end)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+//
+// 	var result [][]interface{}
+// 	for _, k := range klines {
+// 		item := []interface{}{
+// 			k.OpenTime,
+// 			k.Open,
+// 			k.High,
+// 			k.Low,
+// 			k.Close,
+// 			k.Volume,
+// 			k.CloseTime,
+// 			k.QuoteAssetVolume,
+// 			k.NumberOfTrades,
+// 			k.TakerBuyBaseAssetVol,
+// 			k.TakerBuyQuoteAssetVol,
+// 		}
+// 		result = append(result, item)
+// 	}
+// 	return result, nil
+// }
