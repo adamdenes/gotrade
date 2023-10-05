@@ -347,7 +347,7 @@ func (s *Server) fetchData(
 			k.High,
 			k.Low,
 			k.Close,
-			k.Volume,
+			// k.Volume,
 			k.CloseTime,
 			// k.QuoteAssetVolume,
 			// k.NumberOfTrades,
