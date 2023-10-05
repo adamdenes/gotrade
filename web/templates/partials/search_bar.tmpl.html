@@ -1,7 +1,7 @@
 {{ define "search_bar" }}
 <div class="search-bar">
     <form id="search-form" action="/klines/live" method="POST">
-        <input id="symbol-chart" type="text" name="symbol" placeholder="Search trading pairs...">
+        <input id="symbol-chart" type="text" name="symbol" placeholder="Search trading pairs" required>
         {{ template "dropdown" .}}
         <button id="search-btn" type="button">Search</button>
     </form>
