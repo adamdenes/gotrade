@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -131,7 +132,15 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		wg.Add(1)
-		go s.fetchData(kr.Symbol, d.UnixMilli(), nextDate.UnixMilli(), dataCh, errCh, &wg)
+		go s.fetchData(
+			r.Context(),
+			kr.Symbol,
+			d.UnixMilli(),
+			nextDate.UnixMilli(),
+			dataCh,
+			errCh,
+			&wg,
+		)
 	}
 
 	go func() {
@@ -142,9 +151,14 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := s.processChannels(dataCh, errCh)
 	if err != nil {
-		s.errorLog.Println(err)
-		s.serverError(w, err)
-		return
+		if errors.Is(err, context.Canceled) {
+			s.infoLog.Println(err)
+			return
+		} else {
+			s.errorLog.Println(err)
+			s.serverError(w, err)
+			return
+		}
 	}
 
 	// TODO: use context to stop downstream operations
@@ -154,7 +168,7 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		s.writeResponse(w, batch)
-		fmt.Printf("Elapsed time: %v\n", time.Since(t))
+		s.infoLog.Printf("Elapsed time: %v\n", time.Since(t))
 	}
 
 	// Check if client is still connected.
@@ -168,11 +182,8 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 	// 		s.serverError(w, err)
 	// 		return
 	// 	}
-	// 	if err := WriteJSON(w, http.StatusOK, resp); err != nil {
-	// 		s.serverError(w, err)
-	// 		return
-	// 	}
-	// 	fmt.Printf("Elapsed time: %v\n", time.Since(t))
+	//  s.writeResponse(w, resp)
+	// 	s.infoLog.Printf("Elapsed time: %v\n", time.Since(t))
 	// }
 }
 
@@ -278,6 +289,7 @@ func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websock
 }
 
 func (s *Server) fetchData(
+	ctx context.Context,
 	symbol string,
 	start int64,
 	end int64,
@@ -286,10 +298,9 @@ func (s *Server) fetchData(
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
-	klines, err := s.store.FetchData(symbol, start, end)
+	klines, err := s.store.FetchData(ctx, symbol, start, end)
 	if err != nil {
 		errCh <- err
-		return
 	}
 
 	for _, k := range klines {

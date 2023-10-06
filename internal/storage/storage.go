@@ -2,6 +2,7 @@ package storage
 
 import (
 	"archive/zip"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
@@ -22,7 +23,7 @@ type Storage interface {
 	DeleteCandle(int) error
 	UpdateCandle(*models.Kline) error
 	GetCandleByOpenTime(int) (*models.Kline, error)
-	FetchData(string, int64, int64) ([]*models.KlineSimple, error)
+	FetchData(context.Context, string, int64, int64) ([]*models.KlineSimple, error)
 	Copy([]byte, *string, *string) error
 	Stream(*zip.Reader) error
 	QueryLastRow() (*models.KlineRequest, error)
@@ -357,10 +358,14 @@ func (p *PostgresDB) QueryLastRow() (*models.KlineRequest, error) {
 }
 
 func (p *PostgresDB) FetchData(
+	ctx context.Context,
 	symbol string,
 	startTime, endTime int64,
 ) ([]*models.KlineSimple, error) {
 	start := time.Now()
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
 	// Only query what is used to reduce overhead
 	query := `SELECT 
@@ -374,26 +379,11 @@ func (p *PostgresDB) FetchData(
         WHERE symbol = $1 AND open_time >= $2 AND close_time <= $3
         ORDER BY open_time ASC`
 
-	// query := `SELECT
-	//        symbol,
-	//        interval,
-	//        open_time,
-	//        open,
-	//        high,
-	//        low,
-	//        close,
-	//        volume,
-	//        close_time,
-	//        quote_volume,
-	//        count,
-	//        taker_buy_volume,
-	//        taker_buy_quote_volume
-	//        FROM binance.kline_data
-	//        WHERE symbol = $1 AND open_time >= $2 AND close_time <= $3
-	//        ORDER BY open_time ASC`
-
-	rows, err := p.db.Query(query, symbol, startTime, endTime)
+	rows, err := p.db.QueryContext(ctx, query, symbol, startTime, endTime)
 	if err != nil {
+		if err.Error() == "pq: canceling statement due to user request" {
+			return nil, fmt.Errorf("%w: %v", ctx.Err(), err)
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -401,11 +391,6 @@ func (p *PostgresDB) FetchData(
 	var klines []*models.KlineSimple
 	for rows.Next() {
 		var d models.KlineSimple
-		// if err := rows.Scan(&d.Symbol, &d.Interval, &d.OpenTime, &d.Open, &d.High, &d.Low,
-		// 	&d.Close, &d.Volume, &d.CloseTime, &d.QuoteAssetVolume,
-		// 	&d.NumberOfTrades, &d.TakerBuyBaseAssetVol, &d.TakerBuyQuoteAssetVol); err != nil {
-		// 	return nil, err
-		// }
 		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close, &d.CloseTime); err != nil {
 			fmt.Println(err)
 			return nil, err
