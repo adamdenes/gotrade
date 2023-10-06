@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,36 +59,6 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 	return cache, nil
 }
 
-func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
-	ts, ok := s.templateCache[page]
-	if !ok {
-		s.serverError(w, fmt.Errorf("the template '%s' does not exists", page))
-		return
-	}
-
-	w.WriteHeader(status)
-	// Render the template
-	err := ts.ExecuteTemplate(w, "base", data)
-	if err != nil {
-		s.serverError(w, err)
-	}
-}
-
-func (s *Server) serverError(w http.ResponseWriter, err error) {
-	trace := fmt.Sprintf("%s\n%s", err.Error(), debug.Stack())
-	s.errorLog.Output(2, trace)
-
-	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-}
-
-func (s *Server) clientError(w http.ResponseWriter, status int) {
-	http.Error(w, http.StatusText(status), status)
-}
-
-func (s *Server) notFound(w http.ResponseWriter) {
-	s.clientError(w, http.StatusNotFound)
-}
-
 // ----------------- MISC -----------------
 
 // `PollHistoricalData` is tasked to periodically poll binance data-api
@@ -108,7 +77,6 @@ func PollHistoricalData(storage storage.Storage) {
 				// Poll one year worth of data
 				startDate = time.Now().AddDate(-1, 0, 0)
 				endDate = time.Now()
-				logger.Debug.Printf("startDate=%v, endDate=%v\n", startDate, endDate)
 				update(storage, true, startDate, endDate)
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
@@ -195,12 +163,12 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 				wg.Add(1)
 				if isFull {
 					if y < currYear && startMonth > m || currYear == y && currMonth <= m {
-						logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
+						// logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
 						continue
 					}
 				} else {
 					if y <= currYear && startMonth > m || currYear == y && currMonth <= m {
-						logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
+						// logger.Debug.Printf("Skipping: year=%v, month=%v\n", y, m)
 						continue
 					}
 				}
