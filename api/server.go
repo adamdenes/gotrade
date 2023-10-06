@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -102,34 +103,24 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		s.clientError(w, http.StatusMethodNotAllowed)
 		return
 	}
-	kr := &models.KlineRequest{}
-	if err := json.NewDecoder(r.Body).Decode(&kr); err != nil {
+
+	kr, err := s.validateKlineRequest(r)
+	if err != nil {
 		s.errorLog.Println(err)
-		s.clientError(w, http.StatusBadRequest)
-		return
-	}
-	// Validate symbol
-	if err := ValidateSymbol(kr.Symbol); err != nil {
-		s.errorLog.Println(err)
-		s.clientError(w, http.StatusBadRequest)
+		s.serverError(w, err)
 		return
 	}
 
-	timeSlice, err := ValidateTimes(
-		fmt.Sprintf("%d", kr.OpenTime),
-		fmt.Sprintf("%d", kr.CloseTime),
-	)
+	startDate, endDate, err := s.getDateRange(kr)
 	if err != nil {
 		s.errorLog.Println(err)
-		s.clientError(w, http.StatusBadRequest)
+		s.serverError(w, err)
+		return
 	}
 
 	var wg sync.WaitGroup
 	dataCh := make(chan []any, 31) // Assuming 31 days max
 	errCh := make(chan error)
-
-	startDate := timeSlice[0]
-	endDate := timeSlice[1].Add(24 * time.Hour)
 
 	t := time.Now()
 	for d := startDate; d.Before(endDate); d = d.Add(24 * time.Hour) {
@@ -149,36 +140,12 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		close(errCh)
 	}()
 
-	var batch [][]any
-	var anyError error
-	// If both channels closed, exit the loop
-	for dataCh != nil || errCh != nil {
-		select {
-		case data, ok := <-dataCh:
-			// Check if dataCh is closed
-			if !ok {
-				dataCh = nil
-				continue
-			}
-			batch = append(batch, data)
-		case err, ok := <-errCh:
-			// Check if errCh is closed
-			if !ok {
-				errCh = nil
-				continue
-			}
-			anyError = err
-		}
-	}
-	if anyError != nil {
+	batch, err := s.processChannels(dataCh, errCh)
+	if err != nil {
 		s.errorLog.Println(err)
 		s.serverError(w, err)
 		return
 	}
-
-	sort.Slice(batch, func(i, j int) bool {
-		return batch[i][0].(int64) < batch[j][0].(int64)
-	})
 
 	// TODO: use context to stop downstream operations
 	select {
@@ -186,10 +153,7 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		s.errorLog.Println("Client disconnected early.")
 		return
 	default:
-		if err := WriteJSON(w, http.StatusOK, batch); err != nil {
-			s.errorLog.Println("Failed to write response:", err)
-			return
-		}
+		s.writeResponse(w, batch)
 		fmt.Printf("Elapsed time: %v\n", time.Since(t))
 	}
 
@@ -225,22 +189,13 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		s.render(w, http.StatusOK, "chart.tmpl.html", nil)
 	} else if r.Method == http.MethodPost {
-		if err := r.ParseForm(); err != nil {
-			s.clientError(w, http.StatusBadRequest)
-			return
-		}
-
-		kr := &models.KlineRequest{}
-		err := json.NewDecoder(r.Body).Decode(kr)
+		kr, err := s.validateKlineRequest(r)
 		if err != nil {
+			s.errorLog.Println(err)
 			s.serverError(w, err)
 			return
 		}
-		if err := ValidateSymbol(kr.Symbol); err != nil {
-			s.errorLog.Println(err)
-			s.clientError(w, http.StatusBadRequest)
-			return
-		}
+
 		// Check if client is still connected.
 		select {
 		case <-r.Context().Done():
@@ -255,10 +210,7 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if err := WriteJSON(w, http.StatusOK, resp); err != nil {
-				s.serverError(w, err)
-				return
-			}
+			s.writeResponse(w, resp)
 		}
 	} else {
 		s.clientError(w, http.StatusMethodNotAllowed)
@@ -347,12 +299,7 @@ func (s *Server) fetchData(
 			k.High,
 			k.Low,
 			k.Close,
-			// k.Volume,
 			k.CloseTime,
-			// k.QuoteAssetVolume,
-			// k.NumberOfTrades,
-			// k.TakerBuyBaseAssetVol,
-			// k.TakerBuyQuoteAssetVol,
 		}
 		dataCh <- item
 	}
@@ -383,3 +330,95 @@ func (s *Server) fetchData(
 // 	}
 // 	return result, nil
 // }
+
+func (s *Server) validateKlineRequest(r *http.Request) (*models.KlineRequest, error) {
+	kr := &models.KlineRequest{}
+	if err := json.NewDecoder(r.Body).Decode(&kr); err != nil {
+		return nil, err
+	}
+	// Validate symbol
+	if err := ValidateSymbol(kr.Symbol); err != nil {
+		return nil, err
+	}
+	return kr, nil
+}
+
+func (s *Server) getDateRange(kr *models.KlineRequest) (time.Time, time.Time, error) {
+	timeSlice, err := ValidateTimes(
+		fmt.Sprintf("%d", kr.OpenTime),
+		fmt.Sprintf("%d", kr.CloseTime),
+	)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	startDate := timeSlice[0]
+	endDate := timeSlice[1].Add(24 * time.Hour)
+	return startDate, endDate, nil
+}
+
+func (s *Server) processChannels(dataCh chan []any, errCh chan error) ([][]any, error) {
+	var batch [][]any
+	var anyError error
+	// If both channels closed, exit the loop
+	for dataCh != nil || errCh != nil {
+		select {
+		case data, ok := <-dataCh:
+			// Check if dataCh is closed
+			if !ok {
+				dataCh = nil
+				continue
+			}
+			batch = append(batch, data)
+		case err, ok := <-errCh:
+			// Check if errCh is closed
+			if !ok {
+				errCh = nil
+				continue
+			}
+			anyError = err
+		}
+	}
+	if anyError != nil {
+		return nil, anyError
+	}
+	sort.Slice(batch, func(i, j int) bool {
+		return batch[i][0].(int64) < batch[j][0].(int64)
+	})
+	return batch, nil
+}
+
+func (s *Server) writeResponse(w http.ResponseWriter, batch any) {
+	if err := WriteJSON(w, http.StatusOK, batch); err != nil {
+		s.errorLog.Println("Failed to write response:", err)
+	}
+}
+
+func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
+	ts, ok := s.templateCache[page]
+	if !ok {
+		s.serverError(w, fmt.Errorf("the template '%s' does not exists", page))
+		return
+	}
+
+	w.WriteHeader(status)
+	// Render the template
+	err := ts.ExecuteTemplate(w, "base", data)
+	if err != nil {
+		s.serverError(w, err)
+	}
+}
+
+func (s *Server) serverError(w http.ResponseWriter, err error) {
+	trace := fmt.Sprintf("%s\n%s", err.Error(), debug.Stack())
+	s.errorLog.Output(2, trace)
+
+	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+}
+
+func (s *Server) clientError(w http.ResponseWriter, status int) {
+	http.Error(w, http.StatusText(status), status)
+}
+
+func (s *Server) notFound(w http.ResponseWriter) {
+	s.clientError(w, http.StatusNotFound)
+}
