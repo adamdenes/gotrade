@@ -19,11 +19,11 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-type TimescaleDBStd struct {
+type TimescaleDB struct {
 	db *sql.DB
 }
 
-func NewTimescaleDBStd(dsn string) (*TimescaleDBStd, error) {
+func NewTimescaleDB(dsn string) (*TimescaleDB, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		log.Fatal(err)
@@ -33,14 +33,14 @@ func NewTimescaleDBStd(dsn string) (*TimescaleDBStd, error) {
 		return nil, err
 	}
 
-	return &TimescaleDBStd{db: db}, nil
+	return &TimescaleDB{db: db}, nil
 }
 
-func (ts *TimescaleDBStd) Close() {
+func (ts *TimescaleDB) Close() {
 	ts.db.Close()
 }
 
-func (ts *TimescaleDBStd) Init() error {
+func (ts *TimescaleDB) Init() error {
 	if err := ts.CreateSchema(); err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (ts *TimescaleDBStd) Init() error {
 	return nil
 }
 
-func (ts *TimescaleDBStd) CreateSchema() error {
+func (ts *TimescaleDB) CreateSchema() error {
 	_, err := ts.db.Exec("CREATE SCHEMA IF NOT EXISTS binance")
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func (ts *TimescaleDBStd) CreateSchema() error {
 	return nil
 }
 
-func (ts *TimescaleDBStd) CreateUniqueIndex() error {
+func (ts *TimescaleDB) CreateUniqueIndex() error {
 	indexQuery := `CREATE UNIQUE INDEX idx_unique_opentime_symbol_interval ON binance.kline (open_time, symbol_interval_id);`
 	if _, err := ts.db.Exec(indexQuery); err != nil {
 		return err
@@ -69,7 +69,7 @@ func (ts *TimescaleDBStd) CreateUniqueIndex() error {
 	return nil
 }
 
-func (ts *TimescaleDBStd) CreateCandleTable() error {
+func (ts *TimescaleDB) CreateCandleTable() error {
 	queryType := `CREATE TABLE IF NOT EXISTS binance.symbol_intervals (
         symbol_interval_id SERIAL PRIMARY KEY,
         symbol TEXT NOT NULL,
@@ -107,7 +107,7 @@ func (ts *TimescaleDBStd) CreateCandleTable() error {
 }
 
 // SetAutovacuumParams sets custom autovacuum parameters for the kline table
-func (ts *TimescaleDBStd) SetAutovacuumParams(scaleFactor float64, costLimit int) error {
+func (ts *TimescaleDB) SetAutovacuumParams(scaleFactor float64, costLimit int) error {
 	// ALTER TABLE your_table_name SET (autovacuum_vacuum_scale_factor = 0.4);
 	// ALTER TABLE your_table_name SET (autovacuum_vacuum_cost_limit = 4000);
 	query := fmt.Sprintf(
@@ -120,19 +120,19 @@ func (ts *TimescaleDBStd) SetAutovacuumParams(scaleFactor float64, costLimit int
 }
 
 // ResetAutovacuumParams resets the autovacuum parameters for the kline table to default
-func (ts *TimescaleDBStd) ResetAutovacuumParams() error {
+func (ts *TimescaleDB) ResetAutovacuumParams() error {
 	_, err := ts.db.Exec(
 		`ALTER TABLE binance.kline RESET (autovacuum_vacuum_scale_factor, autovacuum_vacuum_cost_limit)`,
 	)
 	return err
 }
 
-func (ts *TimescaleDBStd) CreateCandle(*models.Kline) error               { return nil }
-func (ts *TimescaleDBStd) DeleteCandle(int) error                         { return nil }
-func (ts *TimescaleDBStd) UpdateCandle(*models.Kline) error               { return nil }
-func (ts *TimescaleDBStd) GetCandleByOpenTime(int) (*models.Kline, error) { return nil, nil }
+func (ts *TimescaleDB) CreateCandle(*models.Kline) error               { return nil }
+func (ts *TimescaleDB) DeleteCandle(int) error                         { return nil }
+func (ts *TimescaleDB) UpdateCandle(*models.Kline) error               { return nil }
+func (ts *TimescaleDB) GetCandleByOpenTime(int) (*models.Kline, error) { return nil, nil }
 
-func (ts *TimescaleDBStd) FetchData(
+func (ts *TimescaleDB) FetchData(
 	context.Context,
 	string,
 	int64,
@@ -140,9 +140,9 @@ func (ts *TimescaleDBStd) FetchData(
 ) ([]*models.KlineSimple, error) {
 	return nil, nil
 }
-func (ts *TimescaleDBStd) Copy([]byte, *string, *string) error { return nil }
+func (ts *TimescaleDB) Copy([]byte, *string, *string) error { return nil }
 
-func (ts *TimescaleDBStd) Stream(r *zip.Reader) error {
+func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 	startTime := time.Now()
 
 	conn, err := ts.db.Conn(context.Background())
@@ -221,7 +221,7 @@ func (ts *TimescaleDBStd) Stream(r *zip.Reader) error {
 	return nil
 }
 
-func (ts *TimescaleDBStd) QueryLastRow() (*models.KlineRequest, error) {
+func (ts *TimescaleDB) QueryLastRow() (*models.KlineRequest, error) {
 	query := `
         SELECT 
             si.symbol, 
