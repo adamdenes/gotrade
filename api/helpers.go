@@ -398,7 +398,6 @@ func stringToTime(str string) (time.Time, error) {
 			return time.Time{}, err
 		}
 		// Convert Unix timestamp to time.Time
-		fmt.Println(time.UnixMilli(unixTime))
 		return time.UnixMilli(unixTime), nil
 	}
 	return time.Parse(layout, str)
