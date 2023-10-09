@@ -20,7 +20,7 @@ func main() {
 		logger.Error.Fatal(err)
 	}
 
-	db, err := storage.NewPostgresDB(os.Getenv("DSN"))
+	db, err := storage.NewTimescaleDBStd(os.Getenv("TS_DSN"))
 	if err != nil {
 		logger.Error.Fatal(err)
 	}
