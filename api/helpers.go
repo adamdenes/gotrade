@@ -39,6 +39,7 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 
 		file := []string{
 			"./web/templates/base.tmpl.html",
+			"./web/templates/pages/home.tmpl.html",
 			"./web/templates/pages/chart.tmpl.html",
 			"./web/templates/pages/backtest.tmpl.html",
 			"./web/templates/partials/header.tmpl.html",
@@ -56,6 +57,7 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 
 		cache[name] = ts
 	}
+	fmt.Println(cache)
 	return cache, nil
 }
 

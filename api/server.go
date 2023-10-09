@@ -73,7 +73,7 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.render(w, http.StatusOK, "chart.tmpl.html", nil)
+	s.render(w, http.StatusOK, "home.tmpl.html", nil)
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
