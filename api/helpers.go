@@ -21,6 +21,7 @@ import (
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
+	"github.com/jackc/pgx/v5"
 )
 
 // os.TempDir() ?
@@ -57,7 +58,6 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 
 		cache[name] = ts
 	}
-	fmt.Println(cache)
 	return cache, nil
 }
 
@@ -74,7 +74,7 @@ func PollHistoricalData(storage storage.Storage) {
 		// Query SQL for the last close_time
 		row, err := storage.QueryLastRow()
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if err == sql.ErrNoRows || err == pgx.ErrNoRows {
 				logger.Info.Println("Database is empty. Full update needed.")
 				// Poll one year worth of data
 				startDate = time.Now().AddDate(-1, 0, 0)
@@ -196,15 +196,16 @@ func processMonthlyData(
 		"-1s-",
 		fmt.Sprintf("%d-%02d.zip", year, month),
 	)
-	// sb := constructURL(symbol, year, month)
 	logger.Info.Printf("GET: %v\n", uri)
 
+	dtime := time.Now()
 	reader, err := stream(uri)
 	if err != nil {
 		logger.Error.Printf("Error streaming data over HTTP: %v\n", err)
 		return
 	}
 
+	logger.Info.Printf("Download time: %v", time.Since(dtime))
 	if err := storage.Stream(reader); err != nil {
 		logger.Error.Printf("Error inserting Kline data into the database: %v\n", err)
 		return
