@@ -5,7 +5,7 @@ GOTEST=$(GOCMD) test
 BINARY_NAME=gotrade
 
 # Postgres
-DB_CONTAINER_NAME=postgres
+DB_CONTAINER_NAME=timescale
 DB_NAME=binance_db
 DB_PORT=5432
 DB_USER=web
@@ -40,7 +40,7 @@ help:
 
 start_db:
 	docker volume create $(DB_VOLUME)
-	docker run --name $(DB_CONTAINER_NAME) -v $(DB_VOLUME):$(DB_VOLUME_PATH)  -e POSTGRES_PASSWORD=$(DB_PASSWORD) -e POSTGRES_USER=$(DB_USER) -e POSTGRES_DB=$(DB_NAME) -p $(DB_PORT):$(DB_PORT) -d postgres
+	docker run --name $(DB_CONTAINER_NAME) -v $(DB_VOLUME):$(DB_VOLUME_PATH)  -e POSTGRES_PASSWORD=$(DB_PASSWORD) -e POSTGRES_USER=$(DB_USER) -e POSTGRES_DB=$(DB_NAME) -p $(DB_PORT):$(DB_PORT) -d timescale/timescaledb-ha:pg14-latest
 
 stop_db:
 	docker stop $(DB_CONTAINER_NAME)
