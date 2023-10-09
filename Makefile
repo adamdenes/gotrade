@@ -10,7 +10,7 @@ DB_NAME=binance_db
 DB_PORT=5432
 DB_USER=web
 DB_VOLUME=my-postgres-data
-DB_VOLUME_PATH=/home/adenes/docker_volumes/var/lib/postgresql/data
+DB_VOLUME_PATH=/home/adenes/docker_volumes/data
 
 build:
 	@echo "Building binary..."
