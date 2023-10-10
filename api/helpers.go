@@ -85,7 +85,9 @@ func PollHistoricalData(storage storage.Storage) {
 			}
 		}
 
-		epoch := time.UnixMilli(row.CloseTime)
+		ot := row.OpenTime.UnixMilli()
+		ct := row.CloseTime.UnixMilli()
+		epoch := row.CloseTime
 		var (
 			eYear    int        = epoch.Year()
 			eMonth   time.Month = epoch.Month()
@@ -114,14 +116,14 @@ func PollHistoricalData(storage storage.Storage) {
 
 			printCount++
 			// Next second
-			row.OpenTime = row.CloseTime + 1
-			row.CloseTime = row.OpenTime + 999
+			ot = ct + 1
+			ct = ot + 999
 
 			uri := BuildURI(
 				"https://data-api.binance.vision/api/v3/klines?",
 				"symbol=", row.Symbol,
 				"&interval=", row.Interval,
-				"&startTime=", fmt.Sprintf("%d", row.OpenTime),
+				"&startTime=", fmt.Sprintf("%d", ot),
 				"&limit=1000",
 			)
 
@@ -373,15 +375,15 @@ func ValidateSymbol(symbol string) error {
 }
 
 // Return an error if time input validation fails, or nil if they are valid
-func ValidateTimes(start, end string) ([]time.Time, error) {
+func ValidateTimes(start, end interface{}) ([]time.Time, error) {
 	var t []time.Time
 
-	st, err := stringToTime(start)
+	st, err := toTime(start)
 	if err != nil {
 		return nil, fmt.Errorf("invalid start time format: %v", err)
 	}
 
-	et, err := stringToTime(end)
+	et, err := toTime(end)
 	if err != nil {
 		return nil, fmt.Errorf("invalid end time format: %v", err)
 	}
@@ -390,8 +392,19 @@ func ValidateTimes(start, end string) ([]time.Time, error) {
 	return t, nil
 }
 
+func toTime(v interface{}) (time.Time, error) {
+	switch v := v.(type) {
+	case string:
+		return stringToTime(v)
+	case time.Time:
+		return v, nil
+	default:
+		return time.Time{}, fmt.Errorf("unsupported type")
+	}
+}
+
 func stringToTime(str string) (time.Time, error) {
-	const layout = "2006-01-02T15:04:00"
+	const layout = "2006-01-02 15:04:05 -0700 MST"
 	if _, err := strconv.Atoi(str); err == nil {
 		// Convert string to int64
 		unixTime, err := strconv.ParseInt(str, 10, 64)
