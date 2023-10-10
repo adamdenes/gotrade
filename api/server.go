@@ -3,15 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"runtime/debug"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/adamdenes/gotrade/internal/logger"
@@ -105,6 +102,7 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	val := time.Now()
 	kr, err := s.validateKlineRequest(r)
 	if err != nil {
 		s.errorLog.Println(err)
@@ -118,73 +116,28 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-
-	var wg sync.WaitGroup
-	dataCh := make(chan []any, 31) // Assuming 31 days max
-	errCh := make(chan error)
+	s.infoLog.Printf("Request validation took: %v\n", time.Since(val))
 
 	t := time.Now()
-	for d := startDate; d.Before(endDate); d = d.Add(24 * time.Hour) {
-		nextDate := d.Add(24 * time.Hour)
-
-		if endDate.Compare(nextDate) == 0 {
-			break
-		}
-
-		wg.Add(1)
-		go s.fetchData(
-			r.Context(),
-			kr.Symbol,
-			d.UnixMilli(),
-			nextDate.UnixMilli(),
-			dataCh,
-			errCh,
-			&wg,
-		)
-	}
-
-	go func() {
-		wg.Wait()
-		close(dataCh)
-		close(errCh)
-	}()
-
-	batch, err := s.processChannels(dataCh, errCh)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			s.infoLog.Println(err)
-			return
-		} else {
-			s.errorLog.Println(err)
-			s.serverError(w, err)
-			return
-		}
-	}
-
-	// TODO: use context to stop downstream operations
 	select {
 	case <-r.Context().Done():
 		s.errorLog.Println("Client disconnected early.")
 		return
 	default:
-		s.writeResponse(w, batch)
+		resp, err := s.fetchData(
+			context.Background(),
+			kr.Interval,
+			kr.Symbol,
+			startDate.UnixMilli(),
+			endDate.UnixMilli(),
+		)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		s.writeResponse(w, resp)
 		s.infoLog.Printf("Elapsed time: %v\n", time.Since(t))
 	}
-
-	// Check if client is still connected.
-	// select {
-	// case <-r.Context().Done():
-	// 	s.errorLog.Println("Client disconnected early.")
-	// 	return
-	// default:
-	// 	resp, err := s.fetchData2(kr.Symbol, timeSlice[0].UnixMilli(), timeSlice[1].UnixMilli())
-	// 	if err != nil {
-	// 		s.serverError(w, err)
-	// 		return
-	// 	}
-	//  s.writeResponse(w, resp)
-	// 	s.infoLog.Printf("Elapsed time: %v\n", time.Since(t))
-	// }
 }
 
 func (s *Server) klinesHandler(w http.ResponseWriter, r *http.Request) {
@@ -290,57 +243,30 @@ func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websock
 
 func (s *Server) fetchData(
 	ctx context.Context,
-	symbol string,
+	interval, symbol string,
 	start int64,
 	end int64,
-	dataCh chan []any,
-	errCh chan error,
-	wg *sync.WaitGroup,
-) {
-	defer wg.Done()
-	klines, err := s.store.FetchData(ctx, symbol, start, end)
+) ([][]interface{}, error) {
+	klines, err := s.store.FetchData(ctx, interval, symbol, start, end)
 	if err != nil {
-		errCh <- err
+		return nil, err
 	}
 
+	var result [][]interface{}
 	for _, k := range klines {
-		item := []any{
+		item := []interface{}{
 			k.OpenTime,
 			k.Open,
 			k.High,
 			k.Low,
 			k.Close,
+			k.Volume,
 			k.CloseTime,
 		}
-		dataCh <- item
+		result = append(result, item)
 	}
+	return result, nil
 }
-
-// func (s *Server) fetchData2(symbol string, start int64, end int64) ([][]interface{}, error) {
-// 	klines, err := s.store.FetchData(symbol, start, end)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-//
-// 	var result [][]interface{}
-// 	for _, k := range klines {
-// 		item := []interface{}{
-// 			k.OpenTime,
-// 			k.Open,
-// 			k.High,
-// 			k.Low,
-// 			k.Close,
-// 			k.Volume,
-// 			k.CloseTime,
-// 			k.QuoteAssetVolume,
-// 			k.NumberOfTrades,
-// 			k.TakerBuyBaseAssetVol,
-// 			k.TakerBuyQuoteAssetVol,
-// 		}
-// 		result = append(result, item)
-// 	}
-// 	return result, nil
-// }
 
 func (s *Server) validateKlineRequest(r *http.Request) (*models.KlineRequest, error) {
 	kr := &models.KlineRequest{}
@@ -356,8 +282,8 @@ func (s *Server) validateKlineRequest(r *http.Request) (*models.KlineRequest, er
 
 func (s *Server) getDateRange(kr *models.KlineRequest) (time.Time, time.Time, error) {
 	timeSlice, err := ValidateTimes(
-		fmt.Sprintf("%d", kr.OpenTime),
-		fmt.Sprintf("%d", kr.CloseTime),
+		fmt.Sprintf("%v", kr.OpenTime),
+		fmt.Sprintf("%v", kr.CloseTime),
 	)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
@@ -365,37 +291,6 @@ func (s *Server) getDateRange(kr *models.KlineRequest) (time.Time, time.Time, er
 	startDate := timeSlice[0]
 	endDate := timeSlice[1].Add(24 * time.Hour)
 	return startDate, endDate, nil
-}
-
-func (s *Server) processChannels(dataCh chan []any, errCh chan error) ([][]any, error) {
-	var batch [][]any
-	var anyError error
-	// If both channels closed, exit the loop
-	for dataCh != nil || errCh != nil {
-		select {
-		case data, ok := <-dataCh:
-			// Check if dataCh is closed
-			if !ok {
-				dataCh = nil
-				continue
-			}
-			batch = append(batch, data)
-		case err, ok := <-errCh:
-			// Check if errCh is closed
-			if !ok {
-				errCh = nil
-				continue
-			}
-			anyError = err
-		}
-	}
-	if anyError != nil {
-		return nil, anyError
-	}
-	sort.Slice(batch, func(i, j int) bool {
-		return batch[i][0].(int64) < batch[j][0].(int64)
-	})
-	return batch, nil
 }
 
 func (s *Server) writeResponse(w http.ResponseWriter, batch any) {
