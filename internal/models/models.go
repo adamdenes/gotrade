@@ -29,10 +29,10 @@ type Kline struct {
 }
 
 type KlineRequest struct {
-	Symbol    string `json:"symbol"`
-	Interval  string `json:"interval,omitempty"`
-	OpenTime  int64  `json:"open_time,omitempty"`
-	CloseTime int64  `json:"close_time,omitempty"`
+	Symbol    string    `json:"symbol"`
+	Interval  string    `json:"interval,omitempty"`
+	OpenTime  time.Time `json:"open_time,omitempty"`
+	CloseTime time.Time `json:"close_time,omitempty"`
 }
 
 func (kr *KlineRequest) String() string {
@@ -44,23 +44,24 @@ func (kr *KlineRequest) String() string {
 	if kr.Interval != "" {
 		parts = append(parts, fmt.Sprintf("interval=%s", kr.Interval))
 	}
-	if kr.OpenTime != 0 {
-		parts = append(parts, fmt.Sprintf("startTime=%d", kr.OpenTime))
+	if !kr.OpenTime.IsZero() {
+		parts = append(parts, fmt.Sprintf("startTime=%v", kr.OpenTime))
 	}
-	if kr.CloseTime != 0 {
-		parts = append(parts, fmt.Sprintf("endTime=%d", kr.CloseTime))
+	if !kr.CloseTime.IsZero() {
+		parts = append(parts, fmt.Sprintf("endTime=%v", kr.CloseTime))
 	}
 
 	return fmt.Sprintf("%s", strings.Join(parts, "&"))
 }
 
 type KlineSimple struct {
-	OpenTime  int64  `json:"open_time"`
-	Open      string `json:"open"`
-	High      string `json:"high"`
-	Low       string `json:"low"`
-	Close     string `json:"close"`
-	CloseTime int64  `json:"close_time"`
+	OpenTime  time.Time `json:"open_time"`
+	Open      string    `json:"open"`
+	High      string    `json:"high"`
+	Low       string    `json:"low"`
+	Close     string    `json:"close"`
+	Volume    string    `json:"volume"`
+	CloseTime time.Time `json:"close_time,omitempty"`
 }
 
 type RequestError struct {
