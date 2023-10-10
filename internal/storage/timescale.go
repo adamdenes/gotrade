@@ -47,9 +47,37 @@ func (ts *TimescaleDB) Init() error {
 	if err := ts.CreateCandleTable(); err != nil {
 		return err
 	}
+
+	// ERROR: operation not supported on hypertables that have compression enabled (SQLSTATE 0A000)
 	// if err := ts.CreateUniqueIndex(); err != nil {
 	// 	return err
 	// }
+
+	viewsAndPolicies := map[string]map[string][]string{
+		"1m": {
+			"1 minute": {"1 day", "1 minute", "5 minutes"},
+		},
+		"5m": {
+			"5 minutes": {"1 day", "5 minutes", "10 minutes"},
+		},
+		"1h": {
+			"1 hour": {"1 month", "1 hour", "1 day"},
+		},
+		"1d": {
+			"1 day": {"1 year", "1 day", "1 week"},
+		},
+	}
+	for table, interval := range viewsAndPolicies {
+		for innerTable, values := range interval {
+			if err := ts.CreateMaterializedView(table, innerTable); err != nil {
+				return err
+			}
+			if err := ts.CreateRefreshPolicy(table, values[0], values[1], values[2]); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -62,7 +90,7 @@ func (ts *TimescaleDB) CreateSchema() error {
 }
 
 func (ts *TimescaleDB) CreateUniqueIndex() error {
-	indexQuery := `CREATE UNIQUE INDEX idx_unique_opentime_symbol_interval ON binance.kline (open_time, symbol_interval_id);`
+	indexQuery := `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_opentime_symbol_interval ON binance.kline (open_time, symbol_interval_id);`
 	if _, err := ts.db.Exec(indexQuery); err != nil {
 		return err
 	}
@@ -70,7 +98,8 @@ func (ts *TimescaleDB) CreateUniqueIndex() error {
 }
 
 func (ts *TimescaleDB) CreateCandleTable() error {
-	queryType := `CREATE TABLE IF NOT EXISTS binance.symbol_intervals (
+	// Create Postgres SQL tables
+	typeQuery := `CREATE TABLE IF NOT EXISTS binance.symbol_intervals (
         symbol_interval_id SERIAL PRIMARY KEY,
         symbol TEXT NOT NULL,
         interval TEXT NOT NULL,
@@ -91,25 +120,79 @@ func (ts *TimescaleDB) CreateCandleTable() error {
         taker_buy_volume FLOAT NOT NULL,
         taker_buy_quote_volume FLOAT NOT NULL
     );`
-	// hypertableQuery := `SELECT create_hypertable('binance.kline', 'open_time');`
+	// Check if hypertable exist, if not create it
+	hypertableQuery := `
+    DO $$ 
+    BEGIN 
+        IF NOT EXISTS (SELECT * FROM timescaledb_information.hypertables WHERE hypertable_schema = 'binance' AND hypertable_name = 'kline') THEN 
+            SELECT create_hypertable('binance.kline', 'open_time');
+        END IF;
+    END $$;`
 
-	if _, err := ts.db.Exec(queryType); err != nil {
+	if _, err := ts.db.Exec(typeQuery); err != nil {
 		return err
 	}
 	if _, err := ts.db.Exec(tableQuery); err != nil {
 		return err
 	}
-	// if _, err := ts.db.Exec(hypertableQuery); err != nil {
-	// return err
-	// }
+	if _, err := ts.db.Exec(hypertableQuery); err != nil {
+		return err
+	}
 
 	return nil
 }
 
+func (ts *TimescaleDB) CreateMaterializedView(iName string, interval string) error {
+	query := fmt.Sprintf(`
+    CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_%s WITH (timescaledb.continuous) AS
+    SELECT 
+        si.symbol,
+        si.interval,
+        time_bucket(INTERVAL '%s', open_time) as bucket,
+        AVG(close) as avg_close,
+        MAX(high) as max_high,
+        MIN(low) as min_low,
+        FIRST(open, open_time) as first_open,
+        LAST(close, close_time) as last_close,
+        SUM(volume) as total_volume
+    FROM binance.kline AS kd
+    JOIN binance.symbol_intervals AS si ON kd.symbol_interval_id = si.symbol_interval_id
+    GROUP BY bucket, si.symbol, si.interval;`, iName, interval)
+
+	_, err := ts.db.Exec(query)
+	return err
+}
+
+func (ts *TimescaleDB) CreateRefreshPolicy(
+	aggTable string,
+	startOffset, endOffset, scheduleInterval string,
+) error {
+	// Add only if not already created...
+	p := fmt.Sprintf(`
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM timescaledb_information.jobs j
+            JOIN timescaledb_information.continuous_aggregates c ON j.hypertable_name = c.materialization_hypertable_name
+            WHERE c.view_name = 'aggregate_%s' AND c.view_schema = 'binance'
+        ) THEN
+            SELECT add_continuous_aggregate_policy(
+                'binance."aggregate_%s"',
+                start_offset => INTERVAL '%s',
+                end_offset => INTERVAL '%s',
+                schedule_interval => INTERVAL '%s'
+            );
+        END IF;
+    END $$;`,
+		aggTable, aggTable, startOffset, endOffset, scheduleInterval)
+
+	_, err := ts.db.Exec(p)
+	return err
+}
+
 // SetAutovacuumParams sets custom autovacuum parameters for the kline table
 func (ts *TimescaleDB) SetAutovacuumParams(scaleFactor float64, costLimit int) error {
-	// ALTER TABLE your_table_name SET (autovacuum_vacuum_scale_factor = 0.4);
-	// ALTER TABLE your_table_name SET (autovacuum_vacuum_cost_limit = 4000);
 	query := fmt.Sprintf(
 		`ALTER TABLE binance.kline SET (autovacuum_vacuum_scale_factor = %f, autovacuum_vacuum_cost_limit = %d)`,
 		scaleFactor,
@@ -126,6 +209,8 @@ func (ts *TimescaleDB) ResetAutovacuumParams() error {
 	)
 	return err
 }
+
+// -------------------- Storage Interface --------------------
 
 func (ts *TimescaleDB) CreateCandle(*models.Kline) error               { return nil }
 func (ts *TimescaleDB) DeleteCandle(int) error                         { return nil }
