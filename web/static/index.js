@@ -9,7 +9,7 @@ let chart = LightweightCharts.createChart("chart-container", {
   },
   timeScale: {
     timeVisible: true,
-    secondsVisible: true,
+    secondsVisible: false,
   },
 });
 
@@ -160,6 +160,7 @@ function getLive(event) {
 function getBacktest(event) {
   event.preventDefault();
   const symbol = document.querySelector("#symbol").value;
+  const interval = document.querySelector("#interval-bt").value;
   const startTime = document.querySelector("#open_time").value;
   const endTime = document.querySelector("#close_time").value;
 
@@ -174,9 +175,9 @@ function getBacktest(event) {
     method: "POST",
     body: JSON.stringify({
       symbol: symbol,
-      interval: "",
-      open_time: new Date(startTime).getTime(),
-      close_time: new Date(endTime).getTime(),
+      interval: interval,
+      open_time: new Date(startTime),
+      close_time: new Date(endTime),
     }),
     headers: {
       "Content-Type": "application/json",
@@ -190,7 +191,7 @@ function getBacktest(event) {
     .then((data) => {
       const historicalData = data.map((d) => {
         return {
-          time: d[0] / 1000,
+          time: new Date(d[0]).getTime() / 1000,
           open: parseFloat(d[1]),
           high: parseFloat(d[2]),
           low: parseFloat(d[3]),
