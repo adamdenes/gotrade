@@ -148,13 +148,12 @@ func (ts *TimescaleDB) CreateMaterializedView(iName string, interval string) err
     SELECT 
         si.symbol,
         si.interval,
-        time_bucket(INTERVAL '%s', open_time) as bucket,
-        AVG(close) as avg_close,
-        MAX(high) as max_high,
-        MIN(low) as min_low,
-        FIRST(open, open_time) as first_open,
-        LAST(close, close_time) as last_close,
-        SUM(volume) as total_volume
+        time_bucket(INTERVAL '%s', kd.open_time) as bucket,
+        FIRST(kd.open, kd.open_time) as first_open,
+        MAX(kd.high) as max_high,
+        MIN(kd.low) as min_low,
+        LAST(kd.close, kd.close_time) as last_close,
+        SUM(kd.volume) as total_volume
     FROM binance.kline AS kd
     JOIN binance.symbol_intervals AS si ON kd.symbol_interval_id = si.symbol_interval_id
     GROUP BY bucket, si.symbol, si.interval;`, iName, interval)
@@ -177,7 +176,7 @@ func (ts *TimescaleDB) CreateRefreshPolicy(
             JOIN timescaledb_information.continuous_aggregates c ON j.hypertable_name = c.materialization_hypertable_name
             WHERE c.view_name = 'aggregate_%s' AND c.view_schema = 'binance'
         ) THEN
-            SELECT add_continuous_aggregate_policy(
+            PERFORM add_continuous_aggregate_policy(
                 'binance."aggregate_%s"',
                 start_offset => INTERVAL '%s',
                 end_offset => INTERVAL '%s',
@@ -218,13 +217,59 @@ func (ts *TimescaleDB) UpdateCandle(*models.Kline) error               { return 
 func (ts *TimescaleDB) GetCandleByOpenTime(int) (*models.Kline, error) { return nil, nil }
 
 func (ts *TimescaleDB) FetchData(
-	context.Context,
-	string,
-	int64,
-	int64,
+	ctx context.Context,
+	aggView, symbol string,
+	startTime, endTime int64,
 ) ([]*models.KlineSimple, error) {
-	return nil, nil
+	start := time.Now()
+
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	query := fmt.Sprintf(`
+    SELECT 
+        k.bucket, 
+        k.first_open, 
+        k.max_high, 
+        k.min_low, 
+        k.last_close,
+        k.bucket + INTERVAL '5 minutes' - INTERVAL '1 millisecond' as close_time
+    FROM binance."aggregate_%s" k
+    WHERE k.symbol = $1 AND k.bucket >= $2 AND k.bucket + INTERVAL '5 minutes' - INTERVAL '1 millisecond' <= $3
+    ORDER BY k.bucket ASC`, aggView)
+
+	rows, err := ts.db.QueryContext(
+		ctx,
+		query,
+		symbol,
+		time.Unix(startTime/1000, 0),
+		time.Unix(endTime/1000, 0),
+	)
+	if err != nil {
+		if err.Error() == "pq: canceling statement due to user request" {
+			return nil, fmt.Errorf("%w: %v", ctx.Err(), err)
+		}
+		return nil, err
+	}
+	defer rows.Close()
+
+	var klines []*models.KlineSimple
+	for rows.Next() {
+		var d models.KlineSimple
+		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close, &d.Volume); err != nil {
+			return nil, err
+		}
+		klines = append(klines, &d)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	logger.Info.Printf("Finished streaming data to client, it took %v\n", time.Since(start))
+	return klines, nil
 }
+
 func (ts *TimescaleDB) Copy([]byte, *string, *string) error { return nil }
 
 func (ts *TimescaleDB) Stream(r *zip.Reader) error {
@@ -311,46 +356,26 @@ func (ts *TimescaleDB) QueryLastRow() (*models.KlineRequest, error) {
         SELECT 
             si.symbol, 
             si.interval, 
-            EXTRACT(EPOCH FROM kd.open_time) AS open_time_epoch, 
-            EXTRACT(EPOCH FROM kd.close_time) AS close_time_epoch
+            kd.open_time, 
+            kd.close_time
         FROM 
             binance.kline AS kd
         JOIN 
             binance.symbol_intervals AS si ON kd.symbol_interval_id = si.symbol_interval_id
         ORDER BY 
-            kd.open_time DESC 
+            kd.open_time DESC
         LIMIT 1;`
 
 	d := new(models.KlineRequest)
 
-	var o, c string
-
 	err := ts.db.QueryRow(query).
-		Scan(&d.Symbol, &d.Interval, &o, &c)
+		Scan(&d.Symbol, &d.Interval, &d.OpenTime, &d.CloseTime)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, err
 		}
 		return nil, err
 	}
-
-	oc := strings.Split(o, ".")
-	cc := strings.Split(c, ".")
-	o = oc[0] + oc[1]
-	c = cc[0] + cc[1]
-	var tempO, tempC float64
-
-	tempO, err = strconv.ParseFloat(o, 64)
-	if err != nil {
-		return nil, err
-	}
-	d.OpenTime = int64(tempO) / 1000
-
-	tempC, err = strconv.ParseFloat(c, 64)
-	if err != nil {
-		return nil, err
-	}
-	d.CloseTime = int64(tempC) / 1000
 
 	return d, nil
 }
