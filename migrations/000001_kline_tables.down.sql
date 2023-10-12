@@ -1,0 +1,10 @@
+BEGIN;
+
+DROP TABLE IF EXISTS binance.symbols CASCADE;
+DROP TABLE IF EXISTS binance.intervals CASCADE;
+DROP TABLE IF EXISTS binance.symbols_intervals CASCADE;
+DROP TABLE IF EXISTS binance.kline CASCADE;
+
+DROP SCHEMA IF EXISTS binance;
+
+COMMIT;
