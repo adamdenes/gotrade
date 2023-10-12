@@ -8,9 +8,10 @@ import (
 )
 
 type Storage interface {
-	CreateCandle(*models.Kline) error
-	DeleteCandle(int) error
-	UpdateCandle(*models.Kline) error
+	Insert(string, ...any) (any, error)
+	Create(*models.Kline) error
+	Delete(int) error
+	Update(*models.Kline) error
 	GetCandleByOpenTime(int) (*models.Kline, error)
 	FetchData(context.Context, string, string, int64, int64) ([]*models.KlineSimple, error)
 	Copy([]byte, *string, *string) error
