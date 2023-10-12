@@ -24,10 +24,6 @@ func main() {
 	if err != nil {
 		logger.Error.Fatal(err)
 	}
-
-	if err := db.Init(); err != nil {
-		logger.Error.Fatal(err)
-	}
 	defer db.Close()
 
 	go api.PollHistoricalData(db)
