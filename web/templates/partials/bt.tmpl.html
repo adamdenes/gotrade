@@ -4,12 +4,7 @@
     <form id="backtest-form" action="/fetch-data" method="POST">
         <label for="symbol">Trading Pair:</label>
         <input type="text" id="symbol" name="symbol" placeholder="Enter trading pair" required>
-        <select id="interval-bt" name="interval">
-            <option value="1m">1 Minute</option>
-            <option value="5m">5 Minutes</option>
-            <option value="1h">1 Hour</option>
-            <option value="1d">1 Day</option>
-        </select>
+        {{ template "dropdown-bt" . }} 
         <label for="open_time">Start Time:</label>
         <input type="datetime-local" id="open_time" name="open_time" required>
         <label for="close_time">End Time:</label>
