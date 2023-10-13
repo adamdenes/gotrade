@@ -5,17 +5,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
-	"github.com/jackc/pgtype"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -40,180 +42,212 @@ func (ts *TimescaleDB) Close() {
 	ts.db.Close()
 }
 
-func (ts *TimescaleDB) Init() error {
-	if err := ts.CreateSchema(); err != nil {
-		return err
-	}
-	if err := ts.CreateCandleTable(); err != nil {
-		return err
+func (ts *TimescaleDB) GetSymbol(symbol string) (int64, error) {
+	var id int64
+	q := fmt.Sprintf("SELECT symbol_id FROM binance.symbols WHERE symbol = '%s';", symbol)
+	err := ts.db.QueryRow(q).Scan(&id)
+	return id, err
+}
+
+func (ts *TimescaleDB) CreateSymbol(symbol string) (int64, error) {
+	var id int64
+	q := `INSERT INTO binance.symbols (symbol) 
+    VALUES ($1) ON CONFLICT (symbol) DO NOTHING
+    RETURNING symbol_id;`
+
+	err := ts.db.QueryRow(q, symbol).Scan(&id)
+	if err != nil {
+		return 0, err
 	}
 
-	// ERROR: operation not supported on hypertables that have compression enabled (SQLSTATE 0A000)
-	// if err := ts.CreateUniqueIndex(); err != nil {
-	// 	return err
-	// }
+	logger.Debug.Printf("INSERT INTO binance.symbols-> (%s), returning symbol_id: %d", symbol, id)
+	return id, nil
+}
 
-	viewsAndPolicies := map[string]map[string][]string{
-		"1m": {
-			"1 minute": {"1 day", "1 minute", "5 minutes"},
-		},
-		"5m": {
-			"5 minutes": {"1 day", "5 minutes", "10 minutes"},
-		},
-		"1h": {
-			"1 hour": {"1 month", "1 hour", "1 day"},
-		},
-		"1d": {
-			"1 day": {"1 year", "1 day", "1 week"},
-		},
+func (ts *TimescaleDB) GetInterval(interval string) (int64, error) {
+	var id int64
+	q := fmt.Sprintf("SELECT interval_id FROM binance.intervals WHERE interval = '%s';", interval)
+	err := ts.db.QueryRow(q).Scan(&id)
+	return id, err
+}
+
+func (ts *TimescaleDB) CreateInterval(interval, duration string) (int64, error) {
+	var id int64
+	query := `
+    INSERT INTO binance.intervals (interval, interval_duration)
+    VALUES ($1, $2) ON CONFLICT (interval, interval_duration) DO NOTHING
+    RETURNING interval_id;`
+
+	err := ts.db.QueryRow(query, interval, duration).Scan(&id)
+	if err != nil {
+		return 0, err
 	}
-	for table, interval := range viewsAndPolicies {
-		for innerTable, values := range interval {
-			if err := ts.CreateMaterializedView(table, innerTable); err != nil {
-				return err
+
+	logger.Debug.Printf(
+		"INSERT INTO binance.intervals -> (%s, %s), returning itnerval_id: %d",
+		interval,
+		duration,
+		id,
+	)
+	return id, err
+}
+
+func (ts *TimescaleDB) CreateSymbolIntervalID(sid, iid int64) (int64, error) {
+	var id int64
+	query := `
+    INSERT INTO binance.symbols_intervals (symbol_id, interval_id)
+    VALUES ($1, $2) ON CONFLICT (symbol_id, interval_id) 
+    DO UPDATE SET symbol_id=EXCLUDED.symbol_id 
+    RETURNING symbol_interval_id;`
+
+	err := ts.db.QueryRow(query, sid, iid).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	logger.Debug.Printf(
+		"INSERT INTO binance.symbols_intervals -> (%d, %d), returning symbol_interval_id: %d",
+		sid,
+		iid,
+		id,
+	)
+	return id, err
+}
+
+func (ts *TimescaleDB) CreateSIID(s, i string) (int64, error) {
+	symbolID, err := ts.GetSymbol(s)
+	if err != nil {
+		// Shouldn't return any row on conflict!
+		if errors.Is(err, sql.ErrNoRows) {
+			symbolID, err = ts.CreateSymbol(s)
+			if err != nil {
+				return -1, err
 			}
-			if err := ts.CreateRefreshPolicy(table, values[0], values[1], values[2]); err != nil {
-				return err
-			}
+		} else {
+			return -1, fmt.Errorf("error ensuring symbol exists: %v", err)
 		}
 	}
 
-	return nil
-}
-
-func (ts *TimescaleDB) CreateSchema() error {
-	_, err := ts.db.Exec("CREATE SCHEMA IF NOT EXISTS binance")
+	intervalID, err := ts.GetInterval(i)
 	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ts *TimescaleDB) CreateUniqueIndex() error {
-	indexQuery := `CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_opentime_symbol_interval ON binance.kline (open_time, symbol_interval_id);`
-	if _, err := ts.db.Exec(indexQuery); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ts *TimescaleDB) CreateCandleTable() error {
-	// Create Postgres SQL tables
-	typeQuery := `CREATE TABLE IF NOT EXISTS binance.symbol_intervals (
-        symbol_interval_id SERIAL PRIMARY KEY,
-        symbol TEXT NOT NULL,
-        interval TEXT NOT NULL,
-        UNIQUE (symbol, interval)
-    );`
-
-	tableQuery := `CREATE TABLE IF NOT EXISTS binance.kline (
-        symbol_interval_id INT REFERENCES binance.symbol_intervals(symbol_interval_id),
-        open_time TIMESTAMPTZ NOT NULL,
-        open FLOAT NOT NULL,
-        high FLOAT NOT NULL,
-        low FLOAT NOT NULL,
-        close FLOAT NOT NULL,
-        volume FLOAT NOT NULL,
-        close_time TIMESTAMPTZ NOT NULL,
-        quote_volume FLOAT NOT NULL,
-        count INT NOT NULL,
-        taker_buy_volume FLOAT NOT NULL,
-        taker_buy_quote_volume FLOAT NOT NULL
-    );`
-	// Check if hypertable exist, if not create it
-	hypertableQuery := `
-    DO $$ 
-    BEGIN 
-        IF NOT EXISTS (SELECT * FROM timescaledb_information.hypertables WHERE hypertable_schema = 'binance' AND hypertable_name = 'kline') THEN 
-            SELECT create_hypertable('binance.kline', 'open_time');
-        END IF;
-    END $$;`
-
-	if _, err := ts.db.Exec(typeQuery); err != nil {
-		return err
-	}
-	if _, err := ts.db.Exec(tableQuery); err != nil {
-		return err
-	}
-	if _, err := ts.db.Exec(hypertableQuery); err != nil {
-		return err
+		// Shouldn't return any row on conflict!
+		if errors.Is(err, sql.ErrNoRows) {
+			intervalID, err = ts.CreateInterval(i, ConvertInterval(i))
+			if err != nil {
+				return -1, err
+			}
+		} else {
+			return -1, fmt.Errorf("error ensuring interval exists: %v", err)
+		}
 	}
 
-	return nil
+	symbolIntervalID, err := ts.CreateSymbolIntervalID(symbolID, intervalID)
+	if err != nil {
+		return -1, fmt.Errorf("error ensuring symbol-interval combo exists: %v", err)
+	}
+
+	return symbolIntervalID, nil
 }
 
-func (ts *TimescaleDB) CreateMaterializedView(iName string, interval string) error {
-	query := fmt.Sprintf(`
-    CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_%s WITH (timescaledb.continuous) AS
-    SELECT 
-        si.symbol,
-        si.interval,
-        time_bucket(INTERVAL '%s', kd.open_time) as bucket,
-        FIRST(kd.open, kd.open_time) as first_open,
-        MAX(kd.high) as max_high,
-        MIN(kd.low) as min_low,
-        LAST(kd.close, kd.close_time) as last_close,
-        SUM(kd.volume) as total_volume
-    FROM binance.kline AS kd
-    JOIN binance.symbol_intervals AS si ON kd.symbol_interval_id = si.symbol_interval_id
-    GROUP BY bucket, si.symbol, si.interval;`, iName, interval)
-
-	_, err := ts.db.Exec(query)
-	return err
-}
-
-func (ts *TimescaleDB) CreateRefreshPolicy(
-	aggTable string,
-	startOffset, endOffset, scheduleInterval string,
-) error {
-	// Add only if not already created...
-	p := fmt.Sprintf(`
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1
-            FROM timescaledb_information.jobs j
-            JOIN timescaledb_information.continuous_aggregates c ON j.hypertable_name = c.materialization_hypertable_name
-            WHERE c.view_name = 'aggregate_%s' AND c.view_schema = 'binance'
-        ) THEN
-            PERFORM add_continuous_aggregate_policy(
-                'binance."aggregate_%s"',
-                start_offset => INTERVAL '%s',
-                end_offset => INTERVAL '%s',
-                schedule_interval => INTERVAL '%s'
-            );
-        END IF;
-    END $$;`,
-		aggTable, aggTable, startOffset, endOffset, scheduleInterval)
-
-	_, err := ts.db.Exec(p)
-	return err
-}
-
-// SetAutovacuumParams sets custom autovacuum parameters for the kline table
-func (ts *TimescaleDB) SetAutovacuumParams(scaleFactor float64, costLimit int) error {
-	query := fmt.Sprintf(
-		`ALTER TABLE binance.kline SET (autovacuum_vacuum_scale_factor = %f, autovacuum_vacuum_cost_limit = %d)`,
-		scaleFactor,
-		costLimit,
+func ConvertInterval(intervalString string) string {
+	const (
+		SECOND = "s"
+		MINUTE = "m"
+		HOUR   = "h"
+		DAY    = "d"
+		WEEK   = "w"
+		MONTH  = "M"
 	)
-	_, err := ts.db.Exec(query)
-	return err
-}
+	var time, kind string
 
-// ResetAutovacuumParams resets the autovacuum parameters for the kline table to default
-func (ts *TimescaleDB) ResetAutovacuumParams() error {
-	_, err := ts.db.Exec(
-		`ALTER TABLE binance.kline RESET (autovacuum_vacuum_scale_factor, autovacuum_vacuum_cost_limit)`,
-	)
-	return err
+	r := []rune(intervalString)
+	for _, v := range r {
+		if unicode.IsDigit(v) {
+			time += string(v)
+		}
+		if unicode.IsLetter(v) {
+			kind += string(v)
+		}
+	}
+	var result string
+	switch kind {
+	case SECOND:
+		result = time + " second"
+	case MINUTE:
+		result = time + " minute"
+	case HOUR:
+		result = time + " hour"
+	case DAY:
+		result = time + " day"
+	case WEEK:
+		result = time + " week"
+	case MONTH:
+		result = time + " month"
+	}
+
+	if time != "1" || len(time) >= 2 {
+		result += "s"
+	}
+
+	return result
 }
 
 // -------------------- Storage Interface --------------------
 
-func (ts *TimescaleDB) CreateCandle(*models.Kline) error               { return nil }
-func (ts *TimescaleDB) DeleteCandle(int) error                         { return nil }
-func (ts *TimescaleDB) UpdateCandle(*models.Kline) error               { return nil }
+func (ts *TimescaleDB) Create(k *models.Kline) error {
+	symbolIntervalID, err := ts.CreateSIID(k.Symbol, k.Interval)
+	if err != nil {
+		return fmt.Errorf("error creating symbolIntervalID: %v", err)
+	}
+
+	query := `
+        INSERT INTO binance.kline (
+            symbol_interval_id,
+            open_time,
+            open,
+            high,
+            low,
+            close,
+            volume,
+            close_time,
+            quote_volume,
+            count,
+            taker_buy_volume,
+            taker_buy_quote_volume
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+        )`
+
+	stmt, err := ts.db.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(
+		symbolIntervalID,
+		k.OpenTime,
+		k.Open,
+		k.High,
+		k.Low,
+		k.Close,
+		k.Volume,
+		k.CloseTime,
+		k.QuoteAssetVolume,
+		k.NumberOfTrades,
+		k.TakerBuyBaseAssetVol,
+		k.TakerBuyQuoteAssetVol,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ts *TimescaleDB) Delete(int) error                               { return nil }
+func (ts *TimescaleDB) Update(*models.Kline) error                     { return nil }
 func (ts *TimescaleDB) GetCandleByOpenTime(int) (*models.Kline, error) { return nil, nil }
 
 func (ts *TimescaleDB) FetchData(
@@ -223,7 +257,7 @@ func (ts *TimescaleDB) FetchData(
 ) ([]*models.KlineSimple, error) {
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	query := fmt.Sprintf(`
@@ -232,11 +266,12 @@ func (ts *TimescaleDB) FetchData(
         k.first_open, 
         k.max_high, 
         k.min_low, 
-        k.last_close,
-        k.bucket + INTERVAL '5 minutes' - INTERVAL '1 millisecond' as close_time
+        k.last_close
     FROM binance."aggregate_%s" k
-    WHERE k.symbol = $1 AND k.bucket >= $2 AND k.bucket + INTERVAL '5 minutes' - INTERVAL '1 millisecond' <= $3
-    ORDER BY k.bucket ASC`, aggView)
+    JOIN binance.symbols s ON k.siid = s.symbol_id
+    JOIN binance.intervals i ON k.siid = i.interval_id
+    WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket + i.interval_duration::interval - INTERVAL '1 millisecond' <= $3
+    ORDER BY k.bucket;`, aggView)
 
 	rows, err := ts.db.QueryContext(
 		ctx,
@@ -256,7 +291,7 @@ func (ts *TimescaleDB) FetchData(
 	var klines []*models.KlineSimple
 	for rows.Next() {
 		var d models.KlineSimple
-		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close, &d.Volume); err != nil {
+		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close /*,&d.Volume*/); err != nil {
 			return nil, err
 		}
 		klines = append(klines, &d)
@@ -270,7 +305,90 @@ func (ts *TimescaleDB) FetchData(
 	return klines, nil
 }
 
-func (ts *TimescaleDB) Copy([]byte, *string, *string) error { return nil }
+func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
+	startTime := time.Now()
+
+	ctx := context.Background()
+	conn, err := ts.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	var rawData [][]interface{}
+	if err := json.Unmarshal(r, &rawData); err != nil {
+		return err
+	}
+
+	query := `
+	       INSERT INTO binance.kline (
+	           symbol_interval_id,
+	           open_time,
+	           open,
+	           high,
+	           low,
+	           close,
+	           volume,
+	           close_time,
+	           quote_volume,
+	           count,
+	           taker_buy_volume,
+	           taker_buy_quote_volume
+	       )
+	       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`
+
+	err = conn.Raw(func(driverConn any) error {
+		conn := driverConn.(*stdlib.Conn).Conn()
+		defer conn.Close(ctx)
+
+		symbolIntervalID, err := ts.CreateSIID(*name, *interval)
+		if err != nil {
+			return fmt.Errorf("error creating symbol_interval_id: %v", err)
+		}
+
+		batch := pgx.Batch{}
+		for _, record := range rawData {
+			batch.Queue(query,
+				symbolIntervalID,
+				time.UnixMilli(int64(record[0].(float64))), // openTime
+				record[1].(string),                         // open
+				record[2].(string),                         // high
+				record[3].(string),                         // low
+				record[4].(string),                         // close
+				record[5].(string),                         // volume
+				time.UnixMilli(int64(record[6].(float64))), // closeTime
+				record[7].(string),                         // quoteVolume
+				int(record[8].(float64)),                   // count
+				record[9].(string),                         // takerBuyVolume
+				record[10].(string),                        // takerBuyQuoteVolume
+			)
+		}
+
+		// Send queued up queries
+		br := conn.SendBatch(ctx, &batch)
+
+		_, err = br.Exec()
+		if err != nil {
+			return err
+		}
+		logger.Debug.Println("Total rows:", len(rawData))
+
+		if err := conn.Close(ctx); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	logger.Info.Printf(
+		"Finished inserting batch data to Postgres, it took %v\n",
+		time.Since(startTime),
+	)
+	return nil
+}
 
 func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 	startTime := time.Now()
@@ -290,27 +408,12 @@ func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 	// Create a CSV reader
 	csvReader := csv.NewReader(zippedFile)
 
-	err = conn.Raw(func(driverConn any) error {
+	err = conn.Raw(func(driverConn interface{}) error {
 		conn := driverConn.(*stdlib.Conn).Conn()
-		// Ensure the symbol and interval combination exists in the symbol_intervals table
-		var symbolIntervalID int64
-		err = conn.QueryRow(
-			context.Background(),
-			`
-            INSERT INTO binance.symbol_intervals (symbol, interval) 
-            VALUES ($1, $2) 
-            ON CONFLICT (symbol, interval) 
-            DO UPDATE SET 
-                symbol = EXCLUDED.symbol, 
-                interval = EXCLUDED.interval
-            RETURNING symbol_interval_id
-            `,
-			zipSlice[0],
-			zipSlice[1],
-		).
-			Scan(&symbolIntervalID)
+
+		symbolIntervalID, err := ts.CreateSIID(zipSlice[0], zipSlice[1])
 		if err != nil {
-			return fmt.Errorf("error QueryRow: %v", err)
+			return fmt.Errorf("error ensuring symbol-interval combo exists: %v", err)
 		}
 
 		// Create the csvCopySource
@@ -319,7 +422,7 @@ func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 			reader:           csvReader,
 		}
 
-		conn.CopyFrom(context.Background(),
+		ar, err := conn.CopyFrom(context.Background(),
 			pgx.Identifier{"binance", "kline"},
 			[]string{
 				"symbol_interval_id",
@@ -337,6 +440,7 @@ func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 			},
 			cs,
 		)
+		logger.Debug.Println("Affected rows:", ar)
 		if err != nil {
 			return fmt.Errorf("error CopyFrom: %v", err)
 		}
@@ -353,18 +457,22 @@ func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 
 func (ts *TimescaleDB) QueryLastRow() (*models.KlineRequest, error) {
 	query := `
-        SELECT 
-            si.symbol, 
-            si.interval, 
-            kd.open_time, 
-            kd.close_time
-        FROM 
-            binance.kline AS kd
-        JOIN 
-            binance.symbol_intervals AS si ON kd.symbol_interval_id = si.symbol_interval_id
-        ORDER BY 
-            kd.open_time DESC
-        LIMIT 1;`
+    SELECT 
+        s.symbol, 
+        i.interval, 
+        k.open_time, 
+        k.close_time
+    FROM 
+        binance.kline AS k
+    JOIN 
+        binance.symbols_intervals AS si ON k.symbol_interval_id = si.symbol_interval_id
+    JOIN
+        binance.symbols AS s ON si.symbol_id = s.symbol_id
+    JOIN
+        binance.intervals AS i ON si.interval_id = i.interval_id
+    ORDER BY 
+        k.open_time DESC
+    LIMIT 1;`
 
 	d := new(models.KlineRequest)
 
