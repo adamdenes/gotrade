@@ -8,7 +8,6 @@ import (
 )
 
 type Storage interface {
-	Insert(string, ...any) (any, error)
 	Create(*models.Kline) error
 	Delete(int) error
 	Update(*models.Kline) error
