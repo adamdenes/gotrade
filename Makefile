@@ -63,6 +63,13 @@ migrate-up:
 migrate-cagg:
 	@echo "Running continuous aggregates migration/refresh"
 	migrate -path ./migrations -database $(TS_DSN) goto 2 
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1w', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1d', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_4h', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1h', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_5m', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1m', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1s', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
 
 migrate-down:
 	@echo "Reverting hypertable migration"
