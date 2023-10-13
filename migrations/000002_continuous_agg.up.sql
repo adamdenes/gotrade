@@ -29,8 +29,6 @@ CREATE INDEX ON binance.aggregate_1s (bucket, siid);
 ALTER MATERIALIZED VIEW binance.aggregate_1s SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_1s', compress_after => INTERVAL '7 days');
 
-CALL refresh_continuous_aggregate('binance.aggregate_1s', now()::timestamp - INTERVAL '1 year', now()::timestamp);
-
 -- ###############################################################################################################
 
 CREATE MATERIALIZED VIEW binance.aggregate_1m
@@ -61,8 +59,6 @@ CREATE INDEX ON binance.aggregate_1m (bucket, siid);
 
 ALTER MATERIALIZED VIEW binance.aggregate_1m SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_1m', compress_after => INTERVAL '7 days');
-
-CALL refresh_continuous_aggregate('binance.aggregate_1m', now()::timestamp - INTERVAL '1 year', now()::timestamp);
 
 -- ###############################################################################################################
 
@@ -95,8 +91,6 @@ CREATE INDEX ON binance.aggregate_5m (bucket, siid);
 ALTER MATERIALIZED VIEW binance.aggregate_5m SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_5m', compress_after => INTERVAL '7 days');
 
-CALL refresh_continuous_aggregate('binance.aggregate_5m', now()::timestamp - INTERVAL '1 year', now()::timestamp);
-
 -- ###############################################################################################################
 
 CREATE MATERIALIZED VIEW binance.aggregate_1h 
@@ -127,8 +121,6 @@ CREATE INDEX ON binance.aggregate_1h (bucket, siid);
 
 ALTER MATERIALIZED VIEW binance.aggregate_1h SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_1h', compress_after => INTERVAL '7 days');
-
-CALL refresh_continuous_aggregate('binance.aggregate_1h', now()::timestamp - INTERVAL '1 year', now()::timestamp);
 
 -- ###############################################################################################################
 
@@ -161,8 +153,6 @@ CREATE INDEX ON binance.aggregate_4h (bucket, siid);
 ALTER MATERIALIZED VIEW binance.aggregate_4h SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_4h', compress_after => INTERVAL '7 days');
 
-CALL refresh_continuous_aggregate('binance.aggregate_4h', now()::timestamp - INTERVAL '1 year', now()::timestamp);
-
 -- ###############################################################################################################
 
 CREATE MATERIALIZED VIEW binance.aggregate_1d 
@@ -193,8 +183,6 @@ CREATE INDEX ON binance.aggregate_1d (bucket, siid);
 
 ALTER MATERIALIZED VIEW binance.aggregate_1d SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_1d', compress_after => INTERVAL '8 days');
-
-CALL refresh_continuous_aggregate('binance.aggregate_1d', now()::timestamp - INTERVAL '1 year', now()::timestamp);
 
 -- ###############################################################################################################
 
@@ -227,6 +215,5 @@ CREATE INDEX ON binance.aggregate_1w (bucket, siid);
 ALTER MATERIALIZED VIEW binance.aggregate_1w SET (timescaledb.compress = true);
 SELECT add_compression_policy('binance.aggregate_1w', compress_after => INTERVAL '1 months');
 
-CALL refresh_continuous_aggregate('binance.aggregate_1w', now()::timestamp - INTERVAL '1 year', now()::timestamp);
 
 COMMIT;
