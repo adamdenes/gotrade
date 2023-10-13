@@ -86,8 +86,6 @@ func PollHistoricalData(storage storage.Storage) {
 			}
 		}
 
-		ot := row.OpenTime.UnixMilli()
-		ct := row.CloseTime.UnixMilli()
 		epoch := row.CloseTime
 		var (
 			eYear    int        = epoch.Year()
@@ -117,14 +115,14 @@ func PollHistoricalData(storage storage.Storage) {
 
 			printCount++
 			// Next second
-			ot = ct + 1
-			ct = ot + 999
+			row.OpenTime = row.CloseTime.Add(1 * time.Millisecond)
+			row.CloseTime = row.OpenTime.Add(999 * time.Millisecond)
 
 			uri := BuildURI(
 				"https://data-api.binance.vision/api/v3/klines?",
 				"symbol=", row.Symbol,
 				"&interval=", row.Interval,
-				"&startTime=", fmt.Sprintf("%d", ot),
+				"&startTime=", fmt.Sprintf("%d", row.OpenTime.UnixMilli()),
 				"&limit=1000",
 			)
 
