@@ -219,13 +219,8 @@ func (ts *TimescaleDB) Create(k *models.Kline) error {
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
         )`
 
-	stmt, err := ts.db.Prepare(query)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec(
+	_, err = ts.db.Exec(
+		query,
 		symbolIntervalID,
 		k.OpenTime,
 		k.Open,
@@ -341,6 +336,11 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 		conn := driverConn.(*stdlib.Conn).Conn()
 		defer conn.Close(ctx)
 
+		_, err := conn.Prepare(ctx, "create_stmt", query)
+		if err != nil {
+			return err
+		}
+
 		symbolIntervalID, err := ts.CreateSIID(*name, *interval)
 		if err != nil {
 			return fmt.Errorf("error creating symbol_interval_id: %v", err)
@@ -393,10 +393,12 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 	startTime := time.Now()
 
-	conn, err := ts.db.Conn(context.Background())
+	ctx := context.Background()
+	conn, err := ts.db.Conn(ctx)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
 	zipSlice := strings.Split(r.File[0].Name, "-") // get name and interval
 	zippedFile, err := r.File[0].Open()
@@ -422,7 +424,7 @@ func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 			reader:           csvReader,
 		}
 
-		ar, err := conn.CopyFrom(context.Background(),
+		ar, err := conn.CopyFrom(ctx,
 			pgx.Identifier{"binance", "kline"},
 			[]string{
 				"symbol_interval_id",
@@ -474,18 +476,15 @@ func (ts *TimescaleDB) QueryLastRow() (*models.KlineRequest, error) {
         k.open_time DESC
     LIMIT 1;`
 
-	d := new(models.KlineRequest)
+	kr := new(models.KlineRequest)
 
 	err := ts.db.QueryRow(query).
-		Scan(&d.Symbol, &d.Interval, &d.OpenTime, &d.CloseTime)
+		Scan(&kr.Symbol, &kr.Interval, &kr.OpenTime, &kr.CloseTime)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, err
-		}
 		return nil, err
 	}
 
-	return d, nil
+	return kr, nil
 }
 
 // Using CopyFromSource interface
