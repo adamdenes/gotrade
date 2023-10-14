@@ -27,7 +27,7 @@ SELECT add_continuous_aggregate_policy(
 CREATE INDEX ON binance.aggregate_1s (bucket, siid);
 
 ALTER MATERIALIZED VIEW binance.aggregate_1s SET (timescaledb.compress = true);
-SELECT add_compression_policy('binance.aggregate_1s', compress_after => INTERVAL '7 days');
+SELECT add_compression_policy('binance.aggregate_1s', compress_after => INTERVAL '1 days');
 
 -- ###############################################################################################################
 
