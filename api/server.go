@@ -25,16 +25,23 @@ type Server struct {
 	infoLog       *log.Logger
 	errorLog      *log.Logger
 	templateCache map[string]*template.Template
+	symbolCache   map[string]struct{}
 }
 
-func NewServer(addr string, db storage.Storage, cache map[string]*template.Template) *Server {
+func NewServer(
+	addr string,
+	db storage.Storage,
+	templates map[string]*template.Template,
+	symbols map[string]struct{},
+) *Server {
 	return &Server{
 		listenAddress: addr,
 		store:         db,
 		router:        &http.ServeMux{},
 		infoLog:       logger.Info,
 		errorLog:      logger.Error,
-		templateCache: cache,
+		templateCache: templates,
+		symbolCache:   symbols,
 	}
 }
 
@@ -97,6 +104,8 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
+	t := time.Now()
+
 	if r.Method != http.MethodPost {
 		s.clientError(w, http.StatusMethodNotAllowed)
 		return
@@ -118,7 +127,6 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s.infoLog.Printf("Request validation took: %v\n", time.Since(val))
 
-	t := time.Now()
 	select {
 	case <-r.Context().Done():
 		s.errorLog.Println("Client disconnected early.")
@@ -273,18 +281,14 @@ func (s *Server) validateKlineRequest(r *http.Request) (*models.KlineRequest, er
 	if err := json.NewDecoder(r.Body).Decode(&kr); err != nil {
 		return nil, err
 	}
-	// Validate symbol
-	if err := ValidateSymbol(kr.Symbol); err != nil {
+	if err := ValidateSymbol(kr.Symbol, s.symbolCache); err != nil {
 		return nil, err
 	}
 	return kr, nil
 }
 
 func (s *Server) getDateRange(kr *models.KlineRequest) (time.Time, time.Time, error) {
-	timeSlice, err := ValidateTimes(
-		fmt.Sprintf("%v", kr.OpenTime),
-		fmt.Sprintf("%v", kr.CloseTime),
-	)
+	timeSlice, err := ValidateTimes(kr.OpenTime, kr.CloseTime)
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}

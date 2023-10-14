@@ -348,28 +348,13 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	}
 }
 
-func ValidateSymbol(symbol string) error {
+func ValidateSymbol(symbol string, symbolCache map[string]struct{}) error {
 	if symbol == "" {
 		return fmt.Errorf("no symbol provided: %q", symbol)
 	}
-
-	symbols, err := getSymbols()
-	if err != nil {
-		return err
+	if sc, ok := symbolCache[symbol]; !ok {
+		return fmt.Errorf("symbol not found: %v", sc)
 	}
-
-	found := false
-	for _, s := range symbols {
-		if s == symbol {
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return errors.New("invalid symbol")
-	}
-
 	return nil
 }
 
@@ -570,6 +555,34 @@ GET /api/v3/exchangeInfo
 	Notes: If the value provided to symbol or symbols do not exist,
 	the endpoint will throw an error saying the symbol is invalid.
 */
+
+func NewSymbolCache() (map[string]struct{}, error) {
+	uri := BuildURI("https://data-api.binance.vision/api/v3/exchangeInfo")
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	// Define a struct to unmarshal the JSON response
+	var exchangeInfo struct {
+		Symbols []struct {
+			Symbol string `json:"symbol"`
+		} `json:"symbols"`
+	}
+
+	// Parse the JSON response
+	err = json.Unmarshal(resp, &exchangeInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	cache := make(map[string]struct{}, len(exchangeInfo.Symbols))
+	for _, s := range exchangeInfo.Symbols {
+		cache[s.Symbol] = struct{}{}
+	}
+
+	return cache, nil
+}
 
 func getSymbols() ([]string, error) {
 	uri := BuildURI("https://data-api.binance.vision/api/v3/exchangeInfo")
