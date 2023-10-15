@@ -583,32 +583,3 @@ func NewSymbolCache() (map[string]struct{}, error) {
 
 	return cache, nil
 }
-
-func getSymbols() ([]string, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/exchangeInfo")
-	resp, err := Query(uri)
-	if err != nil {
-		return nil, err
-	}
-
-	// Define a struct to unmarshal the JSON response
-	var exchangeInfo struct {
-		Symbols []struct {
-			Symbol string `json:"symbol"`
-		} `json:"symbols"`
-	}
-
-	// Parse the JSON response
-	err = json.Unmarshal(resp, &exchangeInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract the symbol names
-	symbols := make([]string, len(exchangeInfo.Symbols))
-	for i, symbol := range exchangeInfo.Symbols {
-		symbols[i] = symbol.Symbol
-	}
-
-	return symbols, nil
-}
