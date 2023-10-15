@@ -114,6 +114,19 @@ func (ts *TimescaleDB) CreateSymbolIntervalID(sid, iid int64) (int64, error) {
 	return id, err
 }
 
+func (ts *TimescaleDB) GetSymbolIntervalID(sid, iid int64) (int64, error) {
+	var symbolIntervalID int64
+	query := `SELECT symbol_interval_id FROM binance.symbols_intervals WHERE symbol_id = $1 AND interval_id = $2`
+	err := ts.db.QueryRow(query, sid, iid).Scan(&symbolIntervalID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return -1, nil
+		}
+		return -1, err // Some other database error occurred
+	}
+	return symbolIntervalID, nil
+}
+
 func (ts *TimescaleDB) CreateSIID(s, i string) (int64, error) {
 	symbolID, err := ts.GetSymbol(s)
 	if err != nil {
@@ -141,6 +154,17 @@ func (ts *TimescaleDB) CreateSIID(s, i string) (int64, error) {
 		}
 	}
 
+	existingSymbolIntervalID, err := ts.GetSymbolIntervalID(symbolID, intervalID)
+	if err != nil {
+		return -1, fmt.Errorf("error checking symbol-interval combo: %v", err)
+	}
+
+	// SIID already exists, return it
+	if existingSymbolIntervalID != -1 {
+		return existingSymbolIntervalID, nil
+	}
+
+	// SIID does not exists, create one
 	symbolIntervalID, err := ts.CreateSymbolIntervalID(symbolID, intervalID)
 	if err != nil {
 		return -1, fmt.Errorf("error ensuring symbol-interval combo exists: %v", err)
@@ -263,10 +287,9 @@ func (ts *TimescaleDB) FetchData(
         k.min_low, 
         k.last_close
     FROM binance."aggregate_%s" k
-    JOIN binance.symbols s ON k.siid = s.symbol_id
-    --JOIN binance.intervals i ON k.siid = i.interval_id
-    --WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket + i.interval_duration::interval - INTERVAL '1 millisecond' <= $3
-    WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket_close <= $3
+    JOIN binance.symbols_intervals si ON k.siid = si.symbol_interval_id
+    JOIN binance.symbols s ON si.symbol_id = s.symbol_id
+    WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket <= $3
     ORDER BY k.bucket;`,
 		aggView)
 

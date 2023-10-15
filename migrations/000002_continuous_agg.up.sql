@@ -1,41 +1,5 @@
 BEGIN;
 
--- CREATE MATERIALIZED VIEW binance.aggregate_1s
--- WITH (timescaledb.continuous) AS
--- SELECT 
---     kd.symbol_interval_id as siid,
---     time_bucket(INTERVAL '1 second', kd.open_time) as bucket,
---     FIRST(kd.open, kd.open_time) as first_open,
---     MAX(kd.high) as max_high,
---     MIN(kd.low) as min_low,
---     LAST(kd.close, kd.close_time) as last_close,
---     SUM(kd.volume) as total_volume
--- FROM binance.kline AS kd
--- JOIN binance.symbols_intervals AS si 
--- ON kd.symbol_interval_id = si.symbol_interval_id
--- GROUP BY bucket, kd.symbol_interval_id
--- WITH NO DATA;
---
--- SELECT add_continuous_aggregate_policy(
---     'binance.aggregate_1s',
---     start_offset => INTERVAL '10 minutes',
---     end_offset => NULL,
---     schedule_interval => INTERVAL '1 minute');
---
--- CREATE INDEX ON binance.aggregate_1s (bucket, siid);
---
--- ALTER MATERIALIZED VIEW binance.aggregate_1s SET (timescaledb.compress = true);
--- SELECT add_compression_policy('binance.aggregate_1s', compress_after => INTERVAL '1 days');
-
--- ###############################################################################################################
-
-CREATE OR REPLACE FUNCTION adjust_time_bucket(t TIMESTAMPTZ)
-RETURNS TIMESTAMPTZ AS $$
-BEGIN
-    RETURN t - INTERVAL '1 millisecond';
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
-
 CREATE MATERIALIZED VIEW binance.aggregate_1m
 WITH (timescaledb.continuous) AS 
 SELECT 
@@ -45,10 +9,9 @@ SELECT
     MAX(kd.high) as max_high,
     MIN(kd.low) as min_low,
     LAST(kd.close, kd.close_time) as last_close,
-    SUM(kd.volume) as total_volume,
-    adjust_time_bucket(time_bucket(INTERVAL '1 minute', kd.close_time)) as bucket_close
+    SUM(kd.volume) as total_volume
 FROM binance.kline AS kd
-GROUP BY bucket, kd.symbol_interval_id, bucket_close 
+GROUP BY bucket, kd.symbol_interval_id
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -73,10 +36,9 @@ SELECT
     MAX(kd.high) as max_high,
     MIN(kd.low) as min_low,
     LAST(kd.close, kd.close_time) as last_close,
-    SUM(kd.volume) as total_volume,
-    adjust_time_bucket(time_bucket(INTERVAL '5 minutes', kd.close_time)) as bucket_close
+    SUM(kd.volume) as total_volume
 FROM binance.kline AS kd
-GROUP BY bucket, kd.symbol_interval_id, bucket_close 
+GROUP BY bucket, kd.symbol_interval_id
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -101,10 +63,9 @@ SELECT
     MAX(kd.high) as max_high,
     MIN(kd.low) as min_low,
     LAST(kd.close, kd.close_time) as last_close,
-    SUM(kd.volume) as total_volume,
-    adjust_time_bucket(time_bucket(INTERVAL '1 hour', kd.close_time)) as bucket_close
+    SUM(kd.volume) as total_volume
 FROM binance.kline AS kd
-GROUP BY bucket, kd.symbol_interval_id, bucket_close 
+GROUP BY bucket, kd.symbol_interval_id
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -129,10 +90,9 @@ SELECT
     MAX(kd.high) as max_high,
     MIN(kd.low) as min_low,
     LAST(kd.close, kd.close_time) as last_close,
-    SUM(kd.volume) as total_volume,
-    adjust_time_bucket(time_bucket(INTERVAL '4 hours', kd.close_time)) as bucket_close
+    SUM(kd.volume) as total_volume
 FROM binance.kline AS kd
-GROUP BY bucket, kd.symbol_interval_id, bucket_close 
+GROUP BY bucket, kd.symbol_interval_id
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -157,10 +117,9 @@ SELECT
     MAX(kd.high) as max_high,
     MIN(kd.low) as min_low,
     LAST(kd.close, kd.close_time) as last_close,
-    SUM(kd.volume) as total_volume,
-    adjust_time_bucket(time_bucket(INTERVAL '1 day', kd.close_time)) as bucket_close
+    SUM(kd.volume) as total_volume
 FROM binance.kline AS kd
-GROUP BY bucket, kd.symbol_interval_id, bucket_close 
+GROUP BY bucket, kd.symbol_interval_id 
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
@@ -185,10 +144,9 @@ SELECT
     MAX(kd.high) as max_high,
     MIN(kd.low) as min_low,
     LAST(kd.close, kd.close_time) as last_close,
-    SUM(kd.volume) as total_volume,
-    adjust_time_bucket(time_bucket(INTERVAL '1 week', kd.close_time)) as bucket_close
+    SUM(kd.volume) as total_volume
 FROM binance.kline AS kd
-GROUP BY bucket, kd.symbol_interval_id, bucket_close 
+GROUP BY bucket, kd.symbol_interval_id
 WITH NO DATA;
 
 SELECT add_continuous_aggregate_policy(
