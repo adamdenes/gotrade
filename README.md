@@ -11,4 +11,6 @@
 * [] start writing tests...
 * [] make compression and aggregate queries / buttons to set them
 * [] maybe make a view to see the chunks and compression (use goroutines)?
-* [] make in-memory symbol table, eventually create a separate table for it that is refreshed every day or so
+* [x] make in-memory symbol table
+* [] create a separate table for the symbol cache and refresh every day/runtime
+* [] improve query performance in mat view?
