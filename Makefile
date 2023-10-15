@@ -58,26 +58,25 @@ connect_db:
 
 migrate-up:
 	@echo "Running hypertable migration"
-	migrate -path ./migrations -database $(TS_DSN) goto 1
+	migrate -path ./migrations -database $(DSN) goto 1
 
 migrate-cagg:
 	@echo "Running continuous aggregates migration/refresh"
-	migrate -path ./migrations -database $(TS_DSN) goto 2 
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1w', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1d', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_4h', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1h', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_5m', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1m', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
-	psql $(TS_DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1s', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	migrate -path ./migrations -database $(DSN) goto 2 
+	psql $(DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1w', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1d', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_4h', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1h', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_5m', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
+	psql $(DSN) -c "CALL refresh_continuous_aggregate('binance.aggregate_1m', now()::timestamp - INTERVAL '1 year', now()::timestamp);"
 
 migrate-down:
 	@echo "Reverting hypertable migration"
-	migrate -path ./migrations -database $(TS_DSN) down
+	migrate -path ./migrations -database $(DSN) down
 
 migrate-fix:
 	@echo "Fixing hypertable migration"
-	migrate -path ./migrations -database $(TS_DSN) force $(VERSION)
+	migrate -path ./migrations -database $(DSN) force $(VERSION)
 
 
 .PHONY: build test run stop start_db stop_db connect_db migrate-up migrate-cagg migrate-down migrate-fix
