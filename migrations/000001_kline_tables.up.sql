@@ -50,6 +50,5 @@ SELECT add_compression_policy('binance.kline', INTERVAL '14d');
 --     FROM show_chunks(
 --         'binance.kline',
 --         now()::timestamp - INTERVAL '1 week') i;
---
 
 COMMIT;

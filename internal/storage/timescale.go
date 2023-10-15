@@ -264,9 +264,11 @@ func (ts *TimescaleDB) FetchData(
         k.last_close
     FROM binance."aggregate_%s" k
     JOIN binance.symbols s ON k.siid = s.symbol_id
-    JOIN binance.intervals i ON k.siid = i.interval_id
-    WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket + i.interval_duration::interval - INTERVAL '1 millisecond' <= $3
-    ORDER BY k.bucket;`, aggView)
+    --JOIN binance.intervals i ON k.siid = i.interval_id
+    --WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket + i.interval_duration::interval - INTERVAL '1 millisecond' <= $3
+    WHERE s.symbol = $1 AND k.bucket >= $2 AND k.bucket_close <= $3
+    ORDER BY k.bucket;`,
+		aggView)
 
 	rows, err := ts.db.QueryContext(
 		ctx,
@@ -485,6 +487,17 @@ func (ts *TimescaleDB) QueryLastRow() (*models.KlineRequest, error) {
 	}
 
 	return kr, nil
+}
+
+func (ts *TimescaleDB) SaveSymbols(sc map[string]struct{}) error {
+	for symbol := range sc {
+		if _, err := ts.CreateSymbol(symbol); err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Using CopyFromSource interface

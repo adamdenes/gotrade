@@ -16,4 +16,5 @@ type Storage interface {
 	Copy([]byte, *string, *string) error
 	Stream(*zip.Reader) error
 	QueryLastRow() (*models.KlineRequest, error)
+	SaveSymbols(map[string]struct{}) error
 }

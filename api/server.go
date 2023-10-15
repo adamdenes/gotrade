@@ -32,7 +32,6 @@ func NewServer(
 	addr string,
 	db storage.Storage,
 	templates map[string]*template.Template,
-	symbols map[string]struct{},
 ) *Server {
 	return &Server{
 		listenAddress: addr,
@@ -41,11 +40,23 @@ func NewServer(
 		infoLog:       logger.Info,
 		errorLog:      logger.Error,
 		templateCache: templates,
-		symbolCache:   symbols,
+		symbolCache:   make(map[string]struct{}, 1),
 	}
 }
 
 func (s *Server) Run() {
+	go func() {
+		sc, err := NewSymbolCache()
+		if err != nil {
+			logger.Error.Fatal(err)
+		}
+		s.symbolCache = sc
+
+		if err := s.saveSymbols(); err != nil {
+			s.errorLog.Fatalf("error saving symbols: %v", err)
+		}
+	}()
+
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
 	err := http.ListenAndServe(s.listenAddress, s.routes())
 	if err != nil {
@@ -274,6 +285,10 @@ func (s *Server) fetchData(
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func (s *Server) saveSymbols() error {
+	return s.store.SaveSymbols(s.symbolCache)
 }
 
 func (s *Server) validateKlineRequest(r *http.Request) (*models.KlineRequest, error) {
