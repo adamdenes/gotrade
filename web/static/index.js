@@ -190,11 +190,11 @@ function getBacktest(event) {
     .then((data) => {
       const historicalData = data.map((d) => {
         return {
-          time: new Date(d[0]).getTime() / 1000,
-          open: parseFloat(d[1]),
-          high: parseFloat(d[2]),
-          low: parseFloat(d[3]),
-          close: parseFloat(d[4]),
+          time: new Date(d.open_time).getTime() / 1000,
+          open: d.open,
+          high: d.high,
+          low: d.low,
+          close: d.close,
         };
       });
       candleSeries.setData(historicalData);
