@@ -20,12 +20,7 @@ func main() {
 		logger.Error.Fatal(err)
 	}
 
-	sc, err := api.NewSymbolCache()
-	if err != nil {
-		logger.Error.Fatal(err)
-	}
-
-	db, err := storage.NewTimescaleDB(os.Getenv("TS_DSN"))
+	db, err := storage.NewTimescaleDB(os.Getenv("DSN"))
 	if err != nil {
 		logger.Error.Fatal(err)
 	}
@@ -33,6 +28,6 @@ func main() {
 
 	go api.PollHistoricalData(db)
 
-	server := api.NewServer(*addr, db, tc, sc)
+	server := api.NewServer(*addr, db, tc)
 	server.Run()
 }
