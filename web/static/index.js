@@ -82,7 +82,6 @@ function createWebSocketConnection(symbol, interval) {
 
     // Kline data is in 'data': {k: ...}' object
     const candleStick = jsonObject.data.k;
-    console.log(candleStick);
 
     candleSeries.update({
       time: candleStick.t / 1000,
@@ -198,7 +197,6 @@ function getBacktest(event) {
           close: parseFloat(d[4]),
         };
       });
-      console.log(historicalData);
       candleSeries.setData(historicalData);
     })
     .catch((err) => {
