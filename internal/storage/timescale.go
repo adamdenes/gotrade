@@ -288,7 +288,7 @@ func (ts *TimescaleDB) FetchData(
 	var klines []*models.KlineSimple
 	for rows.Next() {
 		var d models.KlineSimple
-		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close /*,&d.Volume*/); err != nil {
+		if err := rows.Scan(&d.OpenTime, &d.Open, &d.High, &d.Low, &d.Close); err != nil {
 			return nil, err
 		}
 		klines = append(klines, &d)
