@@ -52,7 +52,7 @@ func (s *Server) Run() {
 		}
 		s.symbolCache = sc
 
-		if err := s.saveSymbols(); err != nil {
+		if err := s.store.SaveSymbols(s.symbolCache); err != nil {
 			s.errorLog.Fatalf("error saving symbols: %v", err)
 		}
 	}()
@@ -143,8 +143,8 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		s.errorLog.Println("Client disconnected early.")
 		return
 	default:
-		resp, err := s.fetchData(
-			context.Background(),
+		resp, err := s.store.FetchData(
+			r.Context(),
 			kr.Interval,
 			kr.Symbol,
 			startDate.UnixMilli(),
@@ -258,37 +258,6 @@ func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websock
 			continue
 		}
 	}
-}
-
-func (s *Server) fetchData(
-	ctx context.Context,
-	interval, symbol string,
-	start int64,
-	end int64,
-) ([][]interface{}, error) {
-	klines, err := s.store.FetchData(ctx, interval, symbol, start, end)
-	if err != nil {
-		return nil, err
-	}
-
-	var result [][]interface{}
-	for _, k := range klines {
-		item := []interface{}{
-			k.OpenTime,
-			k.Open,
-			k.High,
-			k.Low,
-			k.Close,
-			k.Volume,
-			k.CloseTime,
-		}
-		result = append(result, item)
-	}
-	return result, nil
-}
-
-func (s *Server) saveSymbols() error {
-	return s.store.SaveSymbols(s.symbolCache)
 }
 
 func (s *Server) validateKlineRequest(r *http.Request) (*models.KlineRequest, error) {
