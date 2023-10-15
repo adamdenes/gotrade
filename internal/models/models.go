@@ -55,13 +55,12 @@ func (kr *KlineRequest) String() string {
 }
 
 type KlineSimple struct {
-	OpenTime  time.Time `json:"open_time"`
-	Open      string    `json:"open"`
-	High      string    `json:"high"`
-	Low       string    `json:"low"`
-	Close     string    `json:"close"`
-	Volume    string    `json:"volume,omitempty"`
-	CloseTime time.Time `json:"close_time,omitempty"`
+	OpenTime time.Time `json:"open_time"`
+	Open     string    `json:"open"`
+	High     string    `json:"high"`
+	Low      string    `json:"low"`
+	Close    string    `json:"close"`
+	Volume   string    `json:"volume,omitempty"`
 }
 
 type RequestError struct {
