@@ -60,7 +60,7 @@ type KlineSimple struct {
 	High      string    `json:"high"`
 	Low       string    `json:"low"`
 	Close     string    `json:"close"`
-	Volume    string    `json:"volume"`
+	Volume    string    `json:"volume,omitempty"`
 	CloseTime time.Time `json:"close_time,omitempty"`
 }
 
