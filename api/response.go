@@ -5,27 +5,25 @@ import (
 	"net/http"
 )
 
-// Define a custom ResponseWriter interface
-type ResponseWriter interface {
-	Write([]byte) (int, error)
-	Header() http.Header
-	WriteHeader(int)
-}
-
-// GzipResponseWriter is an implementation of the ResponseWriter interface
-type GzipResponseWriter struct {
+// WrappedResponseWriter is an implementation of the ResponseWriter interface
+type WrappedResponseWriter struct {
 	Writer     http.ResponseWriter
 	GzipWriter *gzip.Writer
 }
 
-func (gw *GzipResponseWriter) Write(data []byte) (int, error) {
-	return gw.GzipWriter.Write(data)
+func (wr *WrappedResponseWriter) Write(data []byte) (int, error) {
+	return wr.GzipWriter.Write(data)
 }
 
-func (gw *GzipResponseWriter) Header() http.Header {
-	return gw.Writer.Header()
+func (wr *WrappedResponseWriter) Header() http.Header {
+	return wr.Writer.Header()
 }
 
-func (gw *GzipResponseWriter) WriteHeader(statusCode int) {
-	gw.Writer.WriteHeader(statusCode)
+func (wr *WrappedResponseWriter) WriteHeader(statusCode int) {
+	wr.Writer.WriteHeader(statusCode)
+}
+
+func (wr *WrappedResponseWriter) Flush() {
+	wr.GzipWriter.Flush()
+	wr.GzipWriter.Close()
 }

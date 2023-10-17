@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/google/uuid"
 )
 
@@ -91,10 +93,16 @@ func (s *Server) gzipMiddleware(next http.Handler) http.Handler {
 			gz.Reset(w)
 			defer gz.Close()
 
+			t := time.Now()
+			wrw := &WrappedResponseWriter{Writer: w, GzipWriter: gz}
 			w.Header().Set("Content-Encoding", "gzip")
-			next.ServeHTTP(&GzipResponseWriter{Writer: w, GzipWriter: gz}, r)
-		} else {
-			next.ServeHTTP(w, r)
+
+			logger.Info.Println("Compression time:", time.Since(t))
+			next.ServeHTTP(wrw, r)
+			defer wrw.Flush()
+
+			return
 		}
+		next.ServeHTTP(w, r)
 	})
 }
