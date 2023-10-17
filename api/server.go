@@ -77,7 +77,7 @@ func (s *Server) routes() http.Handler {
 	s.router.HandleFunc("/fetch-data", s.fetchDataHandler)
 
 	// Chain middlewares here
-	return s.recoverPanic(s.logRequest(s.secureHeader(s.tagRequest(s.router))))
+	return s.recoverPanic(s.logRequest(s.secureHeader(s.tagRequest(s.gzipMiddleware(s.router)))))
 }
 
 func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {

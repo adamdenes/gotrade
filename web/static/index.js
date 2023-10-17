@@ -15,6 +15,8 @@ let chart = LightweightCharts.createChart("chart-container", {
 
 let candleSeries = chart.addCandlestickSeries();
 
+chart.timeScale().fitContent();
+
 document.addEventListener("DOMContentLoaded", function () {
   let searchForm;
   let backtestForm;
@@ -29,7 +31,6 @@ document.addEventListener("DOMContentLoaded", function () {
     if (searchForm) searchForm.removeEventListener("submit", getLive);
     if (backtestForm) backtestForm.removeEventListener("submit", getBacktest);
   }
-  chart.timeScale().fitContent();
 });
 
 window.addEventListener("beforeunload", function (event) {
@@ -180,6 +181,7 @@ function getBacktest(event) {
     }),
     headers: {
       "Content-Type": "application/json",
+      "Accept-Encoding": "gzip",
     },
   })
     .then((response) => {
@@ -188,6 +190,7 @@ function getBacktest(event) {
       }
     })
     .then((data) => {
+      console.log(data);
       const historicalData = data.map((d) => {
         return {
           time: new Date(d.open_time).getTime() / 1000,
@@ -207,3 +210,10 @@ function getBacktest(event) {
       }
     });
 }
+
+chart.timeScale().subscribeVisibleTimeRangeChange((visibleRange) => {
+  if (visibleRange) {
+    console.log(visibleRange);
+    // Check if the user has scrolled to the start or end
+  }
+});
