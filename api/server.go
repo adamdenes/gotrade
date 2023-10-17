@@ -11,9 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
+	"github.com/adamdenes/gotrade/strategy"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 )
@@ -143,7 +145,7 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 		s.errorLog.Println("Client disconnected early.")
 		return
 	default:
-		resp, err := s.store.FetchData(
+		ohlc, err := s.store.FetchData(
 			r.Context(),
 			kr.Interval,
 			kr.Symbol,
@@ -154,7 +156,13 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, err)
 			return
 		}
-		s.writeResponse(w, resp)
+
+		sma, _ := strategy.NewSMAStrategy(15)
+		engine := backtest.NewBacktestEngine(100000, ohlc, sma)
+		engine.Init()
+		engine.Run()
+
+		s.writeResponse(w, ohlc)
 		s.infoLog.Printf("Elapsed time: %v\n", time.Since(t))
 	}
 }
