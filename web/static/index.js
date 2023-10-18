@@ -191,7 +191,6 @@ function getBacktest(event) {
       }
     })
     .then((data) => {
-      console.log(data);
       const historicalData = data.map((d) => {
         return {
           time: new Date(d.open_time).getTime() / 1000,
@@ -203,6 +202,13 @@ function getBacktest(event) {
       });
       candleSeries.setData(historicalData);
       createWebSocketConnection(symbol, interval, false);
+
+      setTimeout(() => {
+        for (let index = 0; index < historicalData.length; index++) {
+          const element = JSON.stringify([historicalData[index]]);
+          socket.send(element);
+        }
+      }, 100);
     })
     .catch((err) => {
       if (err.name === "AbortError") {

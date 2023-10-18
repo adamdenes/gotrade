@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 )
@@ -16,7 +17,7 @@ type SMAStrategy struct {
 }
 
 // NewSMAStrategy creates a new SMA strategy with the specified period.
-func NewSMAStrategy(period int) (*SMAStrategy, error) {
+func NewSMAStrategy(period int) (backtest.Strategy[SMAStrategy], error) {
 	if period <= 0 {
 		return nil, errors.New("period must be greater than zero")
 	}
@@ -28,12 +29,12 @@ func NewSMAStrategy(period int) (*SMAStrategy, error) {
 // Execute implements the Execute method of the BacktestStrategy interface.
 func (s *SMAStrategy) Execute() {
 	// Calculate SMA values
-	s.calculateSMA()
+	if len(s.data) >= s.period {
+		s.calculateSMA()
 
-	// Strategy logic: Generate buy/sell signals
-	for i := s.period; i < len(s.data); i++ {
-		currentPrice := s.data[i].Close // Use the Close price from KlineSimple
-		previousSMA := s.smaValues[i-1]
+		// Strategy logic: Generate buy/sell signals
+		currentPrice := s.data[0].Close
+		previousSMA := s.smaValues[len(s.smaValues)-1]
 
 		if currentPrice > previousSMA {
 			fmt.Printf("Buy Signal - Price: %.2f, SMA: %.2f\n", currentPrice, previousSMA)
@@ -45,9 +46,9 @@ func (s *SMAStrategy) Execute() {
 	}
 }
 
-// SetData sets the historical price data for the strategy.
+// SetData appends the historical price data to the strategy's data.
 func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
-	s.data = data
+	s.data = append(s.data, data...)
 }
 
 // calculateSMA calculates the Simple Moving Average.

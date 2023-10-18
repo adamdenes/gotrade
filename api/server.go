@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/adamdenes/gotrade/internal/backtest"
@@ -98,6 +100,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	// All symbols for streams are lowercase
 	symbol := strings.ToLower(r.FormValue("symbol"))
 	interval := r.FormValue("interval")
+	local, _ := strconv.ParseBool(r.FormValue("local"))
 
 	// Handling websocket connection
 	conn, err := websocket.Accept(w, r, nil)
@@ -106,14 +109,53 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Construct `Binance` with a read-only channel and start processing incoming data
 	// Make the context 'cancellable'
 	ctx, cancel := context.WithCancel(r.Context())
-	cs := &models.CandleSubsciption{Symbol: symbol, Interval: interval}
-	b := NewBinance(ctx, inbound(cs))
+	if local {
+		// Construct `Binance` with a read-only channel and start processing incoming data
+		cs := &models.CandleSubsciption{Symbol: symbol, Interval: interval}
+		b := NewBinance(ctx, inbound(cs))
 
-	defer s.cleanUp(w, r, conn, cancel)
-	go receiver[[]byte](r.Context(), b.dataChannel, conn)
+		defer s.cleanUp(w, r, conn, cancel)
+		go receiver[[]byte](r.Context(), b.dataChannel, conn)
+	} else {
+		defer s.cleanUp(w, r, conn, cancel)
+
+		sma, _ := strategy.NewSMAStrategy(15)
+		engine := backtest.NewBacktestEngine(100000, nil, sma)
+
+		errChan := make(chan error)
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			bar := []*models.KlineSimple{}
+			for {
+				_, msg, err := conn.Read(ctx)
+				if err != nil {
+					errChan <- err
+					return
+				}
+
+				err = json.Unmarshal(msg, &bar)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				engine.GetStrategy().SetData(bar)
+				engine.Run()
+			}
+		}(&wg)
+		wg.Wait()
+
+		select {
+		case err := <-errChan:
+			s.errorLog.Println(err)
+			s.serverError(w, err)
+		}
+
+	}
 }
 
 func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
@@ -156,11 +198,6 @@ func (s *Server) fetchDataHandler(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, err)
 			return
 		}
-
-		sma, _ := strategy.NewSMAStrategy(15)
-		engine := backtest.NewBacktestEngine(100000, ohlc, sma)
-		engine.Init()
-		engine.Run()
 
 		s.writeResponse(w, ohlc)
 		s.infoLog.Printf("Elapsed time: %v\n", time.Since(t))
