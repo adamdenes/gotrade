@@ -8,7 +8,7 @@ type Engine interface {
 	Reset()
 }
 
-type Strategy interface {
+type Strategy[S any] interface {
 	Execute()
 	SetData([]*models.KlineSimple)
 }
