@@ -38,17 +38,18 @@ window.addEventListener("beforeunload", function (event) {
 });
 
 // Function to create a WebSocket connection
-function createWebSocketConnection(symbol, interval) {
+function createWebSocketConnection(symbol, interval, localFlag) {
   // Close the existing WebSocket connection, if it exists
   if (socket && socket.readyState === WebSocket.OPEN) {
     console.log("WebSocket stream already open. Closing it...");
     closeWebSocketConnection(socket);
-    return;
   }
+
+  connStr = `ws://localhost:4000/ws?symbol=${symbol}&interval=${interval}`;
+  // Append the local flag to the connection string
+  connStr += localFlag ? "&local=true" : "&local=false";
   // Create a WebSocket connection
-  socket = new WebSocket(
-    `ws://localhost:4000/ws?symbol=${symbol}&interval=${interval}`,
-  );
+  socket = new WebSocket(connStr);
 
   // Event handler for when the connection is opened
   socket.onopen = function (event) {
@@ -141,7 +142,7 @@ function getLive(event) {
         };
       });
       candleSeries.setData(historicalData);
-      createWebSocketConnection(symbol, interval);
+      createWebSocketConnection(symbol, interval, true);
     })
     .catch((err) => {
       if (err.name === "AbortError") {
@@ -201,6 +202,7 @@ function getBacktest(event) {
         };
       });
       candleSeries.setData(historicalData);
+      createWebSocketConnection(symbol, interval, false);
     })
     .catch((err) => {
       if (err.name === "AbortError") {
