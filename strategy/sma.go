@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"fmt"
-
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
@@ -42,7 +40,7 @@ func (s *SMAStrategy) Execute() {
 				s.longSMA[len(s.longSMA)-1],
 				(s.shortSMA[len(s.shortSMA)-2] <= s.longSMA[len(s.longSMA)-2] && s.shortSMA[len(s.shortSMA)-1] > s.longSMA[len(s.longSMA)-1]),
 			)
-			logger.Info.Printf("Buy Signal")
+			logger.Info.Println("Buy Signal")
 		}
 		if crossunder(s.shortSMA, s.longSMA) {
 			// implement sell signal
@@ -54,14 +52,13 @@ func (s *SMAStrategy) Execute() {
 				s.longSMA[len(s.longSMA)-2],
 				(s.shortSMA[len(s.shortSMA)-1] <= s.longSMA[len(s.longSMA)-1] && s.shortSMA[len(s.shortSMA)-2] > s.longSMA[len(s.longSMA)-2]),
 			)
-			logger.Info.Printf("Sell Signal")
+			logger.Info.Println("Sell Signal")
 		}
 	}
 }
 
 // SetData appends the historical price data to the strategy's data.
 func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
-	fmt.Println("Append data:", data[0])
 	s.data = append(s.data, data...)
 }
 
@@ -94,7 +91,7 @@ func (s *SMAStrategy) calculateSMAs() {
 func calculateSMA(data []*models.KlineSimple, period int) float64 {
 	sum := 0.0
 	for i := len(data) - 1; i >= len(data)-period; i-- {
-		sum += data[i].Close // Use the Close price from KlineSimple
+		sum += data[i].Close
 	}
 	return sum / float64(period)
 }
