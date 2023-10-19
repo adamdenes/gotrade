@@ -96,11 +96,20 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
-	// Get the form values for further processing
-	// All symbols for streams are lowercase
 	symbol := strings.ToLower(r.FormValue("symbol"))
 	interval := r.FormValue("interval")
 	local, _ := strconv.ParseBool(r.FormValue("local"))
+	strat := r.FormValue("strategy")
+
+	strategies := map[string]backtest.Strategy[any]{
+		"sma": strategy.NewSMAStrategy(12, 24),
+		// Add more strategies as needed
+	}
+	selectedStrategy, found := strategies[strat]
+	if !found {
+		s.clientError(w, http.StatusBadRequest)
+		return
+	}
 
 	// Handling websocket connection
 	conn, err := websocket.Accept(w, r, nil)
@@ -111,7 +120,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 
 	// Make the context 'cancellable'
 	ctx, cancel := context.WithCancel(r.Context())
-	if local {
+	if !local {
 		// Construct `Binance` with a read-only channel and start processing incoming data
 		cs := &models.CandleSubsciption{Symbol: symbol, Interval: interval}
 		b := NewBinance(ctx, inbound(cs))
@@ -120,41 +129,15 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		go receiver[[]byte](r.Context(), b.dataChannel, conn)
 	} else {
 		defer s.cleanUp(w, r, conn, cancel)
-
-		sma, _ := strategy.NewSMAStrategy(15)
-		engine := backtest.NewBacktestEngine(100000, nil, sma)
-
+		// Execute backtest
 		errChan := make(chan error)
-		var wg sync.WaitGroup
-
-		wg.Add(1)
-		go func(wg *sync.WaitGroup) {
-			defer wg.Done()
-			bar := []*models.KlineSimple{}
-			for {
-				_, msg, err := conn.Read(ctx)
-				if err != nil {
-					errChan <- err
-					return
-				}
-
-				err = json.Unmarshal(msg, &bar)
-				if err != nil {
-					errChan <- err
-					return
-				}
-				engine.GetStrategy().SetData(bar)
-				engine.Run()
-			}
-		}(&wg)
-		wg.Wait()
+		s.backtest(ctx, conn, selectedStrategy, errChan)
 
 		select {
 		case err := <-errChan:
 			s.errorLog.Println(err)
 			s.serverError(w, err)
 		}
-
 	}
 }
 
@@ -330,6 +313,41 @@ func (s *Server) writeResponse(w http.ResponseWriter, batch any) {
 	if err := WriteJSON(w, http.StatusOK, batch); err != nil {
 		s.errorLog.Println("Failed to write response:", err)
 	}
+}
+
+func (s *Server) backtest(
+	ctx context.Context,
+	conn *websocket.Conn,
+	strat backtest.Strategy[any],
+	errChan chan error,
+) {
+	engine := backtest.NewBacktestEngine(100000, nil, strat)
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		bar := []*models.KlineSimple{}
+		for {
+			_, msg, err := conn.Read(ctx)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			err = json.Unmarshal(msg, &bar)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			engine.GetStrategy().SetData(bar)
+			engine.Run()
+		}
+	}(&wg)
+
+	wg.Wait()
+	close(errChan)
 }
 
 func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
