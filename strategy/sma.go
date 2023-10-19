@@ -14,8 +14,6 @@ type SMAStrategy struct {
 	longPeriod  int                   // Long SMA period
 	shortSMA    []float64             // Calculated short SMA values
 	longSMA     []float64             // Calculated long SMA values
-	shortIndex  int
-	longIndex   int
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
@@ -23,8 +21,6 @@ func NewSMAStrategy(shortPeriod, longPeriod int) backtest.Strategy[SMAStrategy] 
 	return &SMAStrategy{
 		shortPeriod: shortPeriod,
 		longPeriod:  longPeriod,
-		shortIndex:  0,
-		longIndex:   0,
 	}
 }
 
@@ -39,7 +35,7 @@ func (s *SMAStrategy) Execute() {
 		if crossover(s.shortSMA, s.longSMA) {
 			// implement buy signal
 			logger.Debug.Printf(
-				"Crossover: %f <= %f && %f > %f -> %t\n",
+				"Crossover: %.12f <= %.12f && %.12f > %.12f -> %t\n",
 				s.shortSMA[len(s.shortSMA)-2],
 				s.longSMA[len(s.longSMA)-2],
 				s.shortSMA[len(s.shortSMA)-1],
@@ -51,7 +47,7 @@ func (s *SMAStrategy) Execute() {
 		if crossunder(s.shortSMA, s.longSMA) {
 			// implement sell signal
 			logger.Debug.Printf(
-				"Crossunder: %f <= %f && %f > %f -> %t\n",
+				"Crossunder: %.12f <= %.12f && %.12f > %.12f -> %t\n",
 				s.shortSMA[len(s.shortSMA)-1],
 				s.longSMA[len(s.longSMA)-1],
 				s.shortSMA[len(s.shortSMA)-2],
@@ -71,24 +67,27 @@ func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
 
 // calculateSMAs calculates both short and long SMAs.
 func (s *SMAStrategy) calculateSMAs() {
-	if len(s.data) >= s.shortPeriod && s.shortIndex == s.shortPeriod {
-		// Calculate short SMA
+	// Calculate short SMA
+	if len(s.data) >= s.shortPeriod {
 		shortSMA := calculateSMA(s.data, s.shortPeriod)
 		s.shortSMA = append(s.shortSMA, shortSMA)
-		fmt.Println("sidx:", s.shortIndex, s.shortSMA)
-		s.shortIndex = 0
+
+		// Start removing old data from slice
+		if len(s.shortSMA) == s.shortPeriod {
+			s.shortSMA = s.shortSMA[1:]
+		}
 	}
 
-	if len(s.data) >= s.longPeriod && s.longIndex == s.longPeriod {
-		// Calculate long SMA
+	// Calculate long SMA
+	if len(s.data) >= s.longPeriod {
 		longSMA := calculateSMA(s.data, s.longPeriod)
 		s.longSMA = append(s.longSMA, longSMA)
-		fmt.Println("lidx:", s.longIndex, s.longSMA)
-		s.longIndex = 0
-	}
 
-	s.shortIndex++
-	s.longIndex++
+		// Start removing old data from slice
+		if len(s.longSMA) == s.longPeriod {
+			s.longSMA = s.longSMA[1:]
+		}
+	}
 }
 
 // calculateSMA calculates the Simple Moving Average.
