@@ -38,7 +38,7 @@ window.addEventListener("beforeunload", function (event) {
 });
 
 // Function to create a WebSocket connection
-function createWebSocketConnection(symbol, interval, localFlag) {
+function createWebSocketConnection(symbol, interval, strategy, localFlag) {
   // Close the existing WebSocket connection, if it exists
   if (socket && socket.readyState === WebSocket.OPEN) {
     console.log("WebSocket stream already open. Closing it...");
@@ -46,9 +46,8 @@ function createWebSocketConnection(symbol, interval, localFlag) {
   }
 
   connStr = `ws://localhost:4000/ws?symbol=${symbol}&interval=${interval}`;
-  // Append the local flag to the connection string
+  connStr += strategy != "" ? `&strategy=${strategy}` : "";
   connStr += localFlag ? "&local=true" : "&local=false";
-  // Create a WebSocket connection
   socket = new WebSocket(connStr);
 
   // Event handler for when the connection is opened
@@ -142,7 +141,7 @@ function getLive(event) {
         };
       });
       candleSeries.setData(historicalData);
-      createWebSocketConnection(symbol, interval, true);
+      createWebSocketConnection(symbol, interval, "", false);
     })
     .catch((err) => {
       if (err.name === "AbortError") {
@@ -164,6 +163,8 @@ function getBacktest(event) {
   const interval = document.querySelector("#interval-bt").value;
   const startTime = document.querySelector("#open_time").value;
   const endTime = document.querySelector("#close_time").value;
+  const strategy = document.querySelector("#strat-bt").value;
+  console.log(strategy);
 
   candleSeries.setData([]);
 
@@ -179,6 +180,7 @@ function getBacktest(event) {
       interval: interval,
       open_time: new Date(startTime),
       close_time: new Date(endTime),
+      strategy: strategy,
     }),
     headers: {
       "Content-Type": "application/json",
@@ -201,14 +203,17 @@ function getBacktest(event) {
         };
       });
       candleSeries.setData(historicalData);
-      createWebSocketConnection(symbol, interval, false);
+      createWebSocketConnection(symbol, interval, strategy, true);
 
+      // TODO: figure out a better way / assign timeout based on interval?
+      // for 1m interval 800 seems to be fine
+      // for the rest even 100ms could be good
       setTimeout(() => {
         for (let index = 0; index < historicalData.length; index++) {
           const element = JSON.stringify([historicalData[index]]);
           socket.send(element);
         }
-      }, 100);
+      }, 800);
     })
     .catch((err) => {
       if (err.name === "AbortError") {
