@@ -31,6 +31,7 @@ type Kline struct {
 type KlineRequest struct {
 	Symbol    string    `json:"symbol"`
 	Interval  string    `json:"interval,omitempty"`
+	Strat     string    `json:"strategy,omitempty"`
 	OpenTime  time.Time `json:"open_time,omitempty"`
 	CloseTime time.Time `json:"close_time,omitempty"`
 }
@@ -43,6 +44,9 @@ func (kr *KlineRequest) String() string {
 	}
 	if kr.Interval != "" {
 		parts = append(parts, fmt.Sprintf("interval=%s", kr.Interval))
+	}
+	if kr.Strat != "" {
+		parts = append(parts, fmt.Sprintf("strategy=%s", kr.Strat))
 	}
 	if !kr.OpenTime.IsZero() {
 		parts = append(parts, fmt.Sprintf("startTime=%v", kr.OpenTime))
