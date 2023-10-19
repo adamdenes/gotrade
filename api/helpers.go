@@ -49,6 +49,7 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 			"./web/templates/partials/search_bar.tmpl.html",
 			"./web/templates/partials/dropdown_tf.tmpl.html",
 			"./web/templates/partials/dropdown_bt.tmpl.html",
+			"./web/templates/partials/dropdown_strats.tmpl.html",
 			page,
 		}
 
