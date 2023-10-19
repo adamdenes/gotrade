@@ -51,7 +51,7 @@ func (s *SMAStrategy) Execute() {
 		if crossunder(s.shortSMA, s.longSMA) {
 			// implement sell signal
 			logger.Debug.Printf(
-				"Crossover: %f <= %f && %f > %f -> %t\n",
+				"Crossunder: %f <= %f && %f > %f -> %t\n",
 				s.shortSMA[len(s.shortSMA)-1],
 				s.longSMA[len(s.longSMA)-1],
 				s.shortSMA[len(s.shortSMA)-2],
