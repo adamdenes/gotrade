@@ -5,6 +5,7 @@
         <label for="symbol">Trading Pair:</label>
         <input type="text" id="symbol" name="symbol" placeholder="Enter trading pair" required>
         {{ template "dropdown-bt" . }} 
+        {{ template "dropdown-strat" . }} 
         <label for="open_time">Start Time:</label>
         <input type="datetime-local" id="open_time" name="open_time" required>
         <label for="close_time">End Time:</label>
