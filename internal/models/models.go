@@ -76,3 +76,59 @@ type RequestError struct {
 func (e *RequestError) Error() string {
 	return e.Err.Error()
 }
+
+type OrderSide string
+
+const (
+	BUY  OrderSide = "BUY"
+	SELL           = "SELL"
+)
+
+type OderType string
+
+const (
+	LIMIT             OderType = "LIMIT"
+	MARKET                     = "MARKET"
+	STOP_LOSS                  = "STOP_LOSS"
+	STOP_LOSS_LIMIT            = "STOP_LOSS_LIMIT"
+	TAKE_PROFIT                = "TAKE_PROFIT"
+	TAKE_PROFIT_LIMIT          = "TAKE_PROFIT_LIMIT"
+	LIMIT_MAKER                = "LIMIT_MAKER"
+)
+
+type OrderRespType string
+
+const (
+	ACK    OrderRespType = "ACK"
+	RESULT               = "RESULT"
+	FULL                 = "FULL"
+)
+
+type SelfTradePreventionMode string
+
+const (
+	EXPIRE_TAKER SelfTradePreventionMode = "EXPIRE_TAKER"
+	EXPIRE_MAKER                         = "EXPIRE_MAKER"
+	EXPIRE_BOTH                          = "EXPIRE_BOTH"
+	NONE                                 = "NONE"
+)
+
+type Order struct {
+	Symbol              string                  `json:"symbol"`
+	Side                OrderSide               `json:"side"`
+	Type                OderType                `json:"type"`
+	TimeInForce         string                  `json:"timeInForce,omitempty"`
+	Quantity            float64                 `json:"quantity,omitempty"`
+	QuoteOrderQty       float64                 `json:"quoteOrderQty,omitempty"`
+	Price               float64                 `json:"price,omitempty"`
+	NewClientOrderId    string                  `json:"newClientOrderId,omitempty"`
+	StrategyId          int                     `json:"strategyId,omitempty"`
+	StrategyType        int                     `json:"strategyType,omitempty"`
+	StopPrice           string                  `json:"stopPrice,omitempty"`
+	TrailingDelta       int64                   `json:"trailingDelta,omitempty"`
+	IcebergQty          float64                 `json:"icebergQty,omitempty"`
+	NewOrderRespType    OrderRespType           `json:"newOrderRespType,omitempty"`
+	SelfTradePrevention SelfTradePreventionMode `json:"selfTradePrevention,omitempty"`
+	RecvWindow          int64                   `json:"recvWindow,omitempty"`
+	Timestamp           int64                   `json:"timestamp"`
+}
