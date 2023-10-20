@@ -130,8 +130,9 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	} else {
 		defer s.cleanUp(w, r, conn, cancel)
 		// Execute backtest
+		dataChan := make(chan struct{})
 		errChan := make(chan error)
-		s.backtest(ctx, conn, selectedStrategy, errChan)
+		s.backtest(ctx, conn, selectedStrategy, dataChan, errChan)
 
 		select {
 		case err := <-errChan:
@@ -319,9 +320,11 @@ func (s *Server) backtest(
 	ctx context.Context,
 	conn *websocket.Conn,
 	strat backtest.Strategy[any],
+	dataChan chan struct{},
 	errChan chan error,
 ) {
 	engine := backtest.NewBacktestEngine(100000, nil, strat)
+	engine.Init()
 
 	var wg sync.WaitGroup
 
@@ -341,7 +344,7 @@ func (s *Server) backtest(
 				errChan <- err
 				return
 			}
-			engine.GetStrategy().SetData(bar)
+			engine.SetData(bar)
 			engine.Run()
 		}
 	}(&wg)

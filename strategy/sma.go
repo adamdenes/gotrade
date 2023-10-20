@@ -7,11 +7,16 @@ import (
 )
 
 type SMAStrategy struct {
-	data        []*models.KlineSimple // Price data
-	shortPeriod int                   // Short SMA period
-	longPeriod  int                   // Long SMA period
-	shortSMA    []float64             // Calculated short SMA values
-	longSMA     []float64             // Calculated long SMA values
+	balance      float64               // Current balance
+	positionSize float64               // Position size
+	asset        string                // Trading pair
+	backtest     bool                  // Are we backtesting?
+	orders       []*models.Order       // Pending orders
+	data         []*models.KlineSimple // Price data
+	shortPeriod  int                   // Short SMA period
+	longPeriod   int                   // Long SMA period
+	shortSMA     []float64             // Calculated short SMA values
+	longSMA      []float64             // Calculated long SMA values
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
@@ -40,7 +45,9 @@ func (s *SMAStrategy) Execute() {
 				s.longSMA[len(s.longSMA)-1],
 				(s.shortSMA[len(s.shortSMA)-2] <= s.longSMA[len(s.longSMA)-2] && s.shortSMA[len(s.shortSMA)-1] > s.longSMA[len(s.longSMA)-1]),
 			)
-			logger.Info.Println("Buy Signal")
+			bo := s.Buy(s.asset, 0.01, s.data[0].Close)
+			logger.Info.Println("Buy Signal", bo.Side, bo.Quantity, bo.Price)
+			s.orders = append(s.orders, bo)
 		}
 		if crossunder(s.shortSMA, s.longSMA) {
 			// implement sell signal
@@ -52,14 +59,68 @@ func (s *SMAStrategy) Execute() {
 				s.longSMA[len(s.longSMA)-2],
 				(s.shortSMA[len(s.shortSMA)-1] <= s.longSMA[len(s.longSMA)-1] && s.shortSMA[len(s.shortSMA)-2] > s.longSMA[len(s.longSMA)-2]),
 			)
-			logger.Info.Println("Sell Signal")
+			so := s.Sell(s.asset, 0.01, s.data[0].Close)
+			logger.Info.Println("Sell Signal", so.Side, so.Quantity, so.Price)
+			s.orders = append(s.orders, so)
 		}
 	}
+}
+
+func (s *SMAStrategy) IsBacktest(b bool) {
+	s.backtest = b
 }
 
 // SetData appends the historical price data to the strategy's data.
 func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
 	s.data = append(s.data, data...)
+}
+
+func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) *models.Order {
+	return &models.Order{
+		Symbol:   asset,
+		Side:     models.BUY,
+		Type:     models.LIMIT,
+		Quantity: quantity,
+		Price:    price,
+	}
+}
+
+func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) *models.Order {
+	return &models.Order{
+		Symbol:   asset,
+		Side:     models.SELL,
+		Type:     models.LIMIT,
+		Quantity: quantity,
+		Price:    price,
+	}
+}
+
+func (s *SMAStrategy) SetOrders(orders []*models.Order) {
+	s.orders = orders
+}
+
+func (s *SMAStrategy) GetOrders() []*models.Order {
+	return s.orders
+}
+
+func (s *SMAStrategy) SetAsset(asset string) {
+	s.asset = asset
+}
+
+func (s *SMAStrategy) SetPositionSize(ps float64) {
+	s.positionSize += ps
+}
+
+func (s *SMAStrategy) GetPositionSize() float64 {
+	return s.positionSize
+}
+
+func (s *SMAStrategy) GetBalance() float64 {
+	return s.balance
+}
+
+func (s *SMAStrategy) SetBalance(balance float64) {
+	s.balance = balance
 }
 
 // calculateSMAs calculates both short and long SMAs.
