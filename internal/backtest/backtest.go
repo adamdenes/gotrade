@@ -11,6 +11,7 @@ type BacktestEngine[S any] struct {
 	positionSize float64
 	data         []*models.KlineSimple
 	strategy     Strategy[S]
+	DataChannel  chan *models.Order
 }
 
 func NewBacktestEngine(
@@ -19,9 +20,10 @@ func NewBacktestEngine(
 	strategy Strategy[any],
 ) *BacktestEngine[any] {
 	return &BacktestEngine[any]{
-		cash:     initialCash,
-		data:     OHLCData,
-		strategy: strategy,
+		cash:        initialCash,
+		data:        OHLCData,
+		strategy:    strategy,
+		DataChannel: make(chan *models.Order, 100000),
 	}
 }
 
@@ -44,7 +46,6 @@ func (b *BacktestEngine[S]) FillOrders() {
 
 	fmt.Println("Order len:", len(orders), "Current balance:", b.cash)
 	for i, order := range orders {
-		fmt.Println(order)
 		if order.Side == models.BUY {
 			// Calculate the cost of buying the specified quantity at the open price
 			cost := b.data[0].Open * order.Quantity
@@ -61,6 +62,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 				)
 				// Mark order as filled / remove from order list
 				orders = append(orders[:i], orders[i+1:]...)
+				b.DataChannel <- order
 			}
 		} else if order.Side == models.SELL {
 			// Calculate the revenue from selling the specified quantity at the open price
@@ -71,9 +73,13 @@ func (b *BacktestEngine[S]) FillOrders() {
 				// Fill the sell order
 				b.cash += revenue
 				b.strategy.SetPositionSize(-order.Quantity)
-				fmt.Printf("SELL filled! Cash: %v, Position Size: %v\n", b.cash, b.strategy.GetPositionSize())
+				fmt.Printf("SELL filled! Cash: %v, Position Size: %v\n",
+					b.cash,
+					b.strategy.GetPositionSize(),
+				)
 				// Mark order as filled
 				orders = append(orders[:i], orders[i+1:]...)
+				b.DataChannel <- order
 			}
 		}
 	}

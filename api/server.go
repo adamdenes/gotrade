@@ -130,14 +130,26 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	} else {
 		defer s.cleanUp(w, r, conn, cancel)
 		// Execute backtest
-		dataChan := make(chan struct{})
+		dataChan := make(chan *models.Order, 100000)
 		errChan := make(chan error)
-		s.backtest(ctx, conn, selectedStrategy, dataChan, errChan)
+		go s.backtest(ctx, conn, selectedStrategy, dataChan, errChan)
 
-		select {
-		case err := <-errChan:
-			s.errorLog.Println(err)
-			s.serverError(w, err)
+		for {
+			select {
+			case d, ok := <-dataChan:
+				if !ok {
+					s.infoLog.Println("Data Channel is closed.")
+					return
+				}
+				if err := wsjson.Write(ctx, conn, d); err != nil {
+					logger.Error.Printf("Error writing data to WebSocket: %v\n", err)
+					continue
+				}
+			case err := <-errChan:
+				s.errorLog.Println(err)
+				s.serverError(w, err)
+				break
+			}
 		}
 	}
 }
@@ -278,7 +290,11 @@ func inbound[T any](in *T) <-chan *T {
 	return out
 }
 
-func receiver[T ~string | ~[]byte](ctx context.Context, in chan T, conn *websocket.Conn) {
+func receiver[T ~string | ~[]byte](
+	ctx context.Context,
+	in chan T,
+	conn *websocket.Conn,
+) {
 	// Process data received from the data channel
 	for data := range in {
 		// Write the data to the WebSocket connection
@@ -320,10 +336,11 @@ func (s *Server) backtest(
 	ctx context.Context,
 	conn *websocket.Conn,
 	strat backtest.Strategy[any],
-	dataChan chan struct{},
+	dataChan chan *models.Order,
 	errChan chan error,
 ) {
 	engine := backtest.NewBacktestEngine(100000, nil, strat)
+	engine.DataChannel = dataChan
 	engine.Init()
 
 	var wg sync.WaitGroup
@@ -348,8 +365,9 @@ func (s *Server) backtest(
 			engine.Run()
 		}
 	}(&wg)
-
 	wg.Wait()
+
+	close(dataChan)
 	close(errChan)
 }
 
