@@ -1,6 +1,8 @@
 package strategy
 
 import (
+	"time"
+
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
@@ -38,7 +40,8 @@ func (s *SMAStrategy) Execute() {
 		if crossover(s.shortSMA, s.longSMA) {
 			// implement buy signal
 			logger.Debug.Printf(
-				"Crossover: %.12f <= %.12f && %.12f > %.12f -> %t\n",
+				"Current Price: %.2f \tCrossover: %.12f <= %.12f && %.12f > %.12f -> %t\n",
+				s.data[0].Close,
 				s.shortSMA[len(s.shortSMA)-2],
 				s.longSMA[len(s.longSMA)-2],
 				s.shortSMA[len(s.shortSMA)-1],
@@ -52,7 +55,8 @@ func (s *SMAStrategy) Execute() {
 		if crossunder(s.shortSMA, s.longSMA) {
 			// implement sell signal
 			logger.Debug.Printf(
-				"Crossunder: %.12f <= %.12f && %.12f > %.12f -> %t\n",
+				"Current Price: %.2f \tCrossunder: %.12f <= %.12f && %.12f > %.12f -> %t\n",
+				s.data[0].Close,
 				s.shortSMA[len(s.shortSMA)-1],
 				s.longSMA[len(s.longSMA)-1],
 				s.shortSMA[len(s.shortSMA)-2],
@@ -77,21 +81,23 @@ func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
 
 func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) *models.Order {
 	return &models.Order{
-		Symbol:   asset,
-		Side:     models.BUY,
-		Type:     models.LIMIT,
-		Quantity: quantity,
-		Price:    price,
+		Symbol:    asset,
+		Side:      models.BUY,
+		Type:      models.LIMIT,
+		Quantity:  quantity,
+		Price:     price,
+		Timestamp: time.Now().UnixMilli(),
 	}
 }
 
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) *models.Order {
 	return &models.Order{
-		Symbol:   asset,
-		Side:     models.SELL,
-		Type:     models.LIMIT,
-		Quantity: quantity,
-		Price:    price,
+		Symbol:    asset,
+		Side:      models.SELL,
+		Type:      models.LIMIT,
+		Quantity:  quantity,
+		Price:     price,
+		Timestamp: time.Now().UnixMilli(),
 	}
 }
 
