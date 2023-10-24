@@ -1,7 +1,6 @@
 package strategy
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/adamdenes/gotrade/internal/backtest"
@@ -56,7 +55,6 @@ func (s *SMAStrategy) Execute() {
 			logger.Info.Println("Buy Signal", bo.Side, bo.Quantity, bo.Price)
 			if s.backtest {
 				bo.Timestamp = currBar.OpenTime.UnixMilli()
-				fmt.Println(s.backtest, bo.Timestamp)
 			}
 			s.orders = append(s.orders, bo)
 		}
@@ -74,9 +72,7 @@ func (s *SMAStrategy) Execute() {
 			so := s.Sell(s.asset, 0.01, currBar.Close)
 			logger.Info.Println("Sell Signal", so.Side, so.Quantity, so.Price)
 			if s.backtest {
-
 				so.Timestamp = currBar.OpenTime.UnixMilli()
-				fmt.Println(s.backtest, so.Timestamp)
 			}
 			s.orders = append(s.orders, so)
 		}
