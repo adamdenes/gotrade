@@ -50,14 +50,41 @@ func NewServer(
 
 func (s *Server) Run() {
 	go func() {
-		sc, err := NewSymbolCache()
+		// Attempt to fetch Symbols from database
+		rows, err := s.store.(*storage.TimescaleDB).GetSymbols()
 		if err != nil {
-			logger.Error.Fatal(err)
-		}
-		s.symbolCache = sc
+			s.errorLog.Fatalf("error fetching symbols from db: %v", err)
+		} else {
+			defer rows.Close()
 
-		if err := s.store.SaveSymbols(s.symbolCache); err != nil {
-			s.errorLog.Fatalf("error saving symbols: %v", err)
+			// Update the cache with the symbols from the database
+			var asset string
+			for rows.Next() {
+				if err := rows.Scan(&asset); err != nil {
+					s.errorLog.Fatalf("error updating symbols: %v", err)
+				}
+				if c, ok := s.symbolCache[asset]; !ok {
+					s.symbolCache[asset] = c
+				}
+			}
+
+			if err := rows.Err(); err != nil {
+				s.errorLog.Fatal(err)
+			}
+
+			if len(s.symbolCache) == 0 {
+				// rows.Next() == false -> database was probably empty
+				s.infoLog.Println("creating new symbol cache")
+				sc, err := NewSymbolCache()
+				if err != nil {
+					logger.Error.Fatal(err)
+				}
+				s.symbolCache = sc
+				if err := s.store.SaveSymbols(s.symbolCache); err != nil {
+					s.errorLog.Fatalf("error saving symbols: %v", err)
+				}
+			}
+			s.infoLog.Println("Symbols saved to DB.")
 		}
 	}()
 
@@ -101,16 +128,6 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	local, _ := strconv.ParseBool(r.FormValue("local"))
 	strat := r.FormValue("strategy")
 
-	strategies := map[string]backtest.Strategy[any]{
-		"sma": strategy.NewSMAStrategy(12, 24),
-		// Add more strategies as needed
-	}
-	selectedStrategy, found := strategies[strat]
-	if !found {
-		s.clientError(w, http.StatusBadRequest)
-		return
-	}
-
 	// Handling websocket connection
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -129,8 +146,19 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		go receiver[[]byte](r.Context(), b.dataChannel, conn)
 	} else {
 		defer s.cleanUp(w, r, conn, cancel)
+
+		strategies := map[string]backtest.Strategy[any]{
+			"sma": strategy.NewSMAStrategy(12, 24),
+			// Add more strategies as needed
+		}
+		selectedStrategy, found := strategies[strat]
+		if !found {
+			s.clientError(w, http.StatusBadRequest)
+			return
+		}
+
 		// Execute backtest
-		dataChan := make(chan *models.Order, 100000)
+		dataChan := make(chan *models.Order, 1)
 		errChan := make(chan error)
 		go s.backtest(ctx, conn, selectedStrategy, dataChan, errChan)
 
@@ -348,8 +376,8 @@ func (s *Server) backtest(
 	wg.Add(1)
 	go func(wg *sync.WaitGroup) {
 		defer wg.Done()
-		bar := []*models.KlineSimple{}
 		for {
+			bar := []*models.KlineSimple{}
 			_, msg, err := conn.Read(ctx)
 			if err != nil {
 				errChan <- err
