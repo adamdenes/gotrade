@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -65,6 +66,46 @@ type KlineSimple struct {
 	Low      float64   `json:"low"`
 	Close    float64   `json:"close"`
 	Volume   float64   `json:"volume,omitempty"`
+}
+
+// Custom unmarshaller to bridge JS and GO time conversion
+func (ks *KlineSimple) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		OpenTime interface{} `json:"time"`
+		Open     float64     `json:"open"`
+		High     float64     `json:"high"`
+		Low      float64     `json:"low"`
+		Close    float64     `json:"close"`
+		Volume   float64     `json:"volume,omitempty"`
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	switch t := aux.OpenTime.(type) {
+	case string:
+		ot, err := time.Parse("2006-01-02T15:04:05-07:00", t)
+		if err != nil {
+			return err
+		}
+		ks.OpenTime = ot
+	case float64:
+		// Assuming it's a Unix timestamp in seconds
+		ks.OpenTime = time.Unix(int64(t), 0)
+	case int64:
+		// Assuming it's a Unix timestamp in milliseconds
+		ks.OpenTime = time.Unix(0, t*int64(time.Millisecond))
+	default:
+		return fmt.Errorf("unsupported type for OpenTime: %T", aux.OpenTime)
+	}
+	ks.Open = aux.Open
+	ks.High = aux.High
+	ks.Low = aux.Low
+	ks.Close = aux.Close
+	ks.Volume = aux.Volume
+
+	return nil
 }
 
 type RequestError struct {
