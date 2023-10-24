@@ -23,7 +23,7 @@ func NewBacktestEngine(
 		cash:        initialCash,
 		data:        OHLCData,
 		strategy:    strategy,
-		DataChannel: make(chan *models.Order, 100000),
+		DataChannel: make(chan *models.Order, 1),
 	}
 }
 
@@ -106,7 +106,7 @@ func (b *BacktestEngine[S]) GetData() []*models.KlineSimple {
 }
 
 func (b *BacktestEngine[S]) SetData(historicalData []*models.KlineSimple) {
-	b.data = historicalData
+	b.data = append(b.data, historicalData...)
 }
 
 func (b *BacktestEngine[S]) GetStrategy() Strategy[S] {
