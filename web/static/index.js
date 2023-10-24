@@ -1,5 +1,7 @@
 let socket;
 let controller;
+let buyMarkers = [];
+let sellMarkers = [];
 
 let chart = LightweightCharts.createChart("chart-container", {
   // width: 1200,
@@ -73,24 +75,47 @@ function createWebSocketConnection(symbol, interval, strategy, localFlag) {
 
   // Event handler for when a message is received from the server
   socket.onmessage = function (event) {
-    // console.log("Message received from server:", event.data);
     // Handle the received message here
 
     // Parse JSON String to JavaScript object
     // have to parse 2x due to JSON string
     const jsonString = JSON.parse(event.data);
-    const jsonObject = JSON.parse(jsonString);
 
-    // Kline data is in 'data': {k: ...}' object
-    const candleStick = jsonObject.data.k;
+    if (jsonString.side) {
+      // This is an order message, visualize it
+      if (jsonString.side === "BUY") {
+        // Create a marker for buy order
+        buyMarkers.push({
+          time: jsonString.timestamp / 1000,
+          position: "belowBar",
+          color: "green",
+          shape: "arrowUp",
+        });
+      } else if (jsonString.side === "SELL") {
+        // Create a marker for sell order
+        sellMarkers.push({
+          time: jsonString.timestamp / 1000,
+          position: "aboveBar",
+          color: "red",
+          shape: "arrowDown",
+        });
+      }
 
-    candleSeries.update({
-      time: candleStick.t / 1000,
-      open: candleStick.o,
-      high: candleStick.h,
-      low: candleStick.l,
-      close: candleStick.c,
-    });
+      // Update the chart with the new markers
+      candleSeries.setMarkers(buyMarkers.concat(sellMarkers));
+    } else {
+      const jsonObject = JSON.parse(jsonString);
+      // Kline data is in 'data': {k: ...}' object
+      const candleStick = jsonObject.data.k;
+
+      candleSeries.update({
+        time: candleStick.t / 1000,
+        open: candleStick.o,
+        high: candleStick.h,
+        low: candleStick.l,
+        close: candleStick.c,
+      });
+    }
   };
 }
 
@@ -164,7 +189,6 @@ function getBacktest(event) {
   const startTime = document.querySelector("#open_time").value;
   const endTime = document.querySelector("#close_time").value;
   const strategy = document.querySelector("#strat-bt").value;
-  console.log(strategy);
 
   candleSeries.setData([]);
 
@@ -203,6 +227,21 @@ function getBacktest(event) {
         };
       });
       candleSeries.setData(historicalData);
+
+      const smaSeries = chart.addLineSeries({
+        color: "blue", // Customize the color
+        lineWidth: 2, // Customize the line width
+      });
+      const smaData1 = calculateSMA(historicalData, 12);
+      smaSeries.setData(smaData1);
+
+      const smaSeries2 = chart.addLineSeries({
+        color: "purple", // Customize the color
+        lineWidth: 2, // Customize the line width
+      });
+      const smaData2 = calculateSMA(historicalData, 24);
+      smaSeries2.setData(smaData2);
+
       createWebSocketConnection(symbol, interval, strategy, true);
 
       // TODO: figure out a better way / assign timeout based on interval?
@@ -230,3 +269,15 @@ chart.timeScale().subscribeVisibleTimeRangeChange((visibleRange) => {
     // Check if the user has scrolled to the start or end
   }
 });
+
+// Calculate SMA values
+const calculateSMA = (data, period) => {
+  const sma = [];
+  for (let i = period - 1; i < data.length; i++) {
+    const sum = data
+      .slice(i - period + 1, i + 1)
+      .reduce((acc, item) => acc + item.close, 0);
+    sma.push({ time: data[i].time, value: sum / period });
+  }
+  return sma;
+};
