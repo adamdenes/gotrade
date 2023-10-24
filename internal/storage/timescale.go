@@ -49,6 +49,12 @@ func (ts *TimescaleDB) GetSymbol(symbol string) (int64, error) {
 	return id, err
 }
 
+func (ts *TimescaleDB) GetSymbols() (*sql.Rows, error) {
+	q := "SELECT symbol FROM binance.symbols"
+	rows, err := ts.db.Query(q)
+	return rows, err
+}
+
 func (ts *TimescaleDB) CreateSymbol(symbol string) (int64, error) {
 	var id int64
 	q := `INSERT INTO binance.symbols (symbol) 
