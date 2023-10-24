@@ -44,11 +44,13 @@ func (b *BacktestEngine[S]) FillOrders() {
 		return
 	}
 
-	fmt.Println("Order len:", len(orders), "Current balance:", b.cash)
+	currBar := b.data[len(b.data)-1]
+	fmt.Println("Order len:", len(orders), "Current balance:", b.cash, "Current Bar:", currBar)
+
 	for i, order := range orders {
 		if order.Side == models.BUY {
 			// Calculate the cost of buying the specified quantity at the open price
-			cost := b.data[0].Open * order.Quantity
+			cost := currBar.Open * order.Quantity
 
 			// Check if there is enough cash to fill the buy order
 			if b.cash >= cost {
@@ -66,7 +68,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 			}
 		} else if order.Side == models.SELL {
 			// Calculate the revenue from selling the specified quantity at the open price
-			revenue := b.data[0].Open * order.Quantity
+			revenue := currBar.Open * order.Quantity
 
 			// Check if there are enough assets to fill the sell order
 			if b.strategy.GetPositionSize() >= order.Quantity {
