@@ -155,21 +155,78 @@ const (
 )
 
 type Order struct {
-	Symbol              string                  `json:"symbol"`
-	Side                OrderSide               `json:"side"`
-	Type                OderType                `json:"type"`
-	TimeInForce         string                  `json:"timeInForce,omitempty"`
-	Quantity            float64                 `json:"quantity,omitempty"`
-	QuoteOrderQty       float64                 `json:"quoteOrderQty,omitempty"`
-	Price               float64                 `json:"price,omitempty"`
-	NewClientOrderId    string                  `json:"newClientOrderId,omitempty"`
-	StrategyId          int                     `json:"strategyId,omitempty"`
-	StrategyType        int                     `json:"strategyType,omitempty"`
-	StopPrice           string                  `json:"stopPrice,omitempty"`
-	TrailingDelta       int64                   `json:"trailingDelta,omitempty"`
-	IcebergQty          float64                 `json:"icebergQty,omitempty"`
-	NewOrderRespType    OrderRespType           `json:"newOrderRespType,omitempty"`
-	SelfTradePrevention SelfTradePreventionMode `json:"selfTradePrevention,omitempty"`
-	RecvWindow          int64                   `json:"recvWindow,omitempty"`
-	Timestamp           int64                   `json:"timestamp"`
+	Symbol                  string                  `json:"symbol"`
+	Side                    OrderSide               `json:"side"`
+	Type                    OderType                `json:"type"`
+	TimeInForce             string                  `json:"timeInForce,omitempty"`
+	Quantity                float64                 `json:"quantity,omitempty"`
+	QuoteOrderQty           float64                 `json:"quoteOrderQty,omitempty"`
+	Price                   float64                 `json:"price,omitempty"`
+	NewClientOrderId        string                  `json:"newClientOrderId,omitempty"`
+	StrategyId              int                     `json:"strategyId,omitempty"`
+	StrategyType            int                     `json:"strategyType,omitempty"`
+	StopPrice               float64                 `json:"stopPrice,omitempty"`
+	TrailingDelta           int64                   `json:"trailingDelta,omitempty"`
+	IcebergQty              float64                 `json:"icebergQty,omitempty"`
+	NewOrderRespType        OrderRespType           `json:"newOrderRespType,omitempty"`
+	SelfTradePreventionMode SelfTradePreventionMode `json:"selfTradePreventionMode,omitempty"`
+	RecvWindow              int64                   `json:"recvWindow,omitempty"`
+	Timestamp               int64                   `json:"timestamp"`
+}
+
+func (o *Order) String() string {
+	var sb strings.Builder
+
+	if o.Symbol != "" {
+		sb.WriteString(fmt.Sprintf("symbol=%s", strings.ToUpper(o.Symbol)))
+	}
+	if o.Side != "" {
+		sb.WriteString(fmt.Sprintf("&side=%s", o.Side))
+	}
+	if o.Type != "" {
+		sb.WriteString(fmt.Sprintf("&type=%s", o.Type))
+	}
+	if o.TimeInForce != "" {
+		sb.WriteString(fmt.Sprintf("&timeInForce=%s", o.TimeInForce))
+	}
+	if o.Quantity != 0.0 {
+		sb.WriteString(fmt.Sprintf("&quantity=%f", o.Quantity))
+	}
+	if o.QuoteOrderQty != 0.0 {
+		sb.WriteString(fmt.Sprintf("&quoteOrderQty=%f", o.QuoteOrderQty))
+	}
+	if o.Price != 0.0 {
+		sb.WriteString(fmt.Sprintf("&price=%f", o.Price))
+	}
+	if o.NewClientOrderId != "" {
+		sb.WriteString(fmt.Sprintf("&newClientOrderId=%s", o.NewClientOrderId))
+	}
+	if o.StrategyId != 0 {
+		sb.WriteString(fmt.Sprintf("&strategyId=%d", o.StrategyId))
+	}
+	if o.StrategyType != 0 {
+		sb.WriteString(fmt.Sprintf("&strategyType=%d", o.StrategyType))
+	}
+	if o.StopPrice != 0.0 {
+		sb.WriteString(fmt.Sprintf("&stopPrice=%f", o.StopPrice))
+	}
+	if o.TrailingDelta != 0 {
+		sb.WriteString(fmt.Sprintf("&trailingDelta=%d", o.TrailingDelta))
+	}
+	if o.IcebergQty != 0.0 {
+		sb.WriteString(fmt.Sprintf("&icebergQty=%f", o.IcebergQty))
+	}
+	if o.NewOrderRespType != "" {
+		sb.WriteString(fmt.Sprintf("&newOrderRespType=%s", o.NewOrderRespType))
+	}
+	if o.SelfTradePreventionMode != "" {
+		sb.WriteString(fmt.Sprintf("&selfTradePreventionMode=%s", o.SelfTradePreventionMode))
+	}
+	if o.RecvWindow != 0 {
+		sb.WriteString(fmt.Sprintf("&recvWindow=%d", o.RecvWindow))
+	}
+	if o.Timestamp != 0 {
+		sb.WriteString(fmt.Sprintf("&timestamp=%d", o.Timestamp))
+	}
+	return sb.String()
 }
