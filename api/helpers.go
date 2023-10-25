@@ -3,8 +3,11 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,8 +27,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// os.TempDir() ?
-const tmpDir string = "./internal/tmp/"
+const (
+	apiEndpoint  string = "https://api.binance.com/api/v3/"
+	dataEndpoint string = "https://data-api.binance.vision/api/v3/"
+)
 
 func NewTemplateCache() (map[string]*template.Template, error) {
 	cache := map[string]*template.Template{}
@@ -120,7 +125,7 @@ func PollHistoricalData(storage storage.Storage) {
 			row.CloseTime = row.OpenTime.Add(999 * time.Millisecond)
 
 			uri := BuildURI(
-				"https://data-api.binance.vision/api/v3/klines?",
+				dataEndpoint+"klines?",
 				"symbol=", row.Symbol,
 				"&interval=", row.Interval,
 				"&startTime=", fmt.Sprintf("%d", row.OpenTime.UnixMilli()),
@@ -191,7 +196,7 @@ func processMonthlyData(
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
-	uri := BuildURI("https://data.binance.vision/data/spot/monthly/klines/",
+	uri := BuildURI(dataEndpoint+"klines/",
 		symbol,
 		"/1s/",
 		symbol,
@@ -264,7 +269,7 @@ func downloadZIP(url string) error {
 	}
 
 	// Create or open the destination file for writing
-	dst := tmpDir + filepath.Base(url)
+	dst := "./internal/tmp/" + filepath.Base(url)
 	file, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -420,6 +425,25 @@ func BuildURI(base string, query ...string) string {
 	return sb.String()
 }
 
+func Sign(secret []byte, query string) (string, error) {
+	// Create an HMAC-SHA256 hasher
+	hmacHash := hmac.New(sha256.New, secret)
+
+	// Write the query string to the hasher
+	_, err := hmacHash.Write([]byte(query))
+	if err != nil {
+		return "", err
+	}
+
+	// Get the raw bytes of the HMAC hash
+	rawSignature := hmacHash.Sum(nil)
+
+	// Encode the raw signature to a hexadecimal string
+	signature := hex.EncodeToString(rawSignature)
+
+	return signature, nil
+}
+
 // ----------------- REST -----------------
 
 /* IP Limits
@@ -480,6 +504,38 @@ func Query(qs string) ([]byte, error) {
 	return r, nil
 }
 
+func Post(url string, contType string, jsonBody []byte) ([]byte, error) {
+	fmt.Println("post url: \n", url)
+	fmt.Println(string(jsonBody))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("X-MBX-APIKEY", os.Getenv(apiKey))
+	req.Header.Add("Content-Type", contType)
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check the response status code for errors
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP Status: %s\nResponse Body: %s", resp.Status, body)
+	}
+
+	return body, nil
+}
+
 /* The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
 
    GET /api/v3/aggTrades
@@ -514,7 +570,7 @@ GET /api/v3/klines
 */
 
 func getKlines(q ...string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/klines?", q...)
+	uri := BuildURI(dataEndpoint+"klines?", q...)
 	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
@@ -536,7 +592,7 @@ GET /api/v3/uiKlines
 */
 
 func getUiKlines(q ...string) ([]byte, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/uiKlines?", q...)
+	uri := BuildURI(dataEndpoint+"uiKlines?", q...)
 	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
@@ -558,7 +614,7 @@ GET /api/v3/exchangeInfo
 */
 
 func NewSymbolCache() (map[string]struct{}, error) {
-	uri := BuildURI("https://data-api.binance.vision/api/v3/exchangeInfo")
+	uri := BuildURI(dataEndpoint + "exchangeInfo")
 	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
@@ -583,4 +639,30 @@ func NewSymbolCache() (map[string]struct{}, error) {
 	}
 
 	return cache, nil
+}
+
+/*
+Spot Trading Endpoints
+
+Test New Order (TRADE)
+
+	Response: {}
+
+POST /api/v3/order/test
+Test new order creation and signature/recvWindow long. Creates and validates a new order but does not send it into the matching engine.
+*/
+func TestOrder(order *models.Order) ([]byte, error) {
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), order.String())
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint + "order/test")
+	jb := []byte(order.String() + "&signature=" + signedQuery)
+	resp, err := Post(uri, "application/json", jb)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
