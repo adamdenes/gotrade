@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adamdenes/gotrade/cmd/rest"
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
@@ -219,7 +220,7 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 		default:
 			// Trading pair has to be all uppercase for REST API
 			// GET request to binance
-			resp, err := getUiKlines(kr.String())
+			resp, err := rest.GetUiKlines(kr.String())
 			if err != nil {
 				s.serverError(w, err)
 				return
@@ -388,7 +389,7 @@ func (s *Server) updateSymbolCache() {
 		if len(s.symbolCache) == 0 {
 			// rows.Next() == false -> database was probably empty
 			s.infoLog.Println("creating new symbol cache")
-			sc, err := NewSymbolCache()
+			sc, err := rest.NewSymbolCache()
 			if err != nil {
 				logger.Error.Fatal(err)
 			}
@@ -429,4 +430,19 @@ func (s *Server) clientError(w http.ResponseWriter, status int) {
 
 func (s *Server) notFound(w http.ResponseWriter) {
 	s.clientError(w, http.StatusNotFound)
+}
+
+func WriteJSON(w http.ResponseWriter, status int, v any) error {
+	// []byte slices are not converting correctly, so I need to type switch
+	switch data := v.(type) {
+	case []byte:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, err := w.Write(data)
+		return err
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		return json.NewEncoder(w).Encode(data)
+	}
 }
