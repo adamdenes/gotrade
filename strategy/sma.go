@@ -90,23 +90,27 @@ func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
 
 func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) *models.Order {
 	return &models.Order{
-		Symbol:    asset,
-		Side:      models.BUY,
-		Type:      models.LIMIT,
-		Quantity:  quantity,
-		Price:     price,
-		Timestamp: time.Now().UnixMilli(),
+		Symbol:      asset,
+		Side:        models.BUY,
+		Type:        models.LIMIT,
+		TimeInForce: "GTC",
+		Quantity:    quantity,
+		Price:       price,
+		RecvWindow:  5000,
+		Timestamp:   time.Now().UnixMilli(),
 	}
 }
 
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) *models.Order {
 	return &models.Order{
-		Symbol:    asset,
-		Side:      models.SELL,
-		Type:      models.LIMIT,
-		Quantity:  quantity,
-		Price:     price,
-		Timestamp: time.Now().UnixMilli(),
+		Symbol:      asset,
+		Side:        models.SELL,
+		Type:        models.LIMIT,
+		TimeInForce: "GTC",
+		Quantity:    quantity,
+		Price:       price,
+		RecvWindow:  5000,
+		Timestamp:   time.Now().UnixMilli(),
 	}
 }
 
