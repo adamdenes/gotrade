@@ -3,6 +3,7 @@ package strategy
 import (
 	"time"
 
+	"github.com/adamdenes/gotrade/cmd/rest"
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
@@ -33,48 +34,29 @@ func NewSMAStrategy(shortPeriod, longPeriod int) backtest.Strategy[SMAStrategy] 
 func (s *SMAStrategy) Execute() {
 	// Calculate SMA values
 	s.calculateSMAs()
-
 	currBar := s.data[len(s.data)-1]
-	// TODO: fix time -> s.data[0].OpenTime should be indexed
 
 	// Generate buy/sell signals based on crossover
-	// Check if there are enough previous SMA values available
 	if len(s.longSMA) > 2 {
 		if crossover(s.shortSMA, s.longSMA) {
-			// implement buy signal
-			// logger.Debug.Printf(
-			// 	"Current Price: %.2f \tCrossover: %.12f <= %.12f && %.12f > %.12f -> %t\n",
-			// 	s.data[0].Close,
-			// 	s.shortSMA[len(s.shortSMA)-2],
-			// 	s.longSMA[len(s.longSMA)-2],
-			// 	s.shortSMA[len(s.shortSMA)-1],
-			// 	s.longSMA[len(s.longSMA)-1],
-			// 	(s.shortSMA[len(s.shortSMA)-2] <= s.longSMA[len(s.longSMA)-2] && s.shortSMA[len(s.shortSMA)-1] > s.longSMA[len(s.longSMA)-1]),
-			// )
 			bo := s.Buy(s.asset, 0.01, currBar.Close)
 			logger.Info.Println("Buy Signal", bo.Side, bo.Quantity, bo.Price)
 			if s.backtest {
 				bo.Timestamp = currBar.OpenTime.UnixMilli()
+				s.orders = append(s.orders, bo)
+				return
 			}
-			s.orders = append(s.orders, bo)
+			rest.TestOrder(bo)
 		}
 		if crossunder(s.shortSMA, s.longSMA) {
-			// implement sell signal
-			// logger.Debug.Printf(
-			// 	"Current Price: %.2f \tCrossunder: %.12f <= %.12f && %.12f > %.12f -> %t\n",
-			// 	s.data[0].Close,
-			// 	s.shortSMA[len(s.shortSMA)-1],
-			// 	s.longSMA[len(s.longSMA)-1],
-			// 	s.shortSMA[len(s.shortSMA)-2],
-			// 	s.longSMA[len(s.longSMA)-2],
-			// 	(s.shortSMA[len(s.shortSMA)-1] <= s.longSMA[len(s.longSMA)-1] && s.shortSMA[len(s.shortSMA)-2] > s.longSMA[len(s.longSMA)-2]),
-			// )
 			so := s.Sell(s.asset, 0.01, currBar.Close)
 			logger.Info.Println("Sell Signal", so.Side, so.Quantity, so.Price)
 			if s.backtest {
 				so.Timestamp = currBar.OpenTime.UnixMilli()
+				s.orders = append(s.orders, so)
+				return
 			}
-			s.orders = append(s.orders, so)
+			rest.TestOrder(so)
 		}
 	}
 }
@@ -148,26 +130,20 @@ func (s *SMAStrategy) calculateSMAs() {
 	if len(s.data) >= s.shortPeriod {
 		shortSMA := calculateSMA(s.data, s.shortPeriod)
 		s.shortSMA = append(s.shortSMA, shortSMA)
-
-		// Start removing old data from slice
-		// if len(s.shortSMA) == s.shortPeriod {
-		// 	fmt.Println("short", s.shortSMA)
-		// 	s.shortSMA = s.shortSMA[1:]
-		// 	fmt.Println(s.shortSMA)
-		// }
 	}
 
 	// Calculate long SMA
 	if len(s.data) >= s.longPeriod {
 		longSMA := calculateSMA(s.data, s.longPeriod)
 		s.longSMA = append(s.longSMA, longSMA)
+	}
 
-		// Start removing old data from slice
-		// if len(s.longSMA) == s.longPeriod {
-		// 	fmt.Println("long", s.longSMA)
-		// 	s.longSMA = s.longSMA[1:]
-		// 	fmt.Println(s.longSMA)
-		// }
+	// Prevent infinitely growing SMA slices
+	if len(s.shortSMA) > s.shortPeriod {
+		s.shortSMA = s.shortSMA[1:]
+	}
+	if len(s.longSMA) > s.longPeriod {
+		s.longSMA = s.longSMA[1:]
 	}
 }
 
@@ -175,15 +151,8 @@ func (s *SMAStrategy) calculateSMAs() {
 func calculateSMA(data []*models.KlineSimple, period int) float64 {
 	sum := 0.0
 	for i := len(data) - 1; i >= len(data)-period; i-- {
-		// fmt.Printf(
-		// 	"sum + data.Close => %.2f + %.2f = %.2f\n",
-		// 	sum,
-		// 	data[i].Close,
-		// 	sum+data[i].Close,
-		// )
 		sum += data[i].Close
 	}
-	// fmt.Println("sma", sum/float64(period))
 	return sum / float64(period)
 }
 
