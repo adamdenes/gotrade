@@ -63,6 +63,109 @@ func Sign(secret []byte, query string) (string, error) {
 	return signature, nil
 }
 
+func CalculatePositionSize(asset string, risk float64, invalidation float64) (float64, error) {
+	// Account size – $5000
+	// Account risk – 1%
+	// Invalidation point (distance to stop-loss) – 5%
+	// position size = account size x account risk / invalidation point
+
+	// The bigger the invalidation point the less the position size going to be
+	// $1000 = $5000 x 0.01 / 0.05
+	// $500 = $5000 x 0.01 / 0.1
+
+	freeBalance, err := getBalance(asset)
+	if err != nil {
+		return 0.0, err
+	}
+	// 4. Calculate the position size
+	posSize := freeBalance * risk / invalidation
+	return posSize, nil
+}
+
+func getBalance(asset string) (float64, error) {
+	// 1. Get balances from account endpoint
+	var balances struct {
+		Balances []struct {
+			Asset  string  `json:"asset"`
+			Free   float64 `json:"free"`
+			Locked float64 `json:"locked"`
+		} `json:"balances"`
+	}
+
+	acc, err := GetAccount()
+	if err != nil {
+		return 0.0, fmt.Errorf("error calculating position size: %w", err)
+	}
+
+	if err := json.Unmarshal(acc, &balances); err != nil {
+		return 0.0, fmt.Errorf("error marshalling account data: %w", err)
+	}
+
+	// 2. Find the asset balance
+	var (
+		freeBalance float64
+		found       bool // Flag to check if the asset is found
+	)
+
+	for _, b := range balances.Balances {
+		if strings.Contains(asset, b.Asset) {
+			// 3. Get the available/free asset balance
+			freeBalance = b.Free
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return 0.0, fmt.Errorf("asset %s is not available in account balance", asset)
+	}
+
+	return freeBalance, nil
+}
+
+func validateOrder(order *models.Order) error {
+	switch order.Type {
+	case models.LIMIT:
+		if order.TimeInForce == "" || order.Quantity == 0.0 || order.Price == 0.0 {
+			return fmt.Errorf("limit order requires timeInForce, quantity, and price")
+		}
+	case models.MARKET:
+		if order.Quantity == 0.0 && order.QuoteOrderQty == 0.0 {
+			return fmt.Errorf("market order requires either quantity or quoteOrderQty")
+		}
+	case models.STOP_LOSS:
+		if order.Quantity == 0.0 || order.StopPrice == 0.0 || order.TrailingDelta == 0 {
+			return fmt.Errorf("stop-loss order requires quantity, stopPrice and trailingDelta")
+		}
+	case models.STOP_LOSS_LIMIT:
+		if order.TimeInForce == "" || order.Quantity == 0.0 || order.Price == 0.0 ||
+			order.StopPrice == 0.0 || order.TrailingDelta == 0 {
+			return fmt.Errorf(
+				"stop-loss limit order requires timeInForce, quantity, price, stopPrice and trailingDelta",
+			)
+		}
+	case models.TAKE_PROFIT:
+		if order.Quantity == 0.0 || order.StopPrice == 0.0 || order.TrailingDelta == 0 {
+			return fmt.Errorf("take-profit order requires quantity, stopPrice and trailingDelta")
+		}
+	case models.TAKE_PROFIT_LIMIT:
+		if order.TimeInForce == "" || order.Quantity == 0.0 || order.Price == 0.0 ||
+			order.StopPrice == 0.0 || order.TrailingDelta == 0 {
+			return fmt.Errorf(
+				"take-profit limit order requires timeInForce, quantity, price, stopPrice and trailingDelta",
+			)
+		}
+	case models.LIMIT_MAKER:
+		if order.Quantity == 0.0 || order.Price == 0.0 {
+			return fmt.Errorf("limit-maker order requires quantity and price")
+		}
+	default:
+		return fmt.Errorf("unsupported order type: %s", order.Type)
+	}
+
+	return nil
+}
+
 // ----------------- REST -----------------
 
 /* IP Limits
@@ -80,7 +183,16 @@ func Sign(secret []byte, query string) (string, error) {
 // Once a "Retry-After" header is received, the query mechanism will go to sleep. The caller
 // has to implement retry mechanism.
 func Query(qs string) ([]byte, error) {
-	resp, err := http.Get(qs)
+	req, err := http.NewRequest("GET", qs, bytes.NewBuffer([]byte("")))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("X-MBX-APIKEY", os.Getenv(apiKey))
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +236,6 @@ func Query(qs string) ([]byte, error) {
 }
 
 func Post(url string, contType string, jsonBody []byte) ([]byte, error) {
-	fmt.Println("post url: \n", url)
-	fmt.Println(string(jsonBody))
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
@@ -271,6 +381,9 @@ POST /api/v3/order/test
 Test new order creation and signature/recvWindow long. Creates and validates a new order but does not send it into the matching engine.
 */
 func TestOrder(order *models.Order) ([]byte, error) {
+	if err := validateOrder(order); err != nil {
+		return nil, err
+	}
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), order.String())
 	if err != nil {
 		return nil, err
@@ -283,5 +396,109 @@ func TestOrder(order *models.Order) ([]byte, error) {
 		return nil, err
 	}
 
+	return resp, nil
+}
+
+/*
+POST /api/v3/order
+
+Send in a new order.
+
+Additional mandatory parameters based on type:
+
+   Type 	            Additional mandatory parameters
+   LIMIT 	            timeInForce, quantity, price
+   MARKET 	            quantity or quoteOrderQty
+   STOP_LOSS 	        quantity, stopPrice or trailingDelta
+   STOP_LOSS_LIMIT 	    timeInForce, quantity, price, stopPrice or trailingDelta
+   TAKE_PROFIT 	        quantity, stopPrice or trailingDelta
+   TAKE_PROFIT_LIMIT 	timeInForce, quantity, price, stopPrice or trailingDelta
+   LIMIT_MAKER 	        quantity, price
+*/
+
+func Order(order *models.Order) ([]byte, error) {
+	if err := validateOrder(order); err != nil {
+		return nil, err
+	}
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), order.String())
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint + "order")
+	jb := []byte(order.String() + "&signature=" + signedQuery)
+	resp, err := Post(uri, "application/json", jb)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+/*
+
+Check Server Time
+
+    Response:
+
+    {
+      "serverTime": 1499827319559
+    }
+
+GET /api/v3/time
+
+Test connectivity to the Rest API and get the current server time.
+
+Weight(IP): 1
+*/
+
+func GetServerTime() (int64, error) {
+	uri := BuildURI(apiEndpoint + "time")
+	resp, err := Query(uri)
+	if err != nil {
+		return 0, err
+	}
+
+	var st struct {
+		ServerTime int64 `json:"serverTime"`
+	}
+
+	if err := json.Unmarshal(resp, &st); err != nil {
+		return 0, err
+	}
+	return st.ServerTime, nil
+}
+
+/*
+GET /api/v3/account
+
+Get current account information.
+
+Weight(IP): 20
+
+Parameters:
+    Name 	    Type 	Mandatory 	Description
+    recvWindow 	LONG 	NO 	        The value cannot be greater than 60000
+    timestamp 	LONG 	YES
+*/
+
+func GetAccount() ([]byte, error) {
+	// To avoid timestamp mismatch with server
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint+"account?", q, "&signature=", signedQuery)
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
 	return resp, nil
 }
