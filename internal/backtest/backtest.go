@@ -58,6 +58,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 				// Fill the buy order
 				b.cash -= cost
 				b.strategy.SetPositionSize(order.Quantity)
+				b.strategy.SetBalance(b.cash)
 				fmt.Printf(
 					"BUY filled! Cash: %v, Position Size: %v\n",
 					b.cash,
@@ -76,6 +77,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 				// Fill the sell order
 				b.cash += revenue
 				b.strategy.SetPositionSize(-order.Quantity)
+				b.strategy.SetBalance(b.cash)
 				fmt.Printf("SELL filled! Cash: %v, Position Size: %v\n",
 					b.cash,
 					b.strategy.GetPositionSize(),
