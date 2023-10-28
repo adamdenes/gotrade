@@ -38,8 +38,32 @@ func (s *SMAStrategy) Execute() {
 
 	// Generate buy/sell signals based on crossover
 	if len(s.longSMA) > 2 {
+
+		if !s.backtest {
+			// Calculate the position size based on asset and risk
+			var err error
+			s.positionSize, err = rest.CalculatePositionSize(s.asset, 0.01, 0.15)
+			if err != nil {
+				logger.Error.Printf("Error calculating position size: %v\n", err)
+				return
+			}
+			// it is not needed, but anyways...
+			// account size = position size x invalidation point / account risk
+			s.balance = s.positionSize * 0.15 / 0.01
+		} else {
+			s.positionSize = s.balance * 0.01 / 0.15
+		}
+		// Calculate the quantity based on position size
+		quantity := s.positionSize / currBar.Close
+		logger.Info.Printf(
+			"PositionSize: %f, Quantity: %f, Balance: %f",
+			s.positionSize,
+			quantity,
+			s.balance,
+		)
+
 		if crossover(s.shortSMA, s.longSMA) {
-			bo := s.Buy(s.asset, 0.01, currBar.Close)
+			bo := s.Buy(s.asset, quantity, currBar.Close)
 			logger.Info.Println("Buy Signal", bo.Side, bo.Quantity, bo.Price)
 			if s.backtest {
 				bo.Timestamp = currBar.OpenTime.UnixMilli()
@@ -49,7 +73,7 @@ func (s *SMAStrategy) Execute() {
 			rest.TestOrder(bo)
 		}
 		if crossunder(s.shortSMA, s.longSMA) {
-			so := s.Sell(s.asset, 0.01, currBar.Close)
+			so := s.Sell(s.asset, quantity, currBar.Close)
 			logger.Info.Println("Sell Signal", so.Side, so.Quantity, so.Price)
 			if s.backtest {
 				so.Timestamp = currBar.OpenTime.UnixMilli()
