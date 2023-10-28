@@ -29,6 +29,7 @@ func NewBacktestEngine(
 
 func (b *BacktestEngine[S]) Init() {
 	b.strategy.SetPositionSize(1.0)
+	b.strategy.SetBalance(b.cash)
 	b.strategy.IsBacktest(true)
 }
 
