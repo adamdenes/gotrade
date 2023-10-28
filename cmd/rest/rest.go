@@ -285,19 +285,18 @@ func Post(url string, contType string, jsonBody []byte) ([]byte, error) {
 /*
 GET /api/v3/klines
 
-	Kline/candlestick bars for a symbol.
-	Klines are uniquely identified by their open time.
+		Kline/candlestick bars for a symbol.
+		Klines are uniquely identified by their open time.
 
-	symbol 		STRING 	YES
-	fromId 		LONG 	NO 	id to get aggregate trades from INCLUSIVE.
-	startTime 	LONG 	NO 	Timestamp in ms to get aggregate trades from INCLUSIVE.
-	endTime 	LONG 	NO 	Timestamp in ms to get aggregate trades until INCLUSIVE.
-	limit 		INT 	NO 	Default 500; max 1000.
+		symbol 		STRING 	YES
+		fromId 		LONG 	NO 	id to get aggregate trades from INCLUSIVE.
+		startTime 	LONG 	NO 	Timestamp in ms to get aggregate trades from INCLUSIVE.
+		endTime 	LONG 	NO 	Timestamp in ms to get aggregate trades until INCLUSIVE.
+		limit 		INT 	NO 	Default 500; max 1000.
 
 
-    If startTime and endTime are not sent, the most recent klines are returned.
+	    If startTime and endTime are not sent, the most recent klines are returned.
 */
-
 func GetKlines(q ...string) ([]byte, error) {
 	uri := BuildURI(apiEndpoint+"klines?", q...)
 	resp, err := Query(uri)
@@ -319,7 +318,6 @@ GET /api/v3/uiKlines
 	endTime 	LONG 	NO 	Timestamp in ms to get aggregate trades until INCLUSIVE.
 	limit 		INT 	NO 	Default 500; max 1000.
 */
-
 func GetUiKlines(q ...string) ([]byte, error) {
 	uri := BuildURI(apiEndpoint+"uiKlines?", q...)
 	resp, err := Query(uri)
@@ -341,7 +339,6 @@ GET /api/v3/exchangeInfo
 	Notes: If the value provided to symbol or symbols do not exist,
 	the endpoint will throw an error saying the symbol is invalid.
 */
-
 func NewSymbolCache() (map[string]struct{}, error) {
 	uri := BuildURI(apiEndpoint + "exchangeInfo")
 	resp, err := Query(uri)
@@ -406,16 +403,15 @@ Send in a new order.
 
 Additional mandatory parameters based on type:
 
-   Type 	            Additional mandatory parameters
-   LIMIT 	            timeInForce, quantity, price
-   MARKET 	            quantity or quoteOrderQty
-   STOP_LOSS 	        quantity, stopPrice or trailingDelta
-   STOP_LOSS_LIMIT 	    timeInForce, quantity, price, stopPrice or trailingDelta
-   TAKE_PROFIT 	        quantity, stopPrice or trailingDelta
-   TAKE_PROFIT_LIMIT 	timeInForce, quantity, price, stopPrice or trailingDelta
-   LIMIT_MAKER 	        quantity, price
+	Type 	            Additional mandatory parameters
+	LIMIT 	            timeInForce, quantity, price
+	MARKET 	            quantity or quoteOrderQty
+	STOP_LOSS 	        quantity, stopPrice or trailingDelta
+	STOP_LOSS_LIMIT 	    timeInForce, quantity, price, stopPrice or trailingDelta
+	TAKE_PROFIT 	        quantity, stopPrice or trailingDelta
+	TAKE_PROFIT_LIMIT 	timeInForce, quantity, price, stopPrice or trailingDelta
+	LIMIT_MAKER 	        quantity, price
 */
-
 func Order(order *models.Order) ([]byte, error) {
 	if err := validateOrder(order); err != nil {
 		return nil, err
@@ -436,14 +432,46 @@ func Order(order *models.Order) ([]byte, error) {
 }
 
 /*
+POST /api/v3/order/oco
 
+# Send in a new OCO
+
+Weight(UID): 2 Weight(IP): 1
+
+Price Restrictions:
+
+	SELL: Limit Price > Last Price > Stop Price
+	BUY: Limit Price < Last Price < Stop Price
+
+Quantity Restrictions:
+
+	Both legs must have the same quantity
+	ICEBERG quantities however do not have to be the same.
+
+Order Rate Limit
+
+	OCO counts as 2 orders against the order rate limit
+*/
+func OrderOCO(oco *models.OrderOCO) ([]byte, error) {
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), oco.String())
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint + "order/oco")
+	jb := []byte(oco.String() + "&signature=" + signedQuery)
+	resp, err := Post(uri, "application/json", jb)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+/*
 Check Server Time
 
-    Response:
-
-    {
-      "serverTime": 1499827319559
-    }
+	Response: { "serverTime": 1499827319559	}
 
 GET /api/v3/time
 
@@ -451,7 +479,6 @@ Test connectivity to the Rest API and get the current server time.
 
 Weight(IP): 1
 */
-
 func GetServerTime() (int64, error) {
 	uri := BuildURI(apiEndpoint + "time")
 	resp, err := Query(uri)
@@ -477,11 +504,11 @@ Get current account information.
 Weight(IP): 20
 
 Parameters:
-    Name 	    Type 	Mandatory 	Description
-    recvWindow 	LONG 	NO 	        The value cannot be greater than 60000
-    timestamp 	LONG 	YES
-*/
 
+	Name 	    Type 	Mandatory 	Description
+	recvWindow 	LONG 	NO 	        The value cannot be greater than 60000
+	timestamp 	LONG 	YES
+*/
 func GetAccount() ([]byte, error) {
 	// To avoid timestamp mismatch with server
 	st, err := GetServerTime()
