@@ -154,11 +154,19 @@ const (
 	NONE                                 = "NONE"
 )
 
+type TimeInForce string
+
+const (
+	GTC TimeInForce = "GTC"
+	FOK             = "FOK"
+	IOC             = "IOC"
+)
+
 type Order struct {
 	Symbol                  string                  `json:"symbol"`
 	Side                    OrderSide               `json:"side"`
 	Type                    OderType                `json:"type"`
-	TimeInForce             string                  `json:"timeInForce,omitempty"`
+	TimeInForce             TimeInForce             `json:"timeInForce,omitempty"`
 	Quantity                float64                 `json:"quantity,omitempty"`
 	QuoteOrderQty           float64                 `json:"quoteOrderQty,omitempty"`
 	Price                   float64                 `json:"price,omitempty"`
@@ -215,6 +223,101 @@ func (o *Order) String() string {
 	}
 	if o.IcebergQty != 0.0 {
 		sb.WriteString(fmt.Sprintf("&icebergQty=%f", o.IcebergQty))
+	}
+	if o.NewOrderRespType != "" {
+		sb.WriteString(fmt.Sprintf("&newOrderRespType=%s", o.NewOrderRespType))
+	}
+	if o.SelfTradePreventionMode != "" {
+		sb.WriteString(fmt.Sprintf("&selfTradePreventionMode=%s", o.SelfTradePreventionMode))
+	}
+	if o.RecvWindow != 0 {
+		sb.WriteString(fmt.Sprintf("&recvWindow=%d", o.RecvWindow))
+	}
+	if o.Timestamp != 0 {
+		sb.WriteString(fmt.Sprintf("&timestamp=%d", o.Timestamp))
+	}
+	return sb.String()
+}
+
+type StopLimitTimeInForce TimeInForce
+
+type OrderOCO struct {
+	Symbol                  string                  `json:"symbol"`
+	ListClientOrderId       string                  `json:"listClientOrderId,omitempty"`
+	Side                    OrderSide               `json:"side"`
+	Quantity                float64                 `json:"quantity"`
+	LimitClientOrderId      string                  `json:"limitClientOrderId"`
+	LimitStrategyId         int64                   `json:"limitStrategyId,omitempty"`
+	LimitStrategyType       int64                   `json:"limitStrategyType,omitempty"`
+	Price                   float64                 `json:"price"`
+	LimitIcebergQty         float64                 `json:"limitIcebergQty,omitempty"`
+	TrailingDelta           int64                   `json:"trailingDelta,omitempty"`
+	StopClientOrderId       string                  `json:"stopClientOrderId,omitempty"`
+	StopPrice               float64                 `json:"stopPrice"`
+	StopStrategyId          int64                   `json:"stopStrategyId,omitempty"`
+	StopStrategyType        int64                   `json:"stopStrategyType,omitempty"`
+	StopLimitPrice          float64                 `json:"stopLimitPrice,omitempty"`
+	StopIcebergQty          float64                 `json:"stopIcebergQty,omitempty"`
+	StopLimitTimeInForce    StopLimitTimeInForce    `json:"stopLimitTimeInForce,omitempty"`
+	NewOrderRespType        OrderRespType           `json:"newOrderRespType,omitempty"`
+	SelfTradePreventionMode SelfTradePreventionMode `json:"selfTradePreventionMode,omitempty"`
+	RecvWindow              int64                   `json:"recvWindow,omitempty"`
+	Timestamp               int64                   `json:"timestamp"`
+}
+
+func (o *OrderOCO) String() string {
+	var sb strings.Builder
+
+	if o.Symbol != "" {
+		sb.WriteString(fmt.Sprintf("symbol=%s", strings.ToUpper(o.Symbol)))
+	}
+	if o.ListClientOrderId != "" {
+		sb.WriteString(fmt.Sprintf("&listClientOrderId=%s", o.ListClientOrderId))
+	}
+	if o.Side != "" {
+		sb.WriteString(fmt.Sprintf("&side=%s", o.Side))
+	}
+	if o.Quantity != 0.0 {
+		sb.WriteString(fmt.Sprintf("&quantity=%f", o.Quantity))
+	}
+	if o.LimitClientOrderId != "" {
+		sb.WriteString(fmt.Sprintf("&limitClientOrderId=%s", o.LimitClientOrderId))
+	}
+	if o.LimitStrategyId != 0 {
+		sb.WriteString(fmt.Sprintf("&limitStrategyId=%d", o.LimitStrategyId))
+	}
+	if o.LimitStrategyType != 0 {
+		sb.WriteString(fmt.Sprintf("&limitStrategyType=%d", o.LimitStrategyType))
+	}
+	if o.Price != 0.0 {
+		sb.WriteString(fmt.Sprintf("&price=%f", o.Price))
+	}
+	if o.LimitIcebergQty != 0.0 {
+		sb.WriteString(fmt.Sprintf("&limitIcebergQty=%f", o.LimitIcebergQty))
+	}
+	if o.TrailingDelta != 0 {
+		sb.WriteString(fmt.Sprintf("&trailingDelta=%d", o.TrailingDelta))
+	}
+	if o.StopClientOrderId != "" {
+		sb.WriteString(fmt.Sprintf("&stopClientOrderId=%s", o.StopClientOrderId))
+	}
+	if o.StopPrice != 0.0 {
+		sb.WriteString(fmt.Sprintf("&stopPrice=%f", o.StopPrice))
+	}
+	if o.StopStrategyId != 0 {
+		sb.WriteString(fmt.Sprintf("&stopStrategyId=%d", o.StopStrategyId))
+	}
+	if o.StopStrategyType != 0 {
+		sb.WriteString(fmt.Sprintf("&stopStrategyType=%d", o.StopStrategyType))
+	}
+	if o.StopLimitPrice != 0.0 {
+		sb.WriteString(fmt.Sprintf("&stopLimitPrice=%f", o.StopLimitPrice))
+	}
+	if o.StopIcebergQty != 0.0 {
+		sb.WriteString(fmt.Sprintf("&stopIcebergQty=%f", o.StopIcebergQty))
+	}
+	if o.StopLimitTimeInForce != "" {
+		sb.WriteString(fmt.Sprintf("&stopLimitTimeInForce=%s", o.StopLimitTimeInForce))
 	}
 	if o.NewOrderRespType != "" {
 		sb.WriteString(fmt.Sprintf("&newOrderRespType=%s", o.NewOrderRespType))
