@@ -5,7 +5,6 @@ go 1.21.1
 require (
 	github.com/google/uuid v1.3.1
 	github.com/jackc/pgx/v5 v5.4.3
-	github.com/lib/pq v1.10.9
 	nhooyr.io/websocket v1.8.7
 )
 
