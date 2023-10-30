@@ -118,6 +118,10 @@ func (e *RequestError) Error() string {
 	return e.Err.Error()
 }
 
+type TypeOfOrder interface {
+	String() string
+}
+
 type OrderSide string
 
 const (
@@ -125,16 +129,16 @@ const (
 	SELL           = "SELL"
 )
 
-type OderType string
+type OrderType string
 
 const (
-	LIMIT             OderType = "LIMIT"
-	MARKET                     = "MARKET"
-	STOP_LOSS                  = "STOP_LOSS"
-	STOP_LOSS_LIMIT            = "STOP_LOSS_LIMIT"
-	TAKE_PROFIT                = "TAKE_PROFIT"
-	TAKE_PROFIT_LIMIT          = "TAKE_PROFIT_LIMIT"
-	LIMIT_MAKER                = "LIMIT_MAKER"
+	LIMIT             OrderType = "LIMIT"
+	MARKET                      = "MARKET"
+	STOP_LOSS                   = "STOP_LOSS"
+	STOP_LOSS_LIMIT             = "STOP_LOSS_LIMIT"
+	TAKE_PROFIT                 = "TAKE_PROFIT"
+	TAKE_PROFIT_LIMIT           = "TAKE_PROFIT_LIMIT"
+	LIMIT_MAKER                 = "LIMIT_MAKER"
 )
 
 type OrderRespType string
@@ -165,7 +169,7 @@ const (
 type Order struct {
 	Symbol                  string                  `json:"symbol"`
 	Side                    OrderSide               `json:"side"`
-	Type                    OderType                `json:"type"`
+	Type                    OrderType               `json:"type"`
 	TimeInForce             TimeInForce             `json:"timeInForce,omitempty"`
 	Quantity                float64                 `json:"quantity,omitempty"`
 	QuoteOrderQty           float64                 `json:"quoteOrderQty,omitempty"`
