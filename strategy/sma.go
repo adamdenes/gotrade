@@ -14,7 +14,7 @@ type SMAStrategy struct {
 	positionSize float64               // Position size
 	asset        string                // Trading pair
 	backtest     bool                  // Are we backtesting?
-	orders       []*models.Order       // Pending orders
+	orders       []models.TypeOfOrder  // Pending orders
 	data         []*models.KlineSimple // Price data
 	shortPeriod  int                   // Short SMA period
 	longPeriod   int                   // Long SMA period
@@ -55,32 +55,22 @@ func (s *SMAStrategy) Execute() {
 		}
 		// Calculate the quantity based on position size
 		quantity := s.positionSize / currBar.Close
-		logger.Info.Printf(
-			"PositionSize: %f, Quantity: %f, Balance: %f",
-			s.positionSize,
-			quantity,
-			s.balance,
-		)
+		// logger.Info.Printf(
+		// 	"PositionSize: %f, Quantity: %f, Balance: %f",
+		// 	s.positionSize,
+		// 	quantity,
+		// 	s.balance,
+		// )
 
 		if crossover(s.shortSMA, s.longSMA) {
-			bo := s.Buy(s.asset, quantity, currBar.Close)
-			logger.Info.Println("Buy Signal", bo.Side, bo.Quantity, bo.Price)
-			if s.backtest {
-				bo.Timestamp = currBar.OpenTime.UnixMilli()
-				s.orders = append(s.orders, bo)
-				return
-			}
-			rest.TestOrder(bo)
+			buyOrder := s.Buy(s.asset, quantity, currBar.Close)
+			logger.Info.Print("Buy Signal")
+			s.PlaceOrder(buyOrder)
 		}
 		if crossunder(s.shortSMA, s.longSMA) {
-			so := s.Sell(s.asset, quantity, currBar.Close)
-			logger.Info.Println("Sell Signal", so.Side, so.Quantity, so.Price)
-			if s.backtest {
-				so.Timestamp = currBar.OpenTime.UnixMilli()
-				s.orders = append(s.orders, so)
-				return
-			}
-			rest.TestOrder(so)
+			sellOrder := s.Sell(s.asset, quantity, currBar.Close)
+			logger.Info.Print("Sell Signal")
+			s.PlaceOrder(sellOrder)
 		}
 	}
 }
@@ -94,37 +84,71 @@ func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
 	s.data = data
 }
 
-func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) *models.Order {
-	return &models.Order{
-		Symbol:      asset,
-		Side:        models.BUY,
-		Type:        models.LIMIT,
-		TimeInForce: "GTC",
-		Quantity:    quantity,
-		Price:       price,
-		RecvWindow:  5000,
-		Timestamp:   time.Now().UnixMilli(),
+func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
+	currBar := s.data[len(s.data)-1]
+
+	switch order := o.(type) {
+	case *models.Order:
+		logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
+		if s.backtest {
+			order.Timestamp = currBar.OpenTime.UnixMilli()
+			s.orders = append(s.orders, order)
+			return
+		}
+		rest.Order(order)
+	case *models.OrderOCO:
+		logger.Info.Println(order.Side, order.Quantity, order.Price)
+		logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
+		if s.backtest {
+			order.Timestamp = currBar.OpenTime.UnixMilli()
+			s.orders = append(s.orders, order)
+			return
+		}
+		rest.OrderOCO(order)
 	}
 }
 
-func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) *models.Order {
-	return &models.Order{
-		Symbol:      asset,
-		Side:        models.SELL,
-		Type:        models.LIMIT,
-		TimeInForce: "GTC",
-		Quantity:    quantity,
-		Price:       price,
-		RecvWindow:  5000,
-		Timestamp:   time.Now().UnixMilli(),
+func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
+	// BUY: Limit Price < Last Price < Stop Price
+	stopPrice := price + (price - price*(1-2/100.0))
+	stopLimitPrice := stopPrice + (stopPrice * 2 / 100)
+
+	return &models.OrderOCO{
+		Symbol:               asset,
+		Side:                 models.BUY,
+		Quantity:             quantity,
+		Price:                price,          // Price to buy
+		StopPrice:            stopPrice,      // Where to start stop loss
+		StopLimitPrice:       stopLimitPrice, // Lowest price you want to sell coins
+		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
+		RecvWindow:           5000,
+		Timestamp:            time.Now().UnixMilli(),
 	}
 }
 
-func (s *SMAStrategy) SetOrders(orders []*models.Order) {
+func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
+	// SELL: Limit Price > Last Price > Stop Price
+	stopPrice := price - (price - price*(1-2/100.0))
+	stopLimitPrice := stopPrice - (stopPrice * 2 / 100)
+
+	return &models.OrderOCO{
+		Symbol:               asset,
+		Side:                 models.SELL,
+		Quantity:             quantity,
+		Price:                price,          // Price to buy
+		StopPrice:            stopPrice,      // Where to start stop loss
+		StopLimitPrice:       stopLimitPrice, // Lowest price you want to sell coins
+		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
+		RecvWindow:           5000,
+		Timestamp:            time.Now().UnixMilli(),
+	}
+}
+
+func (s *SMAStrategy) SetOrders(orders []models.TypeOfOrder) {
 	s.orders = orders
 }
 
-func (s *SMAStrategy) GetOrders() []*models.Order {
+func (s *SMAStrategy) GetOrders() []models.TypeOfOrder {
 	return s.orders
 }
 

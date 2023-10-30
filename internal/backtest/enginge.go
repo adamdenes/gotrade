@@ -14,12 +14,12 @@ type Strategy[S any] interface {
 	IsBacktest(bool)
 	SetBalance(float64)
 	GetBalance() float64
-	SetOrders([]*models.Order)
-	GetOrders() []*models.Order
+	SetOrders([]models.TypeOfOrder)
+	GetOrders() []models.TypeOfOrder
 	SetPositionSize(float64)
 	GetPositionSize() float64
 	SetData([]*models.KlineSimple)
 	SetAsset(string)
-	Buy(asset string, quantity float64, price float64) *models.Order
-	Sell(asset string, quantity float64, price float64) *models.Order
+	Buy(asset string, quantity float64, price float64) models.TypeOfOrder
+	Sell(asset string, quantity float64, price float64) models.TypeOfOrder
 }

@@ -122,7 +122,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Execute backtest
-		dataChan := make(chan *models.Order, 1)
+		dataChan := make(chan models.TypeOfOrder, 1)
 		errChan := make(chan error)
 		go s.backtest(ctx, conn, selectedStrategy, dataChan, errChan)
 
@@ -328,7 +328,7 @@ func (s *Server) backtest(
 	ctx context.Context,
 	conn *websocket.Conn,
 	strat backtest.Strategy[any],
-	dataChan chan *models.Order,
+	dataChan chan models.TypeOfOrder,
 	errChan chan error,
 ) {
 	engine := backtest.NewBacktestEngine(100000, nil, strat)
