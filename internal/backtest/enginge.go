@@ -7,6 +7,7 @@ type Engine interface {
 	Init()
 	Reset()
 	FillOrders()
+	Metrics()
 }
 
 type Strategy[S any] interface {

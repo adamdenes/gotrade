@@ -5,12 +5,23 @@ import (
 	"github.com/adamdenes/gotrade/internal/models"
 )
 
+type Trade struct {
+	EntryPrice float64
+	ExitPrice  float64
+	Quantity   float64
+	Side       string // "BUY" or "SELL"
+	Timestamp  int64
+	ProfitLoss float64
+}
+
 type BacktestEngine[S any] struct {
-	cash         float64
-	positionSize float64
-	data         []*models.KlineSimple
-	strategy     Strategy[S]
-	DataChannel  chan models.TypeOfOrder
+	cash          float64
+	positionSize  float64
+	positionValue []float64
+	data          []*models.KlineSimple
+	trades        []Trade
+	strategy      Strategy[S]
+	DataChannel   chan models.TypeOfOrder
 }
 
 func NewBacktestEngine(
@@ -23,6 +34,7 @@ func NewBacktestEngine(
 		data:        OHLCData,
 		strategy:    strategy,
 		DataChannel: make(chan models.TypeOfOrder, 1),
+		trades:      []Trade{},
 	}
 }
 
@@ -54,6 +66,9 @@ func (b *BacktestEngine[S]) FillOrders() {
 		currBar,
 	)
 
+	// Calculate and update the position value
+	b.calculatePositionValue()
+
 	for i, order := range orders {
 		switch order := order.(type) {
 		case *models.Order:
@@ -72,6 +87,15 @@ func (b *BacktestEngine[S]) FillOrders() {
 						b.cash,
 						b.strategy.GetPositionSize(),
 					)
+
+					// Record the trade
+					b.trades = append(b.trades, Trade{
+						EntryPrice: currBar.Open,
+						Quantity:   order.Quantity,
+						Side:       "BUY",
+						Timestamp:  currBar.OpenTime.UnixMilli(),
+					})
+
 					// Mark order as filled / remove from order list
 					orders = append(orders[:i], orders[i+1:]...)
 					b.DataChannel <- order
@@ -90,6 +114,14 @@ func (b *BacktestEngine[S]) FillOrders() {
 						b.cash,
 						b.strategy.GetPositionSize(),
 					)
+					// Record the trade
+					b.trades = append(b.trades, Trade{
+						EntryPrice: currBar.Open,
+						Quantity:   order.Quantity,
+						Side:       "SELL",
+						Timestamp:  currBar.OpenTime.UnixMilli(),
+					})
+
 					// Mark order as filled
 					orders = append(orders[:i], orders[i+1:]...)
 					b.DataChannel <- order
@@ -114,6 +146,16 @@ func (b *BacktestEngine[S]) FillOrders() {
 							b.strategy.GetPositionSize(),
 						)
 						logger.Debug.Printf("Buy filled: LIMIT: %f / LOW: %f", order.Price, currBar.Low)
+
+						// Record the trade details with exit price and profit/loss
+						b.trades = append(b.trades, Trade{
+							EntryPrice: order.StopPrice,
+							ExitPrice:  order.StopLimitPrice,
+							Quantity:   order.Quantity,
+							Side:       "BUY",
+							Timestamp:  currBar.OpenTime.UnixMilli(),
+						})
+
 						orders = append(orders[:i], orders[i+1:]...)
 						b.DataChannel <- order
 					}
@@ -131,6 +173,16 @@ func (b *BacktestEngine[S]) FillOrders() {
 							b.strategy.GetPositionSize(),
 						)
 						logger.Debug.Printf("Buy filled: LIMIT: %f / LOW: %f", order.Price, currBar.Low)
+
+						// Record the trade details with exit price and profit/loss
+						b.trades = append(b.trades, Trade{
+							EntryPrice: currBar.Open,
+							ExitPrice:  currBar.Close,
+							Quantity:   order.Quantity,
+							Side:       "SELL",
+							Timestamp:  currBar.OpenTime.UnixMilli(),
+						})
+
 						orders = append(orders[:i], orders[i+1:]...)
 						b.DataChannel <- order
 					}
@@ -152,6 +204,15 @@ func (b *BacktestEngine[S]) FillOrders() {
 							b.strategy.GetPositionSize(),
 						)
 						logger.Debug.Printf("Sell filled: LIMIT: %f / HIGH: %f", order.Price, currBar.High)
+
+						b.trades = append(b.trades, Trade{
+							EntryPrice: order.StopPrice,
+							ExitPrice:  order.StopLimitPrice,
+							Quantity:   order.Quantity,
+							Side:       "SELL",
+							Timestamp:  currBar.OpenTime.UnixMilli(),
+						})
+
 						orders = append(orders[:i], orders[i+1:]...)
 						b.DataChannel <- order
 					}
@@ -169,6 +230,15 @@ func (b *BacktestEngine[S]) FillOrders() {
 							b.strategy.GetPositionSize(),
 						)
 						logger.Debug.Printf("Sell filled: LIMIT: %f / HIGH: %f", order.Price, currBar.High)
+
+						b.trades = append(b.trades, Trade{
+							EntryPrice: order.Price,
+							ExitPrice:  currBar.Close,
+							Quantity:   order.Quantity,
+							Side:       "SELL",
+							Timestamp:  currBar.OpenTime.UnixMilli(),
+						})
+
 						orders = append(orders[:i], orders[i+1:]...)
 						b.DataChannel <- order
 					}
@@ -176,7 +246,6 @@ func (b *BacktestEngine[S]) FillOrders() {
 					logger.Debug.Printf("Sell NOT filled: LIMIT: %f / HIGH: %f", order.Price, currBar.High)
 				}
 			}
-
 		}
 	}
 	b.strategy.SetOrders(orders)
@@ -211,4 +280,54 @@ func (b *BacktestEngine[S]) GetStrategy() Strategy[S] {
 
 func (b *BacktestEngine[S]) SetStrategy(strategy Strategy[S]) {
 	b.strategy = strategy
+}
+
+func (b *BacktestEngine[S]) Metrics() {
+	logger.Info.Println("PositionValues overtime:", b.positionValue)
+	b.calculateROI()
+	b.calculatePnL()
+}
+
+func (b *BacktestEngine[S]) calculatePositionValue() {
+	bar := b.data[len(b.data)-1] // Get the latest bar
+	b.positionSize = b.strategy.GetPositionSize()
+
+	// Calculate the current position value using the latest bar's close price
+	currentPositionValue := b.positionSize * bar.Close
+
+	// Append the current position value to the list
+	b.positionValue = append(b.positionValue, currentPositionValue)
+}
+
+func (b *BacktestEngine[S]) calculatePnL() float64 {
+	// Calculate the exit price and profit/loss for each trade
+	for i := range b.trades {
+		trade := &b.trades[i]
+		// Calculate profit/loss
+		trade.ProfitLoss = (trade.ExitPrice - trade.EntryPrice) * trade.Quantity
+	}
+
+	var totalProfitLoss float64
+	for _, trade := range b.trades {
+		totalProfitLoss += trade.ProfitLoss
+	}
+	logger.Info.Printf("Total Profit/Loss: %f\n", totalProfitLoss)
+
+	averageProfitLoss := totalProfitLoss / float64(len(b.trades))
+	logger.Info.Printf("Average Profit/Loss per Trade: %f\n", averageProfitLoss)
+	return averageProfitLoss
+}
+
+func (b *BacktestEngine[S]) calculateROI() float64 {
+	totalProfitOrLoss := 0.0
+	initialInvestment := b.cash
+
+	for _, trade := range b.trades {
+		totalProfitOrLoss += trade.ProfitLoss
+	}
+
+	roi := (totalProfitOrLoss / initialInvestment) * 100.0
+
+	logger.Info.Println("ROI:", roi)
+	return roi
 }
