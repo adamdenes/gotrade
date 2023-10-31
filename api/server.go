@@ -331,7 +331,7 @@ func (s *Server) backtest(
 	dataChan chan models.TypeOfOrder,
 	errChan chan error,
 ) {
-	engine := backtest.NewBacktestEngine(100000, nil, strat)
+	engine := backtest.NewBacktestEngine(1000, nil, strat)
 	engine.DataChannel = dataChan
 	engine.Init()
 
