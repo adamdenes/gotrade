@@ -10,23 +10,27 @@ import (
 )
 
 type SMAStrategy struct {
-	balance      float64               // Current balance
-	positionSize float64               // Position size
-	asset        string                // Trading pair
-	backtest     bool                  // Are we backtesting?
-	orders       []models.TypeOfOrder  // Pending orders
-	data         []*models.KlineSimple // Price data
-	shortPeriod  int                   // Short SMA period
-	longPeriod   int                   // Long SMA period
-	shortSMA     []float64             // Calculated short SMA values
-	longSMA      []float64             // Calculated long SMA values
+	balance            float64               // Current balance
+	positionSize       float64               // Position size
+	riskPercentage     float64               // Risk %
+	stopLossPercentage float64               // Invalidation point
+	asset              string                // Trading pair
+	backtest           bool                  // Are we backtesting?
+	orders             []models.TypeOfOrder  // Pending orders
+	data               []*models.KlineSimple // Price data
+	shortPeriod        int                   // Short SMA period
+	longPeriod         int                   // Long SMA period
+	shortSMA           []float64             // Calculated short SMA values
+	longSMA            []float64             // Calculated long SMA values
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
 func NewSMAStrategy(shortPeriod, longPeriod int) backtest.Strategy[SMAStrategy] {
 	return &SMAStrategy{
-		shortPeriod: shortPeriod,
-		longPeriod:  longPeriod,
+		shortPeriod:        shortPeriod,
+		longPeriod:         longPeriod,
+		riskPercentage:     0.01,
+		stopLossPercentage: 0.15,
 	}
 }
 
@@ -42,24 +46,29 @@ func (s *SMAStrategy) Execute() {
 		if !s.backtest {
 			// Calculate the position size based on asset and risk
 			var err error
-			s.positionSize, err = rest.CalculatePositionSize(s.asset, 0.01, 0.15)
+			s.positionSize, err = rest.CalculatePositionSize(
+				s.asset,
+				s.riskPercentage,
+				s.stopLossPercentage,
+			)
 			if err != nil {
 				logger.Error.Printf("Error calculating position size: %v\n", err)
 				return
 			}
 			// it is not needed, but anyways...
 			// account size = position size x invalidation point / account risk
-			s.balance = s.positionSize * 0.15 / 0.01
+			s.balance = s.positionSize * s.stopLossPercentage / s.riskPercentage
 		} else {
-			s.positionSize = s.balance * 0.01 / 0.15
+			s.positionSize = s.balance * s.riskPercentage / s.stopLossPercentage
 		}
 		// Calculate the quantity based on position size
 		quantity := s.positionSize / currBar.Close
 		// logger.Info.Printf(
-		// 	"PositionSize: %f, Quantity: %f, Balance: %f",
+		// 	"PositionSize: %f, Quantity: %f, Balance: %f, StopLoss %%: %f",
 		// 	s.positionSize,
 		// 	quantity,
 		// 	s.balance,
+		// 	s.stopLossPercentage,
 		// )
 
 		if crossover(s.shortSMA, s.longSMA) {
@@ -110,8 +119,8 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
 	// BUY: Limit Price < Last Price < Stop Price
-	stopPrice := price + (price - price*(1-2/100.0))
-	stopLimitPrice := stopPrice + (stopPrice * 2 / 100)
+	stopPrice := price + price*s.stopLossPercentage
+	stopLimitPrice := stopPrice + stopPrice*s.stopLossPercentage
 
 	return &models.OrderOCO{
 		Symbol:               asset,
@@ -128,8 +137,8 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice := price - (price - price*(1-2/100.0))
-	stopLimitPrice := stopPrice - (stopPrice * 2 / 100)
+	stopPrice := price - price*s.stopLossPercentage
+	stopLimitPrice := stopPrice - stopPrice*s.stopLossPercentage
 
 	return &models.OrderOCO{
 		Symbol:               asset,
