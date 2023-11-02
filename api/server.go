@@ -70,6 +70,7 @@ func (s *Server) routes() http.Handler {
 	s.router.HandleFunc("/backtest", s.klinesHandler)
 	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
 	s.router.HandleFunc("/fetch-data", s.fetchDataHandler)
+	s.router.HandleFunc("/start-bot", s.startBotHandler)
 
 	// Chain middlewares here
 	return s.recoverPanic(s.logRequest(s.secureHeader(s.tagRequest(s.gzipMiddleware(s.router)))))
@@ -84,6 +85,15 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, http.StatusOK, "home.tmpl.html", nil)
+}
+
+func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.clientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	fmt.Fprintln(w, "valaki POSTolgat...")
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {

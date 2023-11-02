@@ -22,13 +22,17 @@ chart.timeScale().fitContent();
 document.addEventListener("DOMContentLoaded", function () {
   let searchForm;
   let backtestForm;
+  let startBotBtn;
 
-  if (window.location.pathname === "/backtest") {
-    backtestForm = document.getElementById("backtest-form");
-    backtestForm.addEventListener("submit", getBacktest);
+  if (window.location.pathname === "/") {
+    startBotBtn = document.getElementById("startBotBtn");
+    startBotBtn.addEventListener("click", startBot);
   } else if (window.location.pathname === "/klines/live") {
     searchForm = document.getElementById("search-form");
     searchForm.addEventListener("submit", getLive);
+  } else if (window.location.pathname === "/backtest") {
+    backtestForm = document.getElementById("backtest-form");
+    backtestForm.addEventListener("submit", getBacktest);
   } else {
     if (searchForm) searchForm.removeEventListener("submit", getLive);
     if (backtestForm) backtestForm.removeEventListener("submit", getBacktest);
@@ -122,6 +126,47 @@ function createWebSocketConnection(symbol, interval, strategy, localFlag) {
 function closeWebSocketConnection(socket) {
   socket.send("CLOSE");
   socket.close();
+}
+
+function startBot(event) {
+  event.preventDefault();
+  console.log("I've been clicked!");
+  const selectedStrategy = document.getElementById("strat-bt").value;
+
+  fetch("/start-bot", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      strategy: selectedStrategy,
+    }),
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.success) {
+        // Append a new bot element to the dashboard
+        let botElement = document.createElement("div");
+        botElement.className = "bot";
+        botElement.innerHTML = `
+                    <h3>Bot using ${selectedStrategy}</h3>
+                    <p>Status: Active</p>
+                    <p>Running Since: ${new Date().toLocaleString()}</p>
+                    <!-- Add other details as needed -->
+                `;
+
+        // Assuming your running bots are in a container with class 'running-bots'
+        document.querySelector(".running-bots").appendChild(botElement);
+
+        alert("Bot started successfully using " + selectedStrategy + "!");
+      } else {
+        alert("Failed to start the bot: " + data.error);
+      }
+    })
+    .catch((error) => {
+      console.error("Error:", error);
+      alert("Failed to start the bot. Please try again.");
+    });
 }
 
 function getLive(event) {

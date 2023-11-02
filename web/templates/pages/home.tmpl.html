@@ -2,5 +2,22 @@
 
 {{ define "body" }}
     {{ template "header" .}}
+
+    <div class="dashboard">
+        <h1>Running Crypto Bots</h1>
+        <!-- List of running crypto bots and their stats -->
+
+        <div class="running-bots">
+            <!-- Currently running bots will appear here -->
+        </div>
+
+        <div class="bot-control">
+            <h3>Start a New Bot</h3>
+            <label for="strat-bt">Choose a Strategy:</label>
+            {{ template "dropdown-strat" .}}
+            <button id="startBotBtn">Start Bot</button>
+        </div>
+    </div>
+
     {{ template "script" .}}
 {{ end }}
