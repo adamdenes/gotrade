@@ -222,6 +222,43 @@ func ConvertInterval(intervalString string) string {
 	return result
 }
 
+type chunk struct {
+	chunkSchema  string
+	chunkName    string
+	isCompressed bool
+}
+
+// Insert data into a compressed chunk
+func (ts *TimescaleDB) getChunk(htable string, timestamp time.Time) (*chunk, error) {
+	chunk := &chunk{}
+
+	q := `SELECT chunk_schema, chunk_name, is_compressed FROM timescaledb_information.chunks c
+          WHERE c.hypertable_name = $1 AND $2 BETWEEN c.range_start AND c.range_end;`
+	err := ts.db.QueryRow(q, htable, timestamp).
+		Scan(&chunk.chunkSchema, &chunk.chunkName, &chunk.isCompressed)
+	if err != nil {
+		return chunk, err
+	}
+	return chunk, nil
+}
+
+func (ts *TimescaleDB) decompressChunk(ch *chunk) error {
+	if !ch.isCompressed {
+		logger.Debug.Printf("Chunk is not compressed (%t), return.", ch.isCompressed)
+		return nil
+	}
+	// true flag means "skip if not compressed"
+	dcq := fmt.Sprintf("SELECT decompress_chunk('%s.%s', true);", ch.chunkSchema, ch.chunkName)
+	logger.Debug.Printf(
+		"executing -> SELECT decompress_chunk('%s.%s', %t);",
+		ch.chunkSchema,
+		ch.chunkName,
+		ch.isCompressed,
+	)
+	_, err := ts.db.Exec(dcq)
+	return err
+}
+
 // -------------------- Storage Interface --------------------
 
 func (ts *TimescaleDB) Create(k *models.Kline) error {
@@ -347,7 +384,7 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 	}
 
 	query := `
-	       INSERT INTO binance.kline (
+	    INSERT INTO binance.kline (
 	           symbol_interval_id,
 	           open_time,
 	           open,
@@ -360,8 +397,9 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 	           count,
 	           taker_buy_volume,
 	           taker_buy_quote_volume
-	       )
-	       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12);`
+	    )
+	    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (symbol_interval_id, open_time) DO NOTHING;`
 
 	err = conn.Raw(func(driverConn any) error {
 		conn := driverConn.(*stdlib.Conn).Conn()
@@ -377,16 +415,37 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 			return fmt.Errorf("error creating symbol_interval_id: %v", err)
 		}
 
+		processedChunks := make(map[string]bool)
 		batch := pgx.Batch{}
 		for _, record := range rawData {
+			openTime := time.UnixMilli(int64(record[0].(float64)))
+			// check if chunk is compressed to avoid error
+			// if chunk is compressed, decompress first
+
+			chunk, err := ts.getChunk("kline", openTime)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+
+			if chunk != nil {
+				chunkKey := fmt.Sprintf("%s.%s", chunk.chunkSchema, chunk.chunkName)
+				if _, ok := processedChunks[chunkKey]; !ok {
+					// should skip uncompressed chunks
+					if err := ts.decompressChunk(chunk); err != nil {
+						return err
+					}
+					processedChunks[chunkKey] = true
+				}
+			}
+
 			batch.Queue(query,
 				symbolIntervalID,
-				time.UnixMilli(int64(record[0].(float64))), // openTime
-				record[1].(string),                         // open
-				record[2].(string),                         // high
-				record[3].(string),                         // low
-				record[4].(string),                         // close
-				record[5].(string),                         // volume
+				openTime,           // openTime
+				record[1].(string), // open
+				record[2].(string), // high
+				record[3].(string), // low
+				record[4].(string), // close
+				record[5].(string), // volume
 				time.UnixMilli(int64(record[6].(float64))), // closeTime
 				record[7].(string),                         // quoteVolume
 				int(record[8].(float64)),                   // count
