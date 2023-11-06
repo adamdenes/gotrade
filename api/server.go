@@ -93,7 +93,77 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintln(w, "valaki POSTolgat...")
+	kr, err := s.validateKlineRequest(r)
+	if err != nil {
+		s.errorLog.Println(err)
+		s.serverError(w, err)
+		return
+	}
+
+	ctx := context.WithoutCancel(r.Context())
+	// Get data from exchange
+	cs := &models.CandleSubsciption{Symbol: strings.ToLower(kr.Symbol), Interval: kr.Interval}
+	b := NewBinance(ctx, inbound(cs))
+
+	// Select strategy
+	strategies := map[string]backtest.Strategy[any]{
+		"sma": strategy.NewSMAStrategy(12, 24),
+	}
+	selectedStrategy, found := strategies[kr.Strat]
+	if !found {
+		s.clientError(w, http.StatusBadRequest)
+		return
+	}
+
+	go func() {
+		defer close(b.dataChannel) // Ensure the channel is closed when the goroutine exits.
+
+		selectedStrategy.SetAsset(kr.Symbol)
+
+		bars := []*models.KlineSimple{}
+		for {
+			select {
+			case <-ctx.Done():
+				// Handle context cancellation.
+				s.errorLog.Println("Context canceled, shutting down goroutine:", ctx.Err())
+				b.close()
+				return
+			case data, ok := <-b.dataChannel:
+				if !ok {
+					// Handle closed channel.
+					return
+				}
+				// Unmarshal bar data
+				var (
+					bar = &models.KlineSimple{}
+					kws = &models.KlineWebSocket{}
+				)
+				err = json.Unmarshal(data, &kws)
+				if err != nil {
+					s.serverError(w, err)
+					return
+				}
+
+				bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
+				bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
+				bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
+				bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
+				bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
+				bars = append(bars, bar)
+
+				selectedStrategy.SetData(bars)
+				selectedStrategy.Execute()
+			}
+		}
+	}()
+
+	select {
+	case <-r.Context().Done():
+		s.errorLog.Println("Client disconnected early.")
+		return
+	default:
+		s.writeResponse(w, "success")
+	}
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +305,6 @@ func (s *Server) liveKlinesHandler(w http.ResponseWriter, r *http.Request) {
 				s.serverError(w, err)
 				return
 			}
-
 			s.writeResponse(w, resp)
 		}
 	} else {
