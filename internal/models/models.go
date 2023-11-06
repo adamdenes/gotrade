@@ -29,6 +29,34 @@ type Kline struct {
 	Ignore                string `json:"-"`
 }
 
+type KlineWebSocket struct {
+	Stream string `json:"stream"`
+	Data   struct {
+		EventType string `json:"e"` // Event type
+		EventTime int64  `json:"E"` // Event time
+		Symbol    string `json:"s"` // Symbol
+		Kline     struct {
+			StartTime                int64  `json:"t"`           // Kline start time
+			CloseTime                int64  `json:"T"`           // Kline close time
+			Symbol                   string `json:"s"`           // Symbol
+			Interval                 string `json:"i"`           // Interval
+			FirstTradeID             int    `json:"f"`           // First trade ID
+			LastTradeID              int    `json:"L"`           // Last trade ID
+			OpenPrice                string `json:"o"`           // Open price
+			ClosePrice               string `json:"c"`           // Close price
+			HighPrice                string `json:"h"`           // High price
+			LowPrice                 string `json:"l"`           // Low price
+			BaseAssetVolume          string `json:"v"`           // Base asset volume
+			NumberOfTrades           int    `json:"n"`           // Number of trades
+			IsKlineClosed            bool   `json:"x"`           // Is this kline closed?
+			QuoteAssetVolume         string `json:"q"`           // Quote asset volume
+			TakerBuyBaseAssetVolume  string `json:"V"`           // Taker buy base asset volume
+			TakerBuyQuoteAssetVolume string `json:"Q"`           // Taker buy quote asset volume
+			Ignore                   string `json:"B,omitempty"` // Ignore
+		} `json:"k"`
+	} `json:"data"`
+}
+
 type KlineRequest struct {
 	Symbol    string    `json:"symbol"`
 	Interval  string    `json:"interval,omitempty"`
