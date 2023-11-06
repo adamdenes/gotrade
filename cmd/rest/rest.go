@@ -101,7 +101,6 @@ func getBalance(asset string) (float64, error) {
 		return 0.0, fmt.Errorf("error marshalling account data: %w", err)
 	}
 
-	fmt.Println(balances)
 	// 2. Find the free
 	var (
 		freeBalance float64
