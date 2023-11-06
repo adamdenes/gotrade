@@ -84,40 +84,48 @@ func CalculatePositionSize(asset string, risk float64, invalidation float64) (fl
 
 func getBalance(asset string) (float64, error) {
 	// 1. Get balances from account endpoint
-	var balances struct {
-		Balances []struct {
-			Asset  string  `json:"asset"`
-			Free   float64 `json:"free"`
-			Locked float64 `json:"locked"`
-		} `json:"balances"`
-	}
-
 	acc, err := GetAccount()
 	if err != nil {
 		return 0.0, fmt.Errorf("error calculating position size: %w", err)
+	}
+
+	var balances struct {
+		Balances []struct {
+			Asset  string `json:"asset"`
+			Free   string `json:"free"`
+			Locked string `json:"locked"`
+		} `json:"balances"`
 	}
 
 	if err := json.Unmarshal(acc, &balances); err != nil {
 		return 0.0, fmt.Errorf("error marshalling account data: %w", err)
 	}
 
-	// 2. Find the asset balance
+	fmt.Println(balances)
+	// 2. Find the free
 	var (
 		freeBalance float64
 		found       bool // Flag to check if the asset is found
 	)
 
 	for _, b := range balances.Balances {
-		if strings.Contains(asset, b.Asset) {
+		if strings.Contains(asset, b.Asset) && b.Asset == "USDT" {
 			// 3. Get the available/free asset balance
-			freeBalance = b.Free
+			asset = b.Asset
+			free, err := strconv.ParseFloat(b.Free, 64)
+			if err != nil {
+				return 0.0, err
+			}
+			freeBalance = free
 			found = true
+
+			logger.Info.Printf("Balance: %+v", b)
 			break
 		}
 	}
 
 	if !found {
-		return 0.0, fmt.Errorf("asset %s is not available in account balance", asset)
+		return 0.0, fmt.Errorf("asset %q is not available in account balance", asset)
 	}
 
 	return freeBalance, nil

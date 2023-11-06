@@ -156,8 +156,9 @@ function startBot(event) {
         botElement.innerHTML = `
                     <h3>Bot using ${selectedStrategy}</h3>
                     <p>Status: Active</p>
+                    <p>Symbol: ${symbol}</p>
+                    <p>Interval: ${interval}</p>
                     <p>Running Since: ${new Date().toLocaleString()}</p>
-                    <!-- Add other details as needed -->
                 `;
 
         // Assuming your running bots are in a container with class 'running-bots'

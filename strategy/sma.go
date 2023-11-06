@@ -40,9 +40,9 @@ func (s *SMAStrategy) Execute() {
 	s.calculateSMAs()
 	currBar := s.data[len(s.data)-1]
 
+	logger.Debug.Printf("Balance: %v , Bar: %+v\n", s.balance, currBar)
 	// Generate buy/sell signals based on crossover
 	if len(s.longSMA) > 2 {
-
 		if !s.backtest {
 			// Calculate the position size based on asset and risk
 			var err error
@@ -63,13 +63,6 @@ func (s *SMAStrategy) Execute() {
 		}
 		// Calculate the quantity based on position size
 		quantity := s.positionSize / currBar.Close
-		// logger.Info.Printf(
-		// 	"PositionSize: %f, Quantity: %f, Balance: %f, StopLoss %%: %f",
-		// 	s.positionSize,
-		// 	quantity,
-		// 	s.balance,
-		// 	s.stopLossPercentage,
-		// )
 
 		if crossover(s.shortSMA, s.longSMA) {
 			buyOrder := s.Buy(s.asset, quantity, currBar.Close)
