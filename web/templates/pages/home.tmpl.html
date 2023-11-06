@@ -13,9 +13,15 @@
 
         <div class="bot-control">
             <h3>Start a New Bot</h3>
+
+        <form id="startbot-form" action="/start-bot" method="POST">
+            <label for="symbol">Trading Pair:</label>
+            <input id="symbol-home" type="text" name="symbol" placeholder="Choose Symbol" required>
+            {{ template "dropdown-bt" . }} 
             <label for="strat-bt">Choose a Strategy:</label>
             {{ template "dropdown-strat" .}}
-            <button id="startBotBtn">Start Bot</button>
+            <button id="startbot-btn" type="submit" onclick="startBot(event)">Start Bot</button>
+        </form>
         </div>
     </div>
 
