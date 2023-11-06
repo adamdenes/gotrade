@@ -22,11 +22,11 @@ chart.timeScale().fitContent();
 document.addEventListener("DOMContentLoaded", function () {
   let searchForm;
   let backtestForm;
-  let startBotBtn;
+  let startBotForm;
 
   if (window.location.pathname === "/") {
-    startBotBtn = document.getElementById("startBotBtn");
-    startBotBtn.addEventListener("click", startBot);
+    startBotForm = document.getElementById("startbot-form");
+    startBotForm.addEventListener("submit", startBot);
   } else if (window.location.pathname === "/klines/live") {
     searchForm = document.getElementById("search-form");
     searchForm.addEventListener("submit", getLive);
@@ -34,6 +34,7 @@ document.addEventListener("DOMContentLoaded", function () {
     backtestForm = document.getElementById("backtest-form");
     backtestForm.addEventListener("submit", getBacktest);
   } else {
+    if (startBotForm) startBotForm.removeEventListener("submit", startBot);
     if (searchForm) searchForm.removeEventListener("submit", getLive);
     if (backtestForm) backtestForm.removeEventListener("submit", getBacktest);
   }
@@ -130,8 +131,9 @@ function closeWebSocketConnection(socket) {
 
 function startBot(event) {
   event.preventDefault();
-  console.log("I've been clicked!");
   const selectedStrategy = document.getElementById("strat-bt").value;
+  const symbol = document.getElementById("symbol-home").value;
+  const interval = document.getElementById("interval-bt").value;
 
   fetch("/start-bot", {
     method: "POST",
@@ -139,12 +141,15 @@ function startBot(event) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      symbol: symbol,
+      interval: interval,
       strategy: selectedStrategy,
     }),
   })
     .then((response) => response.json())
     .then((data) => {
-      if (data.success) {
+      console.log(data);
+      if (data === "success") {
         // Append a new bot element to the dashboard
         let botElement = document.createElement("div");
         botElement.className = "bot";
