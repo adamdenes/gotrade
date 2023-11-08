@@ -659,7 +659,44 @@ func (ts *TimescaleDB) GetTrade(id int64) (*models.Trade, error) {
 }
 
 func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
-	return nil, nil
+	var trades []*models.Trade
+	q := `SELECT symbol, order_id, order_list_id, price, qty, 
+          quote_qty, commission, commission_asset, trade_time, is_buyer, 
+          is_maker, is_best_match FROM binance.trades`
+
+	rows, err := ts.db.Query(q)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching trades from database: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var t models.Trade
+
+		if err := rows.Scan(
+			&t.Symbol,
+			&t.OrderID,
+			&t.OrderListID,
+			&t.Price,
+			&t.Qty,
+			&t.QuoteQty,
+			&t.Commission,
+			&t.CommissionAsset,
+			&t.Time,
+			&t.IsBuyer,
+			&t.IsMaker,
+			&t.IsBestMatch,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning trade from database: %w", err)
+		}
+		trades = append(trades, &t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating trades from database: %w", err)
+	}
+
+	return trades, nil
 }
 
 // Using CopyFromSource interface
