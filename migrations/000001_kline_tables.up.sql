@@ -3,8 +3,8 @@ BEGIN;
 CREATE SCHEMA IF NOT EXISTS binance;
 
 CREATE TABLE IF NOT EXISTS binance.symbols (
-        symbol_id SERIAL PRIMARY KEY,
-        symbol TEXT UNIQUE NOT NULL
+    symbol_id SERIAL PRIMARY KEY,
+    symbol TEXT UNIQUE NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS binance.intervals (
@@ -50,5 +50,22 @@ SELECT add_compression_policy('binance.kline', INTERVAL '14d');
 --     FROM show_chunks(
 --         'binance.kline',
 --         now()::timestamp - INTERVAL '1 week') i;
+
+CREATE TABLE IF NOT EXISTS binance.trades (
+    id SERIAL PRIMARY KEY,
+    binance_trade_id BIGINT,
+    symbol VARCHAR(12) NOT NULL,
+    order_id BIGINT,
+    order_list_id INTEGER,
+    price FLOAT NOT NULL,
+    qty FLOAT,
+    quote_qty FLOAT,
+    commission FLOAT,
+    commission_asset VARCHAR(10),
+    trade_time TIMESTAMPTZ NOT NULL,
+    is_buyer BOOLEAN,
+    is_maker BOOLEAN,
+    is_best_match BOOLEAN
+);
 
 COMMIT;

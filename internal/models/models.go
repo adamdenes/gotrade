@@ -365,3 +365,18 @@ func (o *OrderOCO) String() string {
 	}
 	return sb.String()
 }
+
+type Trade struct {
+	Symbol          string    `json:"symbol"`
+	OrderID         int64     `json:"orderId,omitempty"`
+	OrderListID     int       `json:"orderListId,omitempty"`
+	Price           string    `json:"price"`
+	Qty             string    `json:"qty,omitempty"`
+	QuoteQty        string    `json:"quoteQty,omitempty"`
+	Commission      string    `json:"commission,omitempty"`
+	CommissionAsset string    `json:"commissionAsset,omitempty"`
+	Time            time.Time `json:"time"`
+	IsBuyer         bool      `json:"isBuyer,omitempty"`
+	IsMaker         bool      `json:"isMaker,omitempty"`
+	IsBestMatch     bool      `json:"isBestMatch,omitempty"`
+}

@@ -588,6 +588,80 @@ func (ts *TimescaleDB) SaveSymbols(sc map[string]struct{}) error {
 	return nil
 }
 
+func (ts *TimescaleDB) SaveTrade(t *models.Trade) error {
+	stmt := `INSERT INTO binance.trades (
+        symbol, 
+        order_id, 
+        order_list_id, 
+        price, 
+        qty, 
+        quote_qty, 
+        commission, 
+        commission_asset, 
+        trade_time, 
+        is_buyer, 
+        is_maker, 
+        is_best_match
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+
+	// Convert string fields to their appropriate types
+	price, err := strconv.ParseFloat(t.Price, 64)
+	if err != nil {
+		price = 0
+	}
+	qty, err := strconv.ParseFloat(t.Qty, 64)
+	if err != nil {
+		qty = 0
+	}
+	quoteQty, err := strconv.ParseFloat(t.QuoteQty, 64)
+	if err != nil {
+		quoteQty = 0
+	}
+	commission, err := strconv.ParseFloat(t.Commission, 64)
+	if err != nil {
+		commission = 0
+	}
+
+	_, err = ts.db.Exec(stmt,
+		t.Symbol,
+		t.OrderID,
+		t.OrderListID,
+		price,
+		qty,
+		quoteQty,
+		commission,
+		t.CommissionAsset,
+		t.Time,
+		t.IsBuyer,
+		t.IsMaker,
+		t.IsBestMatch,
+	)
+	if err != nil {
+		return fmt.Errorf("error saving trade to database: %w", err)
+	}
+
+	return nil
+}
+
+func (ts *TimescaleDB) GetTrade(id int64) (*models.Trade, error) {
+	trade := &models.Trade{}
+	q := "SELECT symbol, price, trade_time FROM binance.trades WHERE id = $1"
+
+	err := ts.db.QueryRow(q, id).Scan(&trade.Symbol, &trade.Price, &trade.Time)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no trade found with id %d", id)
+		}
+		return nil, fmt.Errorf("error getting trade from database: %w", err)
+	}
+
+	return trade, nil
+}
+
+func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
+	return nil, nil
+}
+
 // Using CopyFromSource interface
 type csvCopySource struct {
 	symbolIntervalID int64

@@ -1,15 +1,18 @@
 package strategy
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/adamdenes/gotrade/cmd/rest"
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
+	"github.com/adamdenes/gotrade/internal/storage"
 )
 
 type SMAStrategy struct {
+	db                 storage.Storage
 	balance            float64               // Current balance
 	positionSize       float64               // Position size
 	riskPercentage     float64               // Risk %
@@ -25,8 +28,12 @@ type SMAStrategy struct {
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
-func NewSMAStrategy(shortPeriod, longPeriod int) backtest.Strategy[SMAStrategy] {
+func NewSMAStrategy(
+	shortPeriod, longPeriod int,
+	db storage.Storage,
+) backtest.Strategy[SMAStrategy] {
 	return &SMAStrategy{
+		db:                 db,
 		shortPeriod:        shortPeriod,
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
@@ -64,15 +71,16 @@ func (s *SMAStrategy) Execute() {
 		// Calculate the quantity based on position size
 		quantity := s.positionSize / currBar.Close
 
+		var order models.TypeOfOrder
 		if crossover(s.shortSMA, s.longSMA) {
-			buyOrder := s.Buy(s.asset, quantity, currBar.Close)
+			order = s.Buy(s.asset, quantity, currBar.Close)
 			logger.Info.Print("Buy Signal")
-			s.PlaceOrder(buyOrder)
+			s.PlaceOrder(order)
 		}
 		if crossunder(s.shortSMA, s.longSMA) {
-			sellOrder := s.Sell(s.asset, quantity, currBar.Close)
+			order = s.Sell(s.asset, quantity, currBar.Close)
 			logger.Info.Print("Sell Signal")
-			s.PlaceOrder(sellOrder)
+			s.PlaceOrder(order)
 		}
 	}
 }
@@ -98,6 +106,15 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 			return
 		}
 		rest.Order(order)
+
+		t := &models.Trade{
+			Symbol: order.Symbol,
+			Price:  fmt.Sprintf("%f", order.Price),
+			Time:   time.Now(),
+		}
+		if err := s.db.SaveTrade(t); err != nil {
+			logger.Error.Printf("Error saving buy trade: %v", err)
+		}
 	case *models.OrderOCO:
 		logger.Info.Println(order.Side, order.Quantity, order.Price)
 		logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
@@ -107,6 +124,15 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 			return
 		}
 		rest.OrderOCO(order)
+
+		t := &models.Trade{
+			Symbol: order.Symbol,
+			Price:  fmt.Sprintf("%f", order.Price),
+			Time:   time.Now(),
+		}
+		if err := s.db.SaveTrade(t); err != nil {
+			logger.Error.Printf("Error saving sell trade: %v", err)
+		}
 	}
 }
 

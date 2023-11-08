@@ -84,6 +84,14 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODOs:
+	// Load running bots here?
+	// Need to save trades in DB probably and load them back if home endpoint is hit
+	// Alternatively, could query the API (GET /api/v3/myTrades)
+	// s.store.FetchTrades()
+
+	// NEED TO prevent starting the same bot multiple times
+
 	s.render(w, http.StatusOK, "home.tmpl.html", nil)
 }
 
@@ -107,7 +115,7 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Select strategy
 	strategies := map[string]backtest.Strategy[any]{
-		"sma": strategy.NewSMAStrategy(12, 24),
+		"sma": strategy.NewSMAStrategy(12, 24, s.store),
 	}
 	selectedStrategy, found := strategies[kr.Strat]
 	if !found {
@@ -192,7 +200,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		defer s.cleanUp(w, r, conn, cancel)
 
 		strategies := map[string]backtest.Strategy[any]{
-			"sma": strategy.NewSMAStrategy(12, 24),
+			"sma": strategy.NewSMAStrategy(12, 24, s.store),
 			// Add more strategies as needed
 		}
 		selectedStrategy, found := strategies[strat]
