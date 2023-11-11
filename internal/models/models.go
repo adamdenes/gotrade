@@ -380,3 +380,19 @@ type Trade struct {
 	IsMaker         bool      `json:"isMaker,omitempty"`
 	IsBestMatch     bool      `json:"isBestMatch,omitempty"`
 }
+
+type BotStatus string
+
+const (
+	ACTIVE   BotStatus = "ACTIVE"
+	DISABLED           = "DISABLED"
+)
+
+type TradingBot struct {
+	ID        int       `json:"id"`
+	Symbol    string    `json:"symbol"`
+	Interval  string    `json:"interval"`
+	Strategy  string    `json:"strategy"`
+	Status    BotStatus `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
