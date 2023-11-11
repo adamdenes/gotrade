@@ -1,5 +1,7 @@
 BEGIN;
 
+DROP TABLE IF EXISTS binance.bots CASCADE;
+DROP TABLE IF EXISTS binance.trades CASCADE;
 DROP TABLE IF EXISTS binance.symbols CASCADE;
 DROP TABLE IF EXISTS binance.intervals CASCADE;
 DROP TABLE IF EXISTS binance.symbols_intervals CASCADE;

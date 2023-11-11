@@ -31,6 +31,7 @@ type Server struct {
 	errorLog      *log.Logger
 	templateCache map[string]*template.Template
 	symbolCache   map[string]struct{}
+	botContexts   map[int]context.CancelFunc
 }
 
 func NewServer(
@@ -46,6 +47,7 @@ func NewServer(
 		errorLog:      logger.Error,
 		templateCache: templates,
 		symbolCache:   make(map[string]struct{}, 1),
+		botContexts:   make(map[int]context.CancelFunc),
 	}
 }
 
@@ -71,6 +73,7 @@ func (s *Server) routes() http.Handler {
 	s.router.HandleFunc("/klines/live", s.liveKlinesHandler)
 	s.router.HandleFunc("/fetch-data", s.fetchDataHandler)
 	s.router.HandleFunc("/start-bot", s.startBotHandler)
+	s.router.HandleFunc("/delete-bot", s.deleteBotHandler)
 
 	// Chain middlewares here
 	return s.recoverPanic(s.logRequest(s.secureHeader(s.tagRequest(s.gzipMiddleware(s.router)))))
@@ -84,15 +87,21 @@ func (s *Server) indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODOs:
-	// Load running bots here?
-	// Need to save trades in DB probably and load them back if home endpoint is hit
-	// Alternatively, could query the API (GET /api/v3/myTrades)
-	// s.store.FetchTrades()
+	// Load running bots here on index page even if user navigates out
+	bots, err := s.store.GetBots()
+	if err != nil {
+		s.errorLog.Println(err)
+		s.serverError(w, err)
+		return
+	}
 
-	// NEED TO prevent starting the same bot multiple times
+	data := struct {
+		Bots []*models.TradingBot
+	}{
+		Bots: bots,
+	}
 
-	s.render(w, http.StatusOK, "home.tmpl.html", nil)
+	s.render(w, http.StatusOK, "home.tmpl.html", &data)
 }
 
 func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +117,31 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.WithoutCancel(r.Context())
+	bot := &models.TradingBot{
+		Symbol:    kr.Symbol,
+		Interval:  kr.Interval,
+		Status:    models.ACTIVE,
+		Strategy:  kr.Strat,
+		CreatedAt: time.Now(),
+	}
+	if err := s.store.CreateBot(bot); err != nil {
+		s.errorLog.Println(err)
+		s.serverError(w, err)
+		return
+	}
+
+	// Need to get the ID from database to render bot-card properly
+	bot, err = s.store.GetBot(bot.Symbol, bot.Strategy)
+	if err != nil {
+		s.errorLog.Println(err)
+		s.serverError(w, err)
+		return
+	}
+
+	// Update bot context map
+	ctx, cancel := context.WithCancel(context.Background())
+	s.botContexts[bot.ID] = cancel
+
 	// Get data from exchange
 	cs := &models.CandleSubsciption{Symbol: strings.ToLower(kr.Symbol), Interval: kr.Interval}
 	b := NewBinance(ctx, inbound(cs))
@@ -124,44 +157,30 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		defer close(b.dataChannel) // Ensure the channel is closed when the goroutine exits.
-
 		selectedStrategy.SetAsset(kr.Symbol)
 
 		bars := []*models.KlineSimple{}
-		for {
-			select {
-			case <-ctx.Done():
-				// Handle context cancellation.
-				s.errorLog.Println("Context canceled, shutting down goroutine:", ctx.Err())
-				b.close()
+		for data := range b.dataChannel {
+			// Unmarshal bar data
+			var (
+				bar = &models.KlineSimple{}
+				kws = &models.KlineWebSocket{}
+			)
+			err = json.Unmarshal(data, &kws)
+			if err != nil {
+				s.serverError(w, err)
 				return
-			case data, ok := <-b.dataChannel:
-				if !ok {
-					// Handle closed channel.
-					return
-				}
-				// Unmarshal bar data
-				var (
-					bar = &models.KlineSimple{}
-					kws = &models.KlineWebSocket{}
-				)
-				err = json.Unmarshal(data, &kws)
-				if err != nil {
-					s.serverError(w, err)
-					return
-				}
-
-				bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
-				bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
-				bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
-				bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
-				bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
-				bars = append(bars, bar)
-
-				selectedStrategy.SetData(bars)
-				selectedStrategy.Execute()
 			}
+
+			bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
+			bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
+			bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
+			bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
+			bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
+			bars = append(bars, bar)
+
+			selectedStrategy.SetData(bars)
+			selectedStrategy.Execute()
 		}
 	}()
 
@@ -170,8 +189,44 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 		s.errorLog.Println("Client disconnected early.")
 		return
 	default:
-		s.writeResponse(w, "success")
+		s.writeResponse(w, bot)
 	}
+}
+
+func (s *Server) deleteBotHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	botID := r.URL.Query().Get("id")
+	if botID == "" {
+		s.errorLog.Panicln("Bot ID is required for deletion.")
+		s.clientError(w, http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(botID)
+	if err != nil {
+		s.errorLog.Panicln("Invalid bot ID")
+		s.clientError(w, http.StatusBadRequest)
+		return
+	}
+
+	err = s.store.DeleteBot(id)
+	if err != nil {
+		s.errorLog.Println(err)
+		http.Error(w, "Failed to delete bot", http.StatusInternalServerError)
+		return
+	}
+
+	// Cancel the WebSocket connection context
+	if cancel, ok := s.botContexts[id]; ok {
+		cancel()
+		delete(s.botContexts, id)
+	}
+
+	s.writeResponse(w, "ok")
 }
 
 func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) {

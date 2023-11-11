@@ -699,6 +699,83 @@ func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
 	return trades, nil
 }
 
+func (ts *TimescaleDB) CreateBot(b *models.TradingBot) error {
+	// Check if a bot with the same parameters is already running
+	var count int
+	err := ts.db.QueryRow("SELECT COUNT(*) FROM binance.bots WHERE symbol = $1 AND strategy = $2",
+		b.Symbol, b.Strategy).
+		Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("a bot with the same parameters is already running")
+	}
+
+	// Add the new bot to the database
+	_, err = ts.db.Exec(
+		"INSERT INTO binance.bots (symbol, interval, strategy, status, created_at) VALUES ($1, $2, $3, $4, $5)",
+		b.Symbol,
+		b.Interval,
+		b.Strategy,
+		b.Status,
+		b.CreatedAt,
+	)
+	return err
+}
+
+func (ts *TimescaleDB) DeleteBot(id int) error {
+	_, err := ts.db.Exec("DELETE FROM binance.bots WHERE id = $1;", id)
+	return err
+}
+
+func (ts *TimescaleDB) GetBot(symbol, strategy string) (*models.TradingBot, error) {
+	query := `SELECT * FROM binance.bots WHERE symbol = $1 AND strategy = $2 LIMIT 1;`
+
+	// Variable to hold the result
+	var bot models.TradingBot
+
+	row := ts.db.QueryRow(query, symbol, strategy)
+	err := row.Scan(
+		&bot.ID,
+		&bot.Symbol,
+		&bot.Interval,
+		&bot.Strategy,
+		&bot.Status,
+		&bot.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No result found
+			return nil, nil
+		}
+		// Some other error occurred
+		return nil, err
+	}
+
+	return &bot, nil
+}
+
+func (ts *TimescaleDB) GetBots() ([]*models.TradingBot, error) {
+	rows, err := ts.db.Query(
+		"SELECT id, symbol, interval, strategy, status, created_at FROM binance.bots",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var bots []*models.TradingBot
+	for rows.Next() {
+		var b models.TradingBot
+		if err := rows.Scan(&b.ID, &b.Symbol, &b.Interval, &b.Strategy, &b.Status, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		bots = append(bots, &b)
+	}
+	return bots, nil
+}
+
 // Using CopyFromSource interface
 type csvCopySource struct {
 	symbolIntervalID int64

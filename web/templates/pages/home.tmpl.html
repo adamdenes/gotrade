@@ -6,9 +6,17 @@
     <div class="dashboard">
         <h1>Running Crypto Bots</h1>
         <!-- List of running crypto bots and their stats -->
-
-        <div class="running-bots">
-            <!-- Currently running bots will appear here -->
+        <div class="bots">
+            {{ range .Bots }}
+            <div class="bot-card" data-bot-id="{{ .ID }}">
+                <button class="delete-btn" type="click" onclick="deleteBot(event)">X</button>
+                <h3>Strategy: {{ .Strategy }}</h3>
+                <p>Symbol: {{ .Symbol }}</p>
+                <p>Interval: {{ .Interval }}</p>
+                <p>Status: {{ .Status }}</p>
+                <p>Created At: {{ .CreatedAt }}</p>
+            </div>
+            {{ end }}
         </div>
 
         <div class="bot-control">

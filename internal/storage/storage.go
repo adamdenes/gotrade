@@ -20,4 +20,8 @@ type Storage interface {
 	SaveTrade(*models.Trade) error
 	GetTrade(int64) (*models.Trade, error)
 	FetchTrades() ([]*models.Trade, error)
+	CreateBot(*models.TradingBot) error
+	GetBot(string, string) (*models.TradingBot, error)
+	DeleteBot(int) error
+	GetBots() ([]*models.TradingBot, error)
 }

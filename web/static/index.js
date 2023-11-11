@@ -23,10 +23,14 @@ document.addEventListener("DOMContentLoaded", function () {
   let searchForm;
   let backtestForm;
   let startBotForm;
+  let deleteBotBtn;
 
   if (window.location.pathname === "/") {
     startBotForm = document.getElementById("startbot-form");
     startBotForm.addEventListener("submit", startBot);
+
+    deleteBotBtn = document.getElementById("delete-bot");
+    deleteBotBtn.addEventListener("click", delteBot);
   } else if (window.location.pathname === "/klines/live") {
     searchForm = document.getElementById("search-form");
     searchForm.addEventListener("submit", getLive);
@@ -149,20 +153,23 @@ function startBot(event) {
     .then((response) => response.json())
     .then((data) => {
       console.log(data);
-      if (data === "success") {
+      if (data.status === "ACTIVE") {
         // Append a new bot element to the dashboard
         let botElement = document.createElement("div");
-        botElement.className = "bot";
         botElement.innerHTML = `
-                    <h3>Bot using ${selectedStrategy}</h3>
-                    <p>Status: Active</p>
-                    <p>Symbol: ${symbol}</p>
-                    <p>Interval: ${interval}</p>
-                    <p>Running Since: ${new Date().toLocaleString()}</p>
+            <div class="bot-card" data-bot-id="${data.id}">
+                <button class="delete-btn" type="click" onclick="deleteBot(event)">X</button>
+                <h3>Strategy: ${data.strategy}</h3>
+                <p>Symbol: ${data.symbol}</p>
+                <p>Interval: ${data.interval}</p>
+                <p>Status: ${data.status}</p>
+                <p>Created At: ${new Date(
+                  data.created_at,
+                ).toLocaleDateString()}</p>
+            </div>
                 `;
 
-        // Assuming your running bots are in a container with class 'running-bots'
-        document.querySelector(".running-bots").appendChild(botElement);
+        document.querySelector(".bots").appendChild(botElement);
 
         alert("Bot started successfully using " + selectedStrategy + "!");
       } else {
@@ -173,6 +180,25 @@ function startBot(event) {
       console.error("Error:", error);
       alert("Failed to start the bot. Please try again.");
     });
+}
+
+function deleteBot(event) {
+  event.preventDefault();
+
+  if (event.target.classList.contains("delete-btn")) {
+    const botCard = event.target.closest(".bot-card");
+    const botID = botCard.getAttribute("data-bot-id");
+
+    fetch("/delete-bot?id=" + botID, { method: "POST" })
+      .then((response) => {
+        if (response.ok) {
+          botCard.remove(); // Remove the card from the page
+        } else {
+          alert("Failed to delete bot");
+        }
+      })
+      .catch((err) => console.error(err));
+  }
 }
 
 function getLive(event) {

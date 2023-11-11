@@ -68,4 +68,13 @@ CREATE TABLE IF NOT EXISTS binance.trades (
     is_best_match BOOLEAN
 );
 
+CREATE TABLE IF NOT EXISTS binance.bots (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(50) NOT NULL,
+    interval VARCHAR(10) NOT NULL,
+    strategy VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 COMMIT;
