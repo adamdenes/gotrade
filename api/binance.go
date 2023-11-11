@@ -86,7 +86,6 @@ func (b *Binance) handleWsLoop() {
 			if errors.Is(err, b.ctx.Err()) {
 				// StatusCode(-1) -> just closing/switching to other stream
 				b.debugLog.Println("Context cancelled successfully.")
-				b.close()
 				break
 			}
 			if errors.Is(err, net.ErrClosed) {
@@ -105,8 +104,15 @@ func (b *Binance) handleWsLoop() {
 
 func (b *Binance) handleSymbolSubscriptions(cs <-chan *models.CandleSubsciption) {
 	b.debugLog.Printf("Request/Context processing -> '%v'\n", b.ctx.Value(RequestIDContextKey))
+
 	if err := b.subscribe(<-cs); err != nil {
 		b.errorLog.Printf("subsciption error: %v\n", err)
+		b.close()
+	}
+
+	// Gracefully close WS conn to Binance
+	select {
+	case <-b.ctx.Done():
 		b.close()
 	}
 }
