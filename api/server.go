@@ -172,15 +172,19 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
-			bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
-			bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
-			bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
-			bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
-			bars = append(bars, bar)
+			// Only evaluate closed bars
+			if kws.Data.Kline.IsKlineClosed {
+				s.infoLog.Println(kws)
+				bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
+				bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
+				bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
+				bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
+				bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
+				bars = append(bars, bar)
 
-			selectedStrategy.SetData(bars)
-			selectedStrategy.Execute()
+				selectedStrategy.SetData(bars)
+				selectedStrategy.Execute()
+			}
 		}
 	}()
 
