@@ -83,9 +83,10 @@ func (b *Binance) handleWsLoop() {
 		b.ws.SetReadLimit(65536)
 		_, msg, err := b.ws.Read(b.ctx)
 		if err != nil {
+			b.errorLog.Println("error:", err)
 			if errors.Is(err, b.ctx.Err()) {
 				// StatusCode(-1) -> just closing/switching to other stream
-				b.debugLog.Println("Context cancelled successfully.")
+				b.debugLog.Println("Context cancelled successfully.", err)
 				break
 			}
 			if errors.Is(err, net.ErrClosed) {
