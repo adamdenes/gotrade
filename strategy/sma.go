@@ -16,6 +16,7 @@ type SMAStrategy struct {
 	balance            float64               // Current balance
 	positionSize       float64               // Position size
 	riskPercentage     float64               // Risk %
+	orderLimit         int                   // Number of allowed trades
 	stopLossPercentage float64               // Invalidation point
 	asset              string                // Trading pair
 	backtest           bool                  // Are we backtesting?
@@ -25,6 +26,7 @@ type SMAStrategy struct {
 	longPeriod         int                   // Long SMA period
 	shortSMA           []float64             // Calculated short SMA values
 	longSMA            []float64             // Calculated long SMA values
+	ema200             []float64             // EMA 200 values
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
@@ -38,6 +40,7 @@ func NewSMAStrategy(
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
 		stopLossPercentage: 0.15,
+		orderLimit:         5,
 	}
 }
 
@@ -47,9 +50,9 @@ func (s *SMAStrategy) Execute() {
 	s.calculateSMAs()
 	currBar := s.data[len(s.data)-1]
 
-	logger.Debug.Printf("Balance: %.2f, Bar: %+v\n", s.balance, currBar)
+	// logger.Debug.Printf("Balance: %.2f, Bar: %+v\n", s.balance, currBar)
 	// Generate buy/sell signals based on crossover
-	if len(s.longSMA) > 2 {
+	if len(s.longSMA) > 2 && len(s.ema200) > 0 {
 		if !s.backtest {
 			// Calculate the position size based on asset and risk
 			var err error
@@ -72,14 +75,13 @@ func (s *SMAStrategy) Execute() {
 		quantity := s.positionSize / currBar.Close
 
 		var order models.TypeOfOrder
-		if crossover(s.shortSMA, s.longSMA) {
+		if crossover(s.shortSMA, s.longSMA) && currBar.Close > s.ema200[len(s.ema200)-1] {
+			// Generate buy signal based on SMA crossover and EMA 200 condition
 			order = s.Buy(s.asset, quantity, currBar.Close)
-			logger.Info.Print("Buy Signal")
 			s.PlaceOrder(order)
-		}
-		if crossunder(s.shortSMA, s.longSMA) {
+		} else if crossunder(s.shortSMA, s.longSMA) && currBar.Close < s.ema200[len(s.ema200)-1] {
+			// Generate sell signal based on SMA crossunder or EMA 200 condition
 			order = s.Sell(s.asset, quantity, currBar.Close)
-			logger.Info.Print("Sell Signal")
 			s.PlaceOrder(order)
 		}
 	}
@@ -99,55 +101,63 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 	switch order := o.(type) {
 	case *models.Order:
-		logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
-		if s.backtest {
-			order.Timestamp = currBar.OpenTime.UnixMilli()
-			s.orders = append(s.orders, order)
-			return
-		}
-		rest.Order(order)
+		if s.orderLimit >= len(s.orders) {
+			logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
+			if s.backtest {
+				order.Timestamp = currBar.OpenTime.UnixMilli()
+				s.orders = append(s.orders, order)
+				return
+			}
+			rest.Order(order)
 
-		t := &models.Trade{
-			Symbol: order.Symbol,
-			Price:  fmt.Sprintf("%f", order.Price),
-			Time:   time.Now(),
-		}
-		if err := s.db.SaveTrade(t); err != nil {
-			logger.Error.Printf("Error saving buy trade: %v", err)
+			t := &models.Trade{
+				Symbol: order.Symbol,
+				Price:  fmt.Sprintf("%f", order.Price),
+				Time:   time.Now(),
+			}
+			if err := s.db.SaveTrade(t); err != nil {
+				logger.Error.Printf("Error saving buy trade: %v", err)
+			}
+		} else {
+			logger.Error.Printf("No more orders allowed! Current limit is: %v", s.orderLimit)
 		}
 	case *models.OrderOCO:
-		logger.Info.Println(order.Side, order.Quantity, order.Price)
-		logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
-		if s.backtest {
-			order.Timestamp = currBar.OpenTime.UnixMilli()
-			s.orders = append(s.orders, order)
-			return
-		}
-		rest.OrderOCO(order)
+		if s.orderLimit >= len(s.orders) {
+			logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
+			if s.backtest {
+				order.Timestamp = currBar.OpenTime.UnixMilli()
+				s.orders = append(s.orders, order)
+				return
+			}
+			rest.OrderOCO(order)
 
-		t := &models.Trade{
-			Symbol: order.Symbol,
-			Price:  fmt.Sprintf("%f", order.Price),
-			Time:   time.Now(),
-		}
-		if err := s.db.SaveTrade(t); err != nil {
-			logger.Error.Printf("Error saving sell trade: %v", err)
+			t := &models.Trade{
+				Symbol: order.Symbol,
+				Price:  fmt.Sprintf("%f", order.Price),
+				Time:   time.Now(),
+			}
+			if err := s.db.SaveTrade(t); err != nil {
+				logger.Error.Printf("Error saving sell trade: %v", err)
+			}
+		} else {
+			logger.Error.Printf("No more orders allowed! Current limit is: %v", s.orderLimit)
 		}
 	}
 }
 
 func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
+	takeProfit := price * 0.95
 	// BUY: Limit Price < Last Price < Stop Price
-	stopPrice := price + price*s.stopLossPercentage
-	stopLimitPrice := stopPrice + stopPrice*s.stopLossPercentage
+	stopPrice := takeProfit + takeProfit*s.stopLossPercentage
+	stopLimitPrice := stopPrice * 1.02
 
 	return &models.OrderOCO{
 		Symbol:               asset,
 		Side:                 models.BUY,
 		Quantity:             quantity,
-		Price:                price,          // Price to buy
+		Price:                takeProfit,     // Price to buy (Take Profit)
 		StopPrice:            stopPrice,      // Where to start stop loss
-		StopLimitPrice:       stopLimitPrice, // Lowest price you want to sell coins
+		StopLimitPrice:       stopLimitPrice, // Highest price you want to sell coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
@@ -155,17 +165,17 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 }
 
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
+	takeProfit := price * 1.05
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice := price - price*s.stopLossPercentage
-	stopLimitPrice := stopPrice - stopPrice*s.stopLossPercentage
-
+	stopPrice := takeProfit - takeProfit*s.stopLossPercentage
+	stopLimitPrice := stopPrice * 0.98
 	return &models.OrderOCO{
 		Symbol:               asset,
 		Side:                 models.SELL,
 		Quantity:             quantity,
-		Price:                price,          // Price to buy
+		Price:                takeProfit,     // Price to sell (Take Profit)
 		StopPrice:            stopPrice,      // Where to start stop loss
-		StopLimitPrice:       stopLimitPrice, // Lowest price you want to sell coins
+		StopLimitPrice:       stopLimitPrice, // Lowest price you want to buy coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
@@ -214,6 +224,12 @@ func (s *SMAStrategy) calculateSMAs() {
 		s.longSMA = append(s.longSMA, longSMA)
 	}
 
+	// Calculate EMA 200
+	if len(s.data) >= 200 {
+		ema200 := calculateEMA(s.data, 200)
+		s.ema200 = append(s.ema200, ema200)
+	}
+
 	// Prevent infinitely growing SMA slices
 	if len(s.shortSMA) > s.shortPeriod {
 		s.shortSMA = s.shortSMA[1:]
@@ -221,6 +237,25 @@ func (s *SMAStrategy) calculateSMAs() {
 	if len(s.longSMA) > s.longPeriod {
 		s.longSMA = s.longSMA[1:]
 	}
+	if len(s.ema200) > 200 {
+		s.ema200 = s.ema200[1:]
+	}
+}
+
+// calculateEMA calculates the Exponential Moving Average (EMA).
+func calculateEMA(data []*models.KlineSimple, period int) float64 {
+	if len(data) < period {
+		return 0.0
+	}
+
+	k := 2.0 / (float64(period) + 1.0)
+	ema := data[len(data)-period].Close
+
+	for i := len(data) - period + 1; i < len(data); i++ {
+		ema = (data[i].Close-ema)*k + ema
+	}
+
+	return ema
 }
 
 // calculateSMA calculates the Simple Moving Average.

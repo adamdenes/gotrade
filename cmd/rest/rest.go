@@ -118,7 +118,7 @@ func getBalance(asset string) (float64, error) {
 			freeBalance = free
 			found = true
 
-			logger.Info.Printf("Balance: %+v", b)
+			// logger.Info.Printf("Balance: %+v", b)
 			break
 		}
 	}

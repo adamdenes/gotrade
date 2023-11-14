@@ -16,6 +16,7 @@ type Trade struct {
 
 type BacktestEngine[S any] struct {
 	cash          float64
+	assetAmount   float64
 	positionSize  float64
 	positionValue []float64
 	data          []*models.KlineSimple
@@ -64,6 +65,8 @@ func (b *BacktestEngine[S]) FillOrders() {
 		b.cash,
 		"Current Bar:",
 		currBar,
+		"Base amount:",
+		b.assetAmount,
 	)
 
 	// Calculate and update the position value
@@ -76,6 +79,8 @@ func (b *BacktestEngine[S]) FillOrders() {
 				// Calculate the cost of buying the specified quantity at the open price
 				cost := currBar.Open * order.Quantity
 
+				b.assetAmount += order.Quantity
+				logger.Debug.Println("AMOUNT:", b.assetAmount)
 				// Check if there is enough cash to fill the buy order
 				if b.cash >= cost {
 					// Fill the buy order
@@ -83,9 +88,10 @@ func (b *BacktestEngine[S]) FillOrders() {
 					b.strategy.SetPositionSize(order.Quantity)
 					b.strategy.SetBalance(b.cash)
 					logger.Debug.Printf(
-						"BUY filled! Cash: %v, Position Size: %v\n",
+						"BUY filled! Cash: %v, Position Size: %v, Amount worth: %v\n",
 						b.cash,
 						b.strategy.GetPositionSize(),
+						b.assetAmount*currBar.Close,
 					)
 
 					// Record the trade
@@ -104,15 +110,18 @@ func (b *BacktestEngine[S]) FillOrders() {
 				// Calculate the revenue from selling the specified quantity at the open price
 				revenue := currBar.Open * order.Quantity
 
+				b.assetAmount -= order.Quantity
+				logger.Debug.Println("AMOUNT:", b.assetAmount)
 				// Check if there are enough assets to fill the sell order
 				if b.strategy.GetPositionSize() >= order.Quantity {
 					// Fill the sell order
 					b.cash += revenue
 					b.strategy.SetPositionSize(-order.Quantity)
 					b.strategy.SetBalance(b.cash)
-					logger.Debug.Printf("SELL filled! Cash: %v, Position Size: %v\n",
+					logger.Debug.Printf("SELL filled! Cash: %v, Position Size: %v, Amount worth: %v\n",
 						b.cash,
 						b.strategy.GetPositionSize(),
+						b.assetAmount*currBar.Close,
 					)
 					// Record the trade
 					b.trades = append(b.trades, Trade{
@@ -134,16 +143,21 @@ func (b *BacktestEngine[S]) FillOrders() {
 				if order.StopPrice <= currBar.Low {
 					cost = order.StopLimitPrice * order.Quantity
 					logger.Debug.Printf("StopPrice: %v, StopLimitPrice: %v, Cost: %v\n", order.StopPrice, order.StopLimitPrice, cost)
+
 					if b.cash >= cost {
+						b.assetAmount += order.Quantity
+						logger.Debug.Println("AMOUNT:", b.assetAmount)
 						// b.fillStopLimit(currBar.Low, order.StopLimitPrice)
 						b.cash -= cost
 						b.strategy.SetPositionSize(order.Quantity)
 						b.strategy.SetBalance(b.cash)
 
 						logger.Debug.Printf(
-							"BUY - STOP LIMIT filled! Cash: %v, Position Size: %v\n",
+							"BUY - STOP LIMIT filled! Order: %v, Cash: %v, Position Size: %v, Amount worth: %v\n",
+							i+1,
 							b.cash,
 							b.strategy.GetPositionSize(),
+							b.assetAmount*order.StopLimitPrice,
 						)
 						logger.Debug.Printf("Buy filled: LIMIT: %f / LOW: %f", order.Price, currBar.Low)
 
@@ -156,21 +170,28 @@ func (b *BacktestEngine[S]) FillOrders() {
 							Timestamp:  currBar.OpenTime.UnixMilli(),
 						})
 
-						orders = append(orders[:i], orders[i+1:]...)
+						if i >= 0 && i < len(orders) {
+							orders = append(orders[:i], orders[i+1:]...)
+						}
 						b.DataChannel <- order
 					}
 				} else if order.Price >= currBar.Low {
 					cost = currBar.Open * order.Quantity
+
 					if b.cash >= cost {
+						b.assetAmount += order.Quantity
+						logger.Debug.Println("AMOUNT:", b.assetAmount)
 						// b.fillTakeProfit(currBar.Open)
 						b.cash -= cost
 						b.strategy.SetPositionSize(order.Quantity)
 						b.strategy.SetBalance(b.cash)
 
 						logger.Debug.Printf(
-							"BUY - TAKE PROFIT filled! Cash: %v, Position Size: %v\n",
+							"BUY - TAKE PROFIT filled! Order: %v, Cash: %v, Position Size: %v, Amount worth: %v\n",
+							i+1,
 							b.cash,
 							b.strategy.GetPositionSize(),
+							b.assetAmount*order.Price,
 						)
 						logger.Debug.Printf("Buy filled: LIMIT: %f / LOW: %f", order.Price, currBar.Low)
 
@@ -183,25 +204,32 @@ func (b *BacktestEngine[S]) FillOrders() {
 							Timestamp:  currBar.OpenTime.UnixMilli(),
 						})
 
-						orders = append(orders[:i], orders[i+1:]...)
+						if i >= 0 && i < len(orders) {
+							orders = append(orders[:i], orders[i+1:]...)
+						}
 						b.DataChannel <- order
 					}
 				} else {
 					logger.Debug.Printf("Buy NOT filled: LIMIT: %f / LOW: %f", order.Price, currBar.Low)
 				}
-			} else if order.Side == "SELL" {
+			} else if order.Side == "SELL" && b.assetAmount >= order.Quantity {
 				if order.StopPrice >= currBar.High {
 					cost = order.StopLimitPrice * order.Quantity
+
 					if b.strategy.GetPositionSize() >= order.Quantity && b.cash >= cost {
+						b.assetAmount -= order.Quantity
+						logger.Debug.Println("AMOUNT:", b.assetAmount)
 						// b.fillStopLimit(currBar.High, order.StopLimitPrice)
 						b.cash += cost
 						b.strategy.SetPositionSize(-order.Quantity)
 						b.strategy.SetBalance(b.cash)
 
 						logger.Debug.Printf(
-							"SELL - STOP LIMIT filled! Cash: %v, Position Size: %v\n",
+							"SELL - STOP LIMIT filled! Order: %v, Cash: %v, Position Size: %v, Amount worth: %v\n",
+							i+1,
 							b.cash,
 							b.strategy.GetPositionSize(),
+							b.assetAmount*order.StopLimitPrice,
 						)
 						logger.Debug.Printf("Sell filled: LIMIT: %f / HIGH: %f", order.Price, currBar.High)
 
@@ -213,21 +241,28 @@ func (b *BacktestEngine[S]) FillOrders() {
 							Timestamp:  currBar.OpenTime.UnixMilli(),
 						})
 
-						orders = append(orders[:i], orders[i+1:]...)
+						if i >= 0 && i < len(orders) {
+							orders = append(orders[:i], orders[i+1:]...)
+						}
 						b.DataChannel <- order
 					}
 				} else if order.Price <= currBar.High {
 					cost = currBar.Open * order.Quantity
+
 					if b.strategy.GetPositionSize() >= order.Quantity && b.cash >= cost {
+						b.assetAmount -= order.Quantity
+						logger.Debug.Println("AMOUNT:", b.assetAmount)
 						// b.fillTakeProfit(currBar.High)
 						b.cash += cost
 						b.strategy.SetPositionSize(-order.Quantity)
 						b.strategy.SetBalance(b.cash)
 
 						logger.Debug.Printf(
-							"SELL - TAKE PROFIT filled! Cash: %v, Position Size: %v\n",
+							"SELL - TAKE PROFIT filled! Order: %v, Cash: %v, Position Size: %v, Amount worth: %v\n",
+							i+1,
 							b.cash,
 							b.strategy.GetPositionSize(),
+							b.assetAmount*order.Price,
 						)
 						logger.Debug.Printf("Sell filled: LIMIT: %f / HIGH: %f", order.Price, currBar.High)
 
@@ -239,7 +274,9 @@ func (b *BacktestEngine[S]) FillOrders() {
 							Timestamp:  currBar.OpenTime.UnixMilli(),
 						})
 
-						orders = append(orders[:i], orders[i+1:]...)
+						if i >= 0 && i < len(orders) {
+							orders = append(orders[:i], orders[i+1:]...)
+						}
 						b.DataChannel <- order
 					}
 				} else {
