@@ -148,7 +148,8 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Select strategy
 	strategies := map[string]backtest.Strategy[any]{
-		"sma": strategy.NewSMAStrategy(12, 24, s.store),
+		"sma":  strategy.NewSMAStrategy(12, 24, 5, s.store),
+		"macd": strategy.NewMACDStrategy(5, s.store),
 	}
 	selectedStrategy, found := strategies[kr.Strat]
 	if !found {
@@ -259,8 +260,8 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 		defer s.cleanUp(w, r, conn, cancel)
 
 		strategies := map[string]backtest.Strategy[any]{
-			"sma": strategy.NewSMAStrategy(12, 24, s.store),
-			// Add more strategies as needed
+			"sma":  strategy.NewSMAStrategy(12, 24, 5, s.store),
+			"macd": strategy.NewMACDStrategy(5, s.store),
 		}
 		selectedStrategy, found := strategies[strat]
 		if !found {
