@@ -32,6 +32,7 @@ type SMAStrategy struct {
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
 func NewSMAStrategy(
 	shortPeriod, longPeriod int,
+	orderLimit int,
 	db storage.Storage,
 ) backtest.Strategy[SMAStrategy] {
 	return &SMAStrategy{
@@ -40,7 +41,7 @@ func NewSMAStrategy(
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
 		stopLossPercentage: 0.15,
-		orderLimit:         5,
+		orderLimit:         orderLimit,
 	}
 }
 
