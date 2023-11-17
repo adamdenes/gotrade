@@ -23,4 +23,5 @@ type Strategy[S any] interface {
 	SetAsset(string)
 	Buy(asset string, quantity float64, price float64) models.TypeOfOrder
 	Sell(asset string, quantity float64, price float64) models.TypeOfOrder
+	PlaceOrder(o models.TypeOfOrder)
 }
