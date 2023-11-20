@@ -619,6 +619,5 @@ func GetOpenOrders(symbol string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling (all)orders: %w", err)
 	}
-
 	return resp, nil
 }
