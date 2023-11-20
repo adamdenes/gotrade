@@ -536,3 +536,89 @@ func GetAccount() ([]byte, error) {
 	}
 	return resp, nil
 }
+
+/*
+Query Current Order Count Usage (TRADE)
+
+GET /api/v3/rateLimit/order
+
+Displays the user's current order count usage for all intervals.
+
+Weight(IP): 40
+
+Parameters:
+
+	Name 	    Type 	Mandatory 	Description
+	recvWindow 	LONG 	NO 	        The value cannot be greater than 60000
+	timestamp 	LONG 	YES
+*/
+func GetOrderCountUsage() ([]byte, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint+"rateLimit/order?", q, "&signature=", signedQuery)
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+/*
+All Orders (USER_DATA)
+
+GET /api/v3/allOrders
+
+Get all account orders; active, canceled, or filled.
+
+Weight(IP): 20
+
+Parameters:
+
+	Name 	    Type 	Mandatory 	Description
+	symbol 	    STRING 	YES
+	orderId 	LONG 	NO
+	startTime 	LONG 	NO
+	endTime 	LONG 	NO
+	limit 	    INT 	NO 	Default 500; max 1000.
+	recvWindow 	LONG 	NO 	The value cannot be greater than 60000
+	timestamp 	LONG 	YES
+*/
+func GetOpenOrders(symbol string) ([]byte, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint+"openOrders?", q, "&signature=", signedQuery)
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	var response []struct {
+		r json.RawMessage
+	}
+
+	err = json.Unmarshal(resp, &response)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling (all)orders: %w", err)
+	}
+
+	return resp, nil
+}
