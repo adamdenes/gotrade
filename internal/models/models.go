@@ -367,6 +367,7 @@ func (o *OrderOCO) String() string {
 }
 
 type Trade struct {
+	Strategy        string    `json:"strategy_name"`
 	Symbol          string    `json:"symbol"`
 	OrderID         int64     `json:"orderId,omitempty"`
 	OrderListID     int       `json:"orderListId,omitempty"`
