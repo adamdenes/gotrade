@@ -1,9 +1,9 @@
 package strategy
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
-	"strconv"
 	"time"
 
 	"github.com/adamdenes/gotrade/cmd/rest"
@@ -77,11 +77,8 @@ func (s *SMAStrategy) Execute() {
 			s.positionSize = s.balance * s.riskPercentage / s.stopLossPercentage
 		}
 		// Calculate the quantity based on position size
-		quantity, err := strconv.ParseFloat(fmt.Sprintf("%.5f", s.positionSize/currBar.Close), 64)
-		if err != nil {
-			logger.Error.Printf("Error parsing float value to quantity: %v\n", err)
-			return
-		}
+		// PRICE_FILTER -> price % tickSize == 0 | tickSize: 0.00001
+		quantity := math.Round(s.positionSize/currBar.Close*100000) / 100000
 
 		var order models.TypeOfOrder
 		if crossover(s.shortSMA, s.longSMA) && currBar.Close > s.ema200[len(s.ema200)-1] {
@@ -117,17 +114,26 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 				s.orders = append(s.orders, order)
 				return
 			}
+
 			resp, err := rest.Order(order)
 			if err != nil {
 				logger.Error.Printf("Failed to send OCO order: %v", err)
 				return
 			}
-			fmt.Println("RESP:", string(resp))
+
+			var orderResponse models.OrderResponse
+			err = json.Unmarshal(resp, &orderResponse)
+			if err != nil {
+				logger.Error.Println("Error unmarshalling OCO response JSON:", err)
+				return
+			}
 
 			t := &models.Trade{
 				Strategy: s.name,
-				Symbol:   order.Symbol,
+				Symbol:   orderResponse.Symbol,
+				OrderID:  orderResponse.OrderID,
 				Price:    fmt.Sprintf("%f", order.Price),
+				Qty:      fmt.Sprintf("%f", order.Quantity),
 				Time:     time.Now(),
 			}
 			if err := s.db.SaveTrade(t); err != nil {
@@ -145,19 +151,26 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 				return
 			}
 
-			fmt.Println(order)
 			resp, err := rest.OrderOCO(order)
 			if err != nil {
 				logger.Error.Printf("Failed to send OCO order: %v", err)
 				return
 			}
-			fmt.Println("RESP:", string(resp))
+
+			var ocoResponse models.OrderOCOResponse
+			err = json.Unmarshal(resp, &ocoResponse)
+			if err != nil {
+				logger.Error.Println("Error unmarshalling OCO response JSON:", err)
+				return
+			}
 
 			t := &models.Trade{
-				Strategy: s.name,
-				Symbol:   order.Symbol,
-				Price:    fmt.Sprintf("%f", order.Price),
-				Time:     time.Now(),
+				Strategy:    s.name,
+				Symbol:      ocoResponse.Symbol,
+				OrderListID: ocoResponse.OrderListID,
+				Price:       fmt.Sprintf("%f", order.Price),
+				Qty:         fmt.Sprintf("%f", order.Quantity),
+				Time:        time.Now(),
 			}
 			if err := s.db.SaveTrade(t); err != nil {
 				logger.Error.Printf("Error saving sell trade: %v", err)
@@ -175,12 +188,14 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 	stopLimitPrice := stopPrice * 1.02
 
 	return &models.OrderOCO{
-		Symbol:               asset,
-		Side:                 models.BUY,
-		Quantity:             quantity,
-		Price:                math.Round(takeProfit),     // Price to buy (Take Profit)
-		StopPrice:            math.Round(stopPrice),      // Where to start stop loss
-		StopLimitPrice:       math.Round(stopLimitPrice), // Highest price you want to sell coins
+		Symbol:    asset,
+		Side:      models.BUY,
+		Quantity:  quantity,
+		Price:     math.Round(takeProfit*100) / 100, // Price to buy (Take Profit)
+		StopPrice: math.Round(stopPrice*100) / 100,  // Where to start stop loss
+		StopLimitPrice: math.Round(
+			stopLimitPrice*100,
+		) / 100, // Highest price you want to sell coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
@@ -194,12 +209,14 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 	stopLimitPrice := stopPrice * 0.98
 
 	return &models.OrderOCO{
-		Symbol:               asset,
-		Side:                 models.SELL,
-		Quantity:             quantity,
-		Price:                math.Round(takeProfit),     // Price to sell (Take Profit)
-		StopPrice:            math.Round(stopPrice),      // Where to start stop loss
-		StopLimitPrice:       math.Round(stopLimitPrice), // Lowest price you want to buy coins
+		Symbol:    asset,
+		Side:      models.SELL,
+		Quantity:  quantity,
+		Price:     math.Round(takeProfit*100) / 100, // Price to sell (Take Profit)
+		StopPrice: math.Round(stopPrice*100) / 100,  // Where to start stop loss
+		StopLimitPrice: math.Round(
+			stopLimitPrice*100,
+		) / 100, // Lowest price you want to buy coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
