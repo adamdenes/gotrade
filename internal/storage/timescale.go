@@ -590,6 +590,8 @@ func (ts *TimescaleDB) SaveSymbols(sc map[string]struct{}) error {
 
 func (ts *TimescaleDB) SaveTrade(t *models.Trade) error {
 	stmt := `INSERT INTO binance.trades (
+        strategy,
+        status,
         symbol, 
         order_id, 
         order_list_id, 
@@ -602,7 +604,7 @@ func (ts *TimescaleDB) SaveTrade(t *models.Trade) error {
         is_buyer, 
         is_maker, 
         is_best_match
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
 	// Convert string fields to their appropriate types
 	price, err := strconv.ParseFloat(t.Price, 64)
@@ -623,6 +625,8 @@ func (ts *TimescaleDB) SaveTrade(t *models.Trade) error {
 	}
 
 	_, err = ts.db.Exec(stmt,
+		t.Strategy,
+		t.Status,
 		t.Symbol,
 		t.OrderID,
 		t.OrderListID,
@@ -658,9 +662,25 @@ func (ts *TimescaleDB) GetTrade(id int64) (*models.Trade, error) {
 	return trade, nil
 }
 
+func (ts *TimescaleDB) UpdateTrade(id int64, status string) error {
+	var q string
+	if status == "FILLED" {
+		q = "UPDATE binance.trades SET status = $1 WHERE order_id = $2"
+	} else {
+		q = "UPDATE binance.trades SET status = $1 WHERE order_list_id = $2"
+	}
+
+	_, err := ts.db.Exec(q, status, id)
+	if err != nil {
+		return fmt.Errorf("error updating trade with id %d: %w", id, err)
+	}
+
+	return nil
+}
+
 func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
 	var trades []*models.Trade
-	q := `SELECT symbol, order_id, order_list_id, price, qty, 
+	q := `SELECT strategy, status, symbol, order_id, order_list_id, price, qty, 
           quote_qty, commission, commission_asset, trade_time, is_buyer, 
           is_maker, is_best_match FROM binance.trades`
 
@@ -674,6 +694,8 @@ func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
 		var t models.Trade
 
 		if err := rows.Scan(
+			&t.Strategy,
+			&t.Status,
 			&t.Symbol,
 			&t.OrderID,
 			&t.OrderListID,

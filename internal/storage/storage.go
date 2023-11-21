@@ -19,6 +19,7 @@ type Storage interface {
 	SaveSymbols(map[string]struct{}) error
 	SaveTrade(*models.Trade) error
 	GetTrade(int64) (*models.Trade, error)
+	UpdateTrade(int64, string) error
 	FetchTrades() ([]*models.Trade, error)
 	CreateBot(*models.TradingBot) error
 	GetBot(string, string) (*models.TradingBot, error)

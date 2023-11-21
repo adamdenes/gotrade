@@ -53,10 +53,11 @@ SELECT add_compression_policy('binance.kline', INTERVAL '14d');
 
 CREATE TABLE IF NOT EXISTS binance.trades (
     id SERIAL PRIMARY KEY,
-    binance_trade_id BIGINT,
-    symbol VARCHAR(12) NOT NULL,
+    strategy VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
     order_id BIGINT,
-    order_list_id INTEGER,
+    order_list_id BIGINT,
     price FLOAT NOT NULL,
     qty FLOAT,
     quote_qty FLOAT,
