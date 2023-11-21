@@ -563,6 +563,7 @@ func (s *Server) monitorTrades() {
 
 		if len(trades) == 0 {
 			s.infoLog.Println("No trades found, going to sleep...")
+			time.Sleep(60 * time.Second)
 			continue // Check again after sleep
 		}
 
