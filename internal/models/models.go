@@ -271,31 +271,40 @@ func (o *Order) String() string {
 	return sb.String()
 }
 
-type OrderResponse struct {
-	Symbol                  string `json:"symbol"`
-	OrderID                 int64  `json:"orderId"`
-	OrderListID             int    `json:"orderListId"`
-	ClientOrderID           string `json:"clientOrderId"`
-	TransactTime            int64  `json:"transactTime"`
-	Price                   string `json:"price"`
-	OrigQty                 string `json:"origQty"`
-	ExecutedQty             string `json:"executedQty"`
-	CummulativeQuoteQty     string `json:"cummulativeQuoteQty"`
-	Status                  string `json:"status"`
-	TimeInForce             string `json:"timeInForce"`
-	Type                    string `json:"type"`
-	Side                    string `json:"side"`
-	WorkingTime             int64  `json:"workingTime"`
-	SelfTradePreventionMode string `json:"selfTradePreventionMode"`
-	Fills                   []Fill `json:"fills"`
-}
+type OrderStatus string
 
-type Fill struct {
-	Price           string `json:"price"`
-	Qty             string `json:"qty"`
-	Commission      string `json:"commission"`
-	CommissionAsset string `json:"commissionAsset"`
-	TradeID         int64  `json:"tradeId"`
+const (
+	NEW              OrderStatus = "NEW"
+	PARTIALLY_FILLED             = "PARTIALLY_FILLED"
+	FILLED                       = "FILLED"
+	CANCELED                     = "CANCELED"
+	PENDING_CANCEL               = "PENDING_CANCEL"
+	REJECTED                     = "REJECT"
+	EXPIRED                      = "EXPIRED"
+	EXPIRED_IN_MATCH             = "EXPIRED_IN_MATCH"
+)
+
+type OrderResponse struct {
+	Symbol                  string      `json:"symbol"`
+	OrderID                 int64       `json:"orderId"`
+	OrderListID             int         `json:"orderListId"`
+	ClientOrderID           string      `json:"clientOrderId"`
+	Price                   string      `json:"price"`
+	OrigQty                 string      `json:"origQty"`
+	ExecutedQty             string      `json:"executedQty"`
+	CummulativeQuoteQty     string      `json:"cummulativeQuoteQty"`
+	Status                  OrderStatus `json:"status"`
+	TimeInForce             string      `json:"timeInForce"`
+	Type                    string      `json:"type"`
+	Side                    string      `json:"side"`
+	StopPrice               float64     `json:"stopPrice"`
+	IcebergQty              float64     `json:"icebergQty,omitempty"`
+	Time                    int64       `json:"time"`
+	UpdateTime              int64       `json:"updateTime"`
+	IsWokring               bool        `json:"isWorking"`
+	WorkingTime             int64       `json:"workingTime"`
+	OrigQuoteOrderQty       string      `json:"origQuoteOrderQty"`
+	SelfTradePreventionMode string      `json:"selfTradePreventionMode"`
 }
 
 type StopLimitTimeInForce TimeInForce
@@ -393,67 +402,39 @@ func (o *OrderOCO) String() string {
 	return sb.String()
 }
 
+type OCOStatus string
+
+const (
+	RESPONSE     OCOStatus = "RESPONSE"
+	EXEC_STARTED           = "EXEC_STARTED"
+	ALL_DONE               = "ALL_DONE"
+)
+
+type OCOOrderStatus string
+
+const (
+	EXECUTING OCOOrderStatus = "EXECUTING"
+	ALL_DONE2                = "ALL_DONE"
+	REJECT                   = "REJECT"
+)
+
 type OrderOCOResponse struct {
-	OrderListID       int             `json:"orderListId"`
+	OrderListID       int64           `json:"orderListId"`
 	ContingencyType   string          `json:"contingencyType"`
-	ListStatusType    string          `json:"listStatusType"`
-	ListOrderStatus   string          `json:"listOrderStatus"`
+	ListStatusType    OCOStatus       `json:"listStatusType"`
+	ListOrderStatus   OCOOrderStatus  `json:"listOrderStatus"`
 	ListClientOrderID string          `json:"listClientOrderId"`
 	TransactionTime   int64           `json:"transactionTime"`
 	Symbol            string          `json:"symbol"`
 	Orders            json.RawMessage `json:"orders"`
-	OrderReports      json.RawMessage `json:"orderReports"`
-}
-
-type OrderInOCO struct {
-	Symbol        string `json:"symbol"`
-	OrderID       int    `json:"orderId"`
-	ClientOrderID string `json:"clientOrderId"`
-}
-
-type OrderReport struct {
-	Symbol                  string `json:"symbol"`
-	OrderID                 int    `json:"orderId"`
-	OrderListID             int    `json:"orderListId"`
-	ClientOrderID           string `json:"clientOrderId"`
-	TransactTime            int64  `json:"transactTime"`
-	Price                   string `json:"price"`
-	OrigQty                 string `json:"origQty"`
-	ExecutedQty             string `json:"executedQty"`
-	CummulativeQuoteQty     string `json:"cummulativeQuoteQty"`
-	Status                  string `json:"status"`
-	TimeInForce             string `json:"timeInForce"`
-	Type                    string `json:"type"`
-	Side                    string `json:"side"`
-	StopPrice               string `json:"stopPrice"`
-	WorkingTime             int64  `json:"workingTime"`
-	SelfTradePreventionMode string `json:"selfTradePreventionMode"`
-}
-
-// Helper function to parse Orders and OrderReports
-func (r *OrderOCOResponse) ParseOrders() ([]OrderInOCO, error) {
-	var orders []OrderInOCO
-	err := json.Unmarshal(r.Orders, &orders)
-	if err != nil {
-		return nil, err
-	}
-	return orders, nil
-}
-
-func (r *OrderOCOResponse) ParseOrderReports() ([]OrderReport, error) {
-	var orderReports []OrderReport
-	err := json.Unmarshal(r.OrderReports, &orderReports)
-	if err != nil {
-		return nil, err
-	}
-	return orderReports, nil
 }
 
 type Trade struct {
-	Strategy        string    `json:"strategy_name"`
+	Strategy        string    `json:"strategy_name,omitempty"`
+	Status          string    `json:"status,omitempty"`
 	Symbol          string    `json:"symbol"`
 	OrderID         int64     `json:"orderId,omitempty"`
-	OrderListID     int       `json:"orderListId,omitempty"`
+	OrderListID     int64     `json:"orderListId,omitempty"`
 	Price           string    `json:"price"`
 	Qty             string    `json:"qty,omitempty"`
 	QuoteQty        string    `json:"quoteQty,omitempty"`
@@ -462,7 +443,7 @@ type Trade struct {
 	Time            time.Time `json:"time"`
 	IsBuyer         bool      `json:"isBuyer,omitempty"`
 	IsMaker         bool      `json:"isMaker,omitempty"`
-	IsBestMatch     bool      `json:"isBestMatch,o  Zmitempty"`
+	IsBestMatch     bool      `json:"isBestMatch,omitempty"`
 }
 
 type BotStatus string

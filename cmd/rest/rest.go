@@ -592,6 +592,55 @@ Parameters:
 	limit 	    INT 	NO 	Default 500; max 1000.
 	recvWindow 	LONG 	NO 	The value cannot be greater than 60000
 	timestamp 	LONG 	YES
+
+Notes:
+
+  - If orderId is set, it will get orders >= that orderId. Otherwise most recent orders are returned.
+
+  - For some historical orders cummulativeQuoteQty will be < 0, meaning the data is not available at this time.
+
+  - If startTime and/or endTime provided, orderId is not required.
+
+  - The payload sample does not show all fields that can appear. Please refer to Conditional fields in Order Responses.
+*/
+func GetAllOrders() ([]byte, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint+"allOrders?", q, "&signature=", signedQuery)
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+/*
+Current Open Orders (USER_DATA)
+
+GET /api/v3/openOrders
+
+Get all open orders on a symbol. Careful when accessing this with no symbol.
+
+Weight(IP): 6 for a single symbol; 80 when the symbol parameter is omitted;
+
+Parameters:
+
+	Name 	    Type 	Mandatory 	Description
+	symbol 	    STRING 	NO
+	recvWindow 	LONG 	NO 	        The value cannot be greater than 60000
+	timestamp 	LONG 	YES
+
+If the symbol is not sent, orders for all symbols will be returned in an array.
 */
 func GetOpenOrders(symbol string) ([]byte, error) {
 	st, err := GetServerTime()
@@ -611,13 +660,96 @@ func GetOpenOrders(symbol string) ([]byte, error) {
 		return nil, err
 	}
 
-	var response []struct {
-		r json.RawMessage
+	return resp, nil
+}
+
+/*
+Query OCO (USER_DATA)
+
+GET /api/v3/orderList
+
+# Retrieves a specific OCO based on provided optional parameters
+
+Weight(IP): 4
+
+Parameters:
+
+	Name 	            Type 	Mandatory 	Description
+	orderListId 	    LONG 	NO 	Either orderListId or origClientOrderId must be provided
+	origClientOrderId 	STRING 	NO 	Either orderListId or origClientOrderId must be provided
+	recvWindow 	        LONG 	NO 	The value cannot be greater than 60000
+	timestamp 	        LONG 	YES
+*/
+func GetOCOOrder(id int64) (*models.OrderOCOResponse, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
 	}
 
-	err = json.Unmarshal(resp, &response)
+	q := fmt.Sprintf("orderListId=%d&recvWindow=%d&timestamp=%d", id, 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling (all)orders: %w", err)
+		return nil, err
 	}
-	return resp, nil
+
+	uri := BuildURI(apiEndpoint+"orderList?", q, "&signature=", signedQuery)
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(string(resp))
+
+	order := new(models.OrderOCOResponse)
+	err = json.Unmarshal(resp, order)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling OCO order: %w", err)
+	}
+
+	return order, nil
+}
+
+/*
+Query Order (USER_DATA)
+
+GET /api/v3/order
+
+Check an order's status.
+
+Weight(IP): 4
+
+Parameters:
+
+	Name 	            Type 	Mandatory 	Description
+	symbol 	            STRING 	YES
+	orderId 	        LONG 	NO
+	origClientOrderId 	STRING 	NO
+	recvWindow 	        LONG 	NO 	The value cannot be greater than 60000
+	timestamp 	        LONG 	YES
+*/
+func GetOrder(symbol string, id int64) (*models.OrderResponse, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint+"order?", q, "&signature=", signedQuery)
+	resp, err := Query(uri)
+	if err != nil {
+		return nil, err
+	}
+
+	order := new(models.OrderResponse)
+	err = json.Unmarshal(resp, order)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling order: %w", err)
+	}
+
+	return order, nil
 }
