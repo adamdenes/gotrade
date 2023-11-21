@@ -53,6 +53,7 @@ func NewServer(
 
 func (s *Server) Run() {
 	go s.updateSymbolCache()
+	go s.monitorTrades()
 
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
 	err := http.ListenAndServe(s.listenAddress, s.routes())
@@ -546,6 +547,92 @@ func (s *Server) updateSymbolCache() {
 			}
 		}
 		s.infoLog.Println("Symbols saved to DB.")
+	}
+}
+
+func (s *Server) monitorTrades() {
+	var id int64
+	var isOCO bool
+
+	for {
+		trades, err := s.store.FetchTrades()
+		if err != nil {
+			s.errorLog.Printf("error fetching trades from db: %v", err)
+			return
+		}
+
+		if len(trades) == 0 {
+			s.infoLog.Println("No trades found, going to sleep...")
+			continue // Check again after sleep
+		}
+
+		for _, trade := range trades {
+			// Skip already finished trades
+			if trade.Status == "FILLED" || trade.Status == "ALL_DONE" {
+				continue
+			}
+
+			if trade.OrderID != 0 {
+				id = trade.OrderID
+				isOCO = false
+			} else {
+				id = trade.OrderListID
+				isOCO = true
+			}
+
+			go s.monitorTrade(trade.Symbol, id, isOCO)
+		}
+
+		s.infoLog.Println("monitorTrades() going to sleep for 60 seconds.")
+		time.Sleep(60 * time.Second)
+	}
+}
+
+func (s *Server) monitorTrade(symbol string, orderID int64, isOCOorder bool) {
+	var err error
+	for {
+		var o interface{}
+		if isOCOorder {
+			o, err = rest.GetOCOOrder(orderID)
+			if err != nil {
+				s.errorLog.Printf("error getting OCO order: %v", err)
+				return
+			}
+		} else {
+			o, err = rest.GetOrder(symbol, orderID)
+			if err != nil {
+				s.errorLog.Printf("error getting order: %v", err)
+				return
+			}
+		}
+
+		// Process the order
+		switch order := o.(type) {
+		case *models.OrderResponse:
+			if order.Status == "FILLED" {
+				s.infoLog.Printf("Order %s! Updating Database...", order.Status)
+
+				err = s.store.UpdateTrade(order.OrderID, string(order.Status))
+				if err != nil {
+					s.errorLog.Printf("error updating trade: %v", err)
+				}
+				// done updating, stop monitoring
+				return
+			}
+		case *models.OrderOCOResponse:
+			if order.ListOrderStatus == "ALL_DONE" {
+				s.infoLog.Printf("OCO Order %s! Updating Database...", order.ListOrderStatus)
+
+				err = s.store.UpdateTrade(order.OrderListID, string(order.ListOrderStatus))
+				if err != nil {
+					s.errorLog.Printf("error updating OCO trade: %v", err)
+				}
+				// done updating, stop monitoring
+				return
+			}
+		}
+
+		time.Sleep(10 * time.Second)
 	}
 }
 
