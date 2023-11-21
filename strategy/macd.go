@@ -160,6 +160,7 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 			t := &models.Trade{
 				Strategy: m.name,
+				Status:   string(models.NEW),
 				Symbol:   orderResponse.Symbol,
 				OrderID:  orderResponse.OrderID,
 				Price:    fmt.Sprintf("%f", order.Price),
@@ -195,6 +196,7 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 			t := &models.Trade{
 				Strategy:    m.name,
+				Status:      string(models.EXECUTING),
 				Symbol:      ocoResponse.Symbol,
 				OrderListID: ocoResponse.OrderListID,
 				Price:       fmt.Sprintf("%f", order.Price),

@@ -130,6 +130,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 			t := &models.Trade{
 				Strategy: s.name,
+				Status:   string(models.NEW),
 				Symbol:   orderResponse.Symbol,
 				OrderID:  orderResponse.OrderID,
 				Price:    fmt.Sprintf("%f", order.Price),
@@ -166,6 +167,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 			t := &models.Trade{
 				Strategy:    s.name,
+				Status:      string(models.EXECUTING),
 				Symbol:      ocoResponse.Symbol,
 				OrderListID: ocoResponse.OrderListID,
 				Price:       fmt.Sprintf("%f", order.Price),
