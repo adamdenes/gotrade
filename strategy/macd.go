@@ -43,12 +43,24 @@ func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDS
 	}
 }
 
+// getClosePrices() takes the close prices from the bar.
+// It returns if closePrices has already items in it.
+func (m *MACDStrategy) getClosePrices() {
+	if len(m.closePrices) > 0 {
+		return
+	}
+	for _, bar := range m.data {
+		m.closePrices = append(m.closePrices, bar.Close)
+	}
+}
+
 func (m *MACDStrategy) Execute() {
-	// Get entry based on MACD & EMA200
+	m.getClosePrices()
 	currBar := m.data[len(m.data)-1]
 	m.closePrices = append(m.closePrices, currBar.Close)
 	currentPrice := m.closePrices[len(m.closePrices)-1]
 
+	// Get entry based on MACD & EMA200
 	m.EMA()
 	m.MACD()
 
@@ -125,7 +137,7 @@ func (m *MACDStrategy) EMA() {
 	// Calculate EMA 200
 	if len(m.closePrices) >= 200 {
 		// Calculate EMA 200 and truncate to have exactly 200 elements
-		ema200 := talib.Ema(m.closePrices, 200)[199:]
+		ema200 := talib.Ema(m.closePrices, 200)[len(m.closePrices)-1:]
 		m.ema200 = append(m.ema200, ema200...)
 	}
 	if len(m.ema200) > 2 {
