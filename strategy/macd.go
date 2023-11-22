@@ -94,7 +94,9 @@ func (m *MACDStrategy) Execute() {
 			// - macd line crosses over signal line
 			// - histogram is "green" (above the zero line)
 			// - macd crossover happens under the zero line
-			if crossover(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] > 0 &&
+
+			// if crossover(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] > 0 &&
+			if talib.Crossover(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] > 0 &&
 				m.macd[len(m.macd)-1] < 0 {
 				// Generate a "BUY" signal
 				order = m.Buy(m.asset, quantity, currentPrice)
@@ -106,7 +108,9 @@ func (m *MACDStrategy) Execute() {
 			// - macd line crosses under signal line
 			// - histogram is "red" (below the zero line)
 			// - macd crossover happens above zero line
-			if crossunder(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] < 0 &&
+
+			// if crossunder(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] < 0 &&
+			if talib.Crossunder(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] < 0 &&
 				m.macd[len(m.macd)-1] > 0 {
 				// Generate a "SELL" signal
 				order = m.Sell(m.asset, quantity, currentPrice)
