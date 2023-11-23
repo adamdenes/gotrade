@@ -43,19 +43,8 @@ func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDS
 	}
 }
 
-// getClosePrices() takes the close prices from the bar.
-// It returns if closePrices has already items in it.
-func (m *MACDStrategy) getClosePrices() {
-	if len(m.closePrices) > 0 {
-		return
-	}
-	for _, bar := range m.data {
-		m.closePrices = append(m.closePrices, bar.Close)
-	}
-}
-
 func (m *MACDStrategy) Execute() {
-	m.getClosePrices()
+	m.GetClosePrices()
 	currBar := m.data[len(m.data)-1]
 	m.closePrices = append(m.closePrices, currBar.Close)
 	currentPrice := m.closePrices[len(m.closePrices)-1]
@@ -94,8 +83,6 @@ func (m *MACDStrategy) Execute() {
 			// - macd line crosses over signal line
 			// - histogram is "green" (above the zero line)
 			// - macd crossover happens under the zero line
-
-			// if crossover(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] > 0 &&
 			if talib.Crossover(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] > 0 &&
 				m.macd[len(m.macd)-1] < 0 {
 				// Generate a "BUY" signal
@@ -108,8 +95,6 @@ func (m *MACDStrategy) Execute() {
 			// - macd line crosses under signal line
 			// - histogram is "red" (below the zero line)
 			// - macd crossover happens above zero line
-
-			// if crossunder(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] < 0 &&
 			if talib.Crossunder(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] < 0 &&
 				m.macd[len(m.macd)-1] > 0 {
 				// Generate a "SELL" signal
@@ -303,4 +288,15 @@ func (m *MACDStrategy) SetData(data []*models.KlineSimple) {
 
 func (m *MACDStrategy) SetAsset(asset string) {
 	m.asset = asset
+}
+
+// getClosePrices() takes the close prices from the bar.
+// It returns if closePrices has already items in it.
+func (m *MACDStrategy) GetClosePrices() {
+	if len(m.closePrices) > 0 {
+		return
+	}
+	for _, bar := range m.data {
+		m.closePrices = append(m.closePrices, bar.Close)
+	}
 }

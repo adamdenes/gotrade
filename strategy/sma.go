@@ -11,6 +11,7 @@ import (
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
+	"github.com/markcheno/go-talib"
 )
 
 type SMAStrategy struct {
@@ -30,6 +31,7 @@ type SMAStrategy struct {
 	shortSMA           []float64             // Calculated short SMA values
 	longSMA            []float64             // Calculated long SMA values
 	ema200             []float64             // EMA 200 values
+	closePrices        []float64
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
@@ -51,11 +53,14 @@ func NewSMAStrategy(
 
 // Execute implements the Execute method of the BacktestStrategy interface.
 func (s *SMAStrategy) Execute() {
+	s.GetClosePrices()
+	currBar := s.data[len(s.data)-1]
+	s.closePrices = append(s.closePrices, currBar.Close)
+	currentPrice := s.closePrices[len(s.closePrices)-1]
+
 	// Calculate SMA values
 	s.calculateSMAs()
-	currBar := s.data[len(s.data)-1]
 
-	// logger.Debug.Printf("Balance: %.2f, Bar: %+v\n", s.balance, currBar)
 	// Generate buy/sell signals based on crossover
 	if len(s.longSMA) > 2 && len(s.ema200) > 0 {
 		if !s.backtest {
@@ -70,7 +75,6 @@ func (s *SMAStrategy) Execute() {
 				logger.Error.Printf("Error calculating position size: %v\n", err)
 				return
 			}
-			// it is not needed, but anyways...
 			// account size = position size x invalidation point / account risk
 			s.balance = s.positionSize * s.stopLossPercentage / s.riskPercentage
 		} else {
@@ -78,28 +82,32 @@ func (s *SMAStrategy) Execute() {
 		}
 		// Calculate the quantity based on position size
 		// PRICE_FILTER -> price % tickSize == 0 | tickSize: 0.00001
-		quantity := math.Round(s.positionSize/currBar.Close*100000) / 100000
+		quantity := math.Round(s.positionSize/currentPrice*100000) / 100000
 
+		ema200 := s.ema200[len(s.ema200)-1]
 		var order models.TypeOfOrder
-		if crossover(s.shortSMA, s.longSMA) && currBar.Close > s.ema200[len(s.ema200)-1] {
+
+		if currentPrice > ema200 && talib.Crossover(s.shortSMA, s.longSMA) {
+			fmt.Println(
+				"price:",
+				currentPrice,
+				"ema200:",
+				ema200,
+				"shortshma:",
+				s.shortSMA[len(s.shortSMA)-1],
+				"longsma:",
+				s.longSMA[len(s.longSMA)-1],
+			)
 			// Generate buy signal based on SMA crossover and EMA 200 condition
-			order = s.Buy(s.asset, quantity, currBar.Close)
+			order = s.Buy(s.asset, quantity, currentPrice)
 			s.PlaceOrder(order)
-		} else if crossunder(s.shortSMA, s.longSMA) && currBar.Close < s.ema200[len(s.ema200)-1] {
+		} else if currentPrice < ema200 && talib.Crossunder(s.shortSMA, s.longSMA) {
+			fmt.Println("price:", currentPrice, "ema200:", ema200, "shortshma:", s.shortSMA[len(s.shortSMA)-1], "longsma:", s.longSMA[len(s.longSMA)-1])
 			// Generate sell signal based on SMA crossunder or EMA 200 condition
-			order = s.Sell(s.asset, quantity, currBar.Close)
+			order = s.Sell(s.asset, quantity, currentPrice)
 			s.PlaceOrder(order)
 		}
 	}
-}
-
-func (s *SMAStrategy) IsBacktest(b bool) {
-	s.backtest = b
-}
-
-// SetData appends the historical price data to the strategy's data.
-func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
-	s.data = data
 }
 
 func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
@@ -225,24 +233,8 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 	}
 }
 
-func (s *SMAStrategy) SetOrders(orders []models.TypeOfOrder) {
-	s.orders = orders
-}
-
-func (s *SMAStrategy) GetOrders() []models.TypeOfOrder {
-	return s.orders
-}
-
-func (s *SMAStrategy) SetAsset(asset string) {
-	s.asset = asset
-}
-
-func (s *SMAStrategy) SetPositionSize(ps float64) {
-	s.positionSize += ps
-}
-
-func (s *SMAStrategy) GetPositionSize() float64 {
-	return s.positionSize
+func (s *SMAStrategy) IsBacktest(b bool) {
+	s.backtest = b
 }
 
 func (s *SMAStrategy) GetBalance() float64 {
@@ -253,81 +245,67 @@ func (s *SMAStrategy) SetBalance(balance float64) {
 	s.balance = balance
 }
 
+func (s *SMAStrategy) SetOrders(orders []models.TypeOfOrder) {
+	s.orders = orders
+}
+
+func (s *SMAStrategy) GetOrders() []models.TypeOfOrder {
+	return s.orders
+}
+
+func (s *SMAStrategy) SetPositionSize(ps float64) {
+	s.positionSize += ps
+}
+
+func (s *SMAStrategy) GetPositionSize() float64 {
+	return s.positionSize
+}
+
+func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
+	s.data = data
+}
+
+func (s *SMAStrategy) SetAsset(asset string) {
+	s.asset = asset
+}
+
+func (s *SMAStrategy) GetClosePrices() {
+	if len(s.closePrices) > 0 {
+		return
+	}
+	for _, bar := range s.data {
+		s.closePrices = append(s.closePrices, bar.Close)
+	}
+}
+
 // calculateSMAs calculates both short and long SMAs.
 func (s *SMAStrategy) calculateSMAs() {
 	// Calculate short SMA
 	if len(s.data) >= s.shortPeriod {
-		shortSMA := calculateSMA(s.data, s.shortPeriod)
-		s.shortSMA = append(s.shortSMA, shortSMA)
+		shortSMA := talib.Sma(s.closePrices, s.shortPeriod)[len(s.closePrices)-1:]
+		s.shortSMA = append(s.shortSMA, shortSMA...)
 	}
 
 	// Calculate long SMA
 	if len(s.data) >= s.longPeriod {
-		longSMA := calculateSMA(s.data, s.longPeriod)
-		s.longSMA = append(s.longSMA, longSMA)
+		longSMA := talib.Sma(s.closePrices, s.longPeriod)[len(s.closePrices)-1:]
+		s.longSMA = append(s.longSMA, longSMA...)
 	}
 
 	// Calculate EMA 200
 	if len(s.data) >= 200 {
-		ema200 := calculateEMA(s.data, 200)
-		s.ema200 = append(s.ema200, ema200)
+		ema200 := talib.Ema(s.closePrices, 200)[len(s.closePrices)-1:]
+		s.ema200 = append(s.ema200, ema200...)
 	}
 
 	// Prevent infinitely growing SMA slices
-	if len(s.shortSMA) > s.shortPeriod {
+	if len(s.shortSMA) > 3 {
 		s.shortSMA = s.shortSMA[1:]
 	}
-	if len(s.longSMA) > s.longPeriod {
+	if len(s.longSMA) > 3 {
 		s.longSMA = s.longSMA[1:]
 	}
-	if len(s.ema200) > 200 {
+	if len(s.ema200) > 2 {
 		s.ema200 = s.ema200[1:]
 	}
-}
-
-// calculateEMA calculates the Exponential Moving Average (EMA).
-func calculateEMA(data []*models.KlineSimple, period int) float64 {
-	if len(data) < period {
-		return 0.0
-	}
-
-	k := 2.0 / (float64(period) + 1.0)
-	ema := data[len(data)-period].Close
-
-	for i := len(data) - period + 1; i < len(data); i++ {
-		ema = (data[i].Close-ema)*k + ema
-	}
-
-	return ema
-}
-
-// calculateSMA calculates the Simple Moving Average.
-func calculateSMA(data []*models.KlineSimple, period int) float64 {
-	sum := 0.0
-	for i := len(data) - 1; i >= len(data)-period; i-- {
-		sum += data[i].Close
-	}
-	return sum / float64(period)
-}
-
-func crossover(series1 []float64, series2 []float64) bool {
-	N := len(series1)
-	M := len(series2)
-
-	if N < 3 || M < 3 {
-		return false
-	}
-
-	return series1[N-2] <= series2[M-2] && series1[N-1] > series2[M-1]
-}
-
-func crossunder(series1 []float64, series2 []float64) bool {
-	N := len(series1)
-	M := len(series2)
-
-	if N < 3 || M < 3 {
-		return false
-	}
-
-	return series1[N-1] <= series2[M-1] && series1[N-2] > series2[M-2]
 }
