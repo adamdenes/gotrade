@@ -698,6 +698,10 @@ func GetOCOOrder(id int64) (*models.OrderOCOResponse, error) {
 		return nil, err
 	}
 
+	if len(resp) == 0 {
+		return nil, fmt.Errorf("empty response body")
+	}
+
 	order := new(models.OrderOCOResponse)
 	err = json.Unmarshal(resp, order)
 	if err != nil {
@@ -741,6 +745,10 @@ func GetOrder(symbol string, id int64) (*models.OrderResponse, error) {
 	resp, err := Query(uri)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(resp) == 0 {
+		return nil, fmt.Errorf("empty response body")
 	}
 
 	order := new(models.OrderResponse)

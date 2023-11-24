@@ -561,25 +561,53 @@ func (s *Server) monitorTrades() {
 
 func (s *Server) monitorTrade(symbol string, orderID int64, isOCOorder bool) {
 	var err error
+	var isEmpty bool
 	for {
 		var o interface{}
 		if isOCOorder {
 			o, err = rest.GetOCOOrder(orderID)
 			if err != nil {
-				s.errorLog.Printf("error getting OCO order: %v", err)
-				return
+				if re, ok := err.(*models.RequestError); ok && err != nil {
+					s.errorLog.Printf("error in oco order: %v", err)
+					time.Sleep(re.Timer * time.Second)
+					continue
+				} else if err.Error() == "empty response body" {
+					s.errorLog.Printf("error: %v", err)
+					isEmpty = true
+				} else {
+					s.errorLog.Printf("error getting OCO order: %v", err)
+					return
+				}
 			}
 		} else {
 			o, err = rest.GetOrder(symbol, orderID)
 			if err != nil {
-				s.errorLog.Printf("error getting order: %v", err)
-				return
+				if re, ok := err.(*models.RequestError); ok && err != nil {
+					s.errorLog.Printf("error in order: %v", err)
+					time.Sleep(re.Timer * time.Second)
+					continue
+				} else if err.Error() == "empty response body" {
+					s.errorLog.Printf("error: %v", err)
+					isEmpty = true
+				} else {
+					s.errorLog.Printf("error getting order: %v", err)
+					return
+				}
 			}
 		}
 
 		// Process the order
 		switch order := o.(type) {
 		case *models.OrderResponse:
+			// API sends nothing if the order_list_id has been filled
+			if isEmpty {
+				err = s.store.UpdateTrade(orderID, models.FILLED)
+				if err != nil {
+					s.errorLog.Printf("error updating OCO trade: %v", err)
+					return
+				}
+				return
+			}
 			if order.Status == "FILLED" {
 				s.infoLog.Printf("Order %s! Updating Database...", order.Status)
 
@@ -591,6 +619,15 @@ func (s *Server) monitorTrade(symbol string, orderID int64, isOCOorder bool) {
 				return
 			}
 		case *models.OrderOCOResponse:
+			// API sends nothing if the order_list_id has been filled
+			if isEmpty {
+				err = s.store.UpdateTrade(orderID, models.ALL_DONE)
+				if err != nil {
+					s.errorLog.Printf("error updating OCO trade: %v", err)
+					return
+				}
+				return
+			}
 			if order.ListOrderStatus == "ALL_DONE" {
 				s.infoLog.Printf("OCO Order %s! Updating Database...", order.ListOrderStatus)
 
@@ -603,7 +640,7 @@ func (s *Server) monitorTrade(symbol string, orderID int64, isOCOorder bool) {
 			}
 		}
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(30 * time.Second)
 	}
 }
 
