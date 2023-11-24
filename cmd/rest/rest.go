@@ -698,8 +698,6 @@ func GetOCOOrder(id int64) (*models.OrderOCOResponse, error) {
 		return nil, err
 	}
 
-	fmt.Println(string(resp))
-
 	order := new(models.OrderOCOResponse)
 	err = json.Unmarshal(resp, order)
 	if err != nil {
