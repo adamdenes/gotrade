@@ -538,20 +538,20 @@ func (s *Server) monitorTrades() {
 		}
 
 		for _, trade := range trades {
+			switch trade.Status {
 			// Skip already finished trades
-			if trade.Status == "FILLED" || trade.Status == "ALL_DONE" {
+			case "FILLED", "ALL_DONE":
 				continue
+			default:
+				if trade.OrderID != 0 {
+					id = trade.OrderID
+					isOCO = false
+				} else {
+					id = trade.OrderListID
+					isOCO = true
+				}
+				go s.monitorTrade(trade.Symbol, id, isOCO)
 			}
-
-			if trade.OrderID != 0 {
-				id = trade.OrderID
-				isOCO = false
-			} else {
-				id = trade.OrderListID
-				isOCO = true
-			}
-
-			go s.monitorTrade(trade.Symbol, id, isOCO)
 		}
 
 		s.infoLog.Println("monitorTrades() going to sleep for 60 seconds.")
