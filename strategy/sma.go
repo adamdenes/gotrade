@@ -88,16 +88,6 @@ func (s *SMAStrategy) Execute() {
 		var order models.TypeOfOrder
 
 		if currentPrice > ema200 && talib.Crossover(s.shortSMA, s.longSMA) {
-			fmt.Println(
-				"price:",
-				currentPrice,
-				"ema200:",
-				ema200,
-				"shortshma:",
-				s.shortSMA[len(s.shortSMA)-1],
-				"longsma:",
-				s.longSMA[len(s.longSMA)-1],
-			)
 			// Generate buy signal based on SMA crossover and EMA 200 condition
 			order = s.Buy(s.asset, quantity, currentPrice)
 			s.PlaceOrder(order)
