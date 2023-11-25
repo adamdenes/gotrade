@@ -168,6 +168,14 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 				Qty:      fmt.Sprintf("%f", order.Quantity),
 				Time:     time.Now(),
 			}
+			if order.Side == models.BUY {
+				t.IsBuyer = true
+				t.IsMaker = false
+			} else {
+				t.IsBuyer = false
+				t.IsMaker = true
+			}
+
 			if err := m.db.SaveTrade(t); err != nil {
 				logger.Error.Printf("Error saving buy trade: %v", err)
 			}
@@ -204,6 +212,14 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 				Qty:         fmt.Sprintf("%f", order.Quantity),
 				Time:        time.Now(),
 			}
+			if order.Side == models.BUY {
+				t.IsBuyer = true
+				t.IsMaker = false
+			} else {
+				t.IsBuyer = false
+				t.IsMaker = true
+			}
+
 			if err := m.db.SaveTrade(t); err != nil {
 				logger.Error.Printf("Error saving sell trade: %v", err)
 			}
