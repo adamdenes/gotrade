@@ -92,7 +92,6 @@ func (s *SMAStrategy) Execute() {
 			order = s.Buy(s.asset, quantity, currentPrice)
 			s.PlaceOrder(order)
 		} else if currentPrice < ema200 && talib.Crossunder(s.shortSMA, s.longSMA) {
-			fmt.Println("price:", currentPrice, "ema200:", ema200, "shortshma:", s.shortSMA[len(s.shortSMA)-1], "longsma:", s.longSMA[len(s.longSMA)-1])
 			// Generate sell signal based on SMA crossunder or EMA 200 condition
 			order = s.Sell(s.asset, quantity, currentPrice)
 			s.PlaceOrder(order)
