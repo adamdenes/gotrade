@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"encoding/json"
-	"fmt"
 	"math"
 	"time"
 
@@ -138,7 +136,7 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 	currBar := m.data[len(m.data)-1]
 
 	switch order := o.(type) {
-	case *models.Order:
+	case *models.PostOrder:
 		if m.orderLimit >= len(m.orders) {
 			logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
 			if m.backtest {
@@ -146,43 +144,20 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 				m.orders = append(m.orders, order)
 				return
 			}
-			resp, err := rest.Order(order)
+
+			order.NewOrderRespType = models.OrderRespType("RESULT")
+			orderResponse, err := rest.PostOrder(order)
 			if err != nil {
-				logger.Error.Printf("Failed to send OCO order: %v", err)
+				logger.Error.Printf("Failed to send order: %v", err)
 				return
 			}
-
-			var orderResponse models.OrderResponse
-			err = json.Unmarshal(resp, &orderResponse)
-			if err != nil {
-				logger.Error.Println("Error unmarshalling OCO response JSON:", err)
-				return
-			}
-
-			t := &models.Trade{
-				Strategy: m.name,
-				Status:   string(models.NEW),
-				Symbol:   orderResponse.Symbol,
-				OrderID:  orderResponse.OrderID,
-				Price:    fmt.Sprintf("%f", order.Price),
-				Qty:      fmt.Sprintf("%f", order.Quantity),
-				Time:     time.Now(),
-			}
-			if order.Side == models.BUY {
-				t.IsBuyer = true
-				t.IsMaker = false
-			} else {
-				t.IsBuyer = false
-				t.IsMaker = true
-			}
-
-			if err := m.db.SaveTrade(t); err != nil {
-				logger.Error.Printf("Error saving buy trade: %v", err)
+			if err := m.db.SaveOrder(orderResponse); err != nil {
+				logger.Error.Printf("Error saving order: %v", err)
 			}
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", m.orderLimit)
 		}
-	case *models.OrderOCO:
+	case *models.PostOrderOCO:
 		if m.orderLimit >= len(m.orders) {
 			logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
 			if m.backtest {
@@ -190,38 +165,17 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 				m.orders = append(m.orders, order)
 				return
 			}
-			resp, err := rest.OrderOCO(order)
+
+			ocoResponse, err := rest.PostOrderOCO(order)
 			if err != nil {
 				logger.Error.Printf("Failed to send OCO order: %v", err)
 				return
 			}
 
-			var ocoResponse models.OrderOCOResponse
-			err = json.Unmarshal(resp, &ocoResponse)
-			if err != nil {
-				logger.Error.Println("Error unmarshalling OCO response JSON:", err)
-				return
-			}
-
-			t := &models.Trade{
-				Strategy:    m.name,
-				Status:      string(models.EXECUTING),
-				Symbol:      ocoResponse.Symbol,
-				OrderListID: ocoResponse.OrderListID,
-				Price:       fmt.Sprintf("%f", order.Price),
-				Qty:         fmt.Sprintf("%f", order.Quantity),
-				Time:        time.Now(),
-			}
-			if order.Side == models.BUY {
-				t.IsBuyer = true
-				t.IsMaker = false
-			} else {
-				t.IsBuyer = false
-				t.IsMaker = true
-			}
-
-			if err := m.db.SaveTrade(t); err != nil {
-				logger.Error.Printf("Error saving sell trade: %v", err)
+			for _, resp := range ocoResponse.OrderReports {
+				if err := m.db.SaveOrder(&resp); err != nil {
+					logger.Error.Printf("Error saving OCO order: %v", err)
+				}
 			}
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", m.orderLimit)
@@ -235,7 +189,7 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 	stopPrice := takeProfit + takeProfit*m.stopLossPercentage
 	stopLimitPrice := stopPrice * 1.01
 
-	return &models.OrderOCO{
+	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.BUY,
 		Quantity:  quantity,
@@ -255,7 +209,8 @@ func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) model
 	// SELL: Limit Price > Last Price > Stop Price
 	stopPrice := takeProfit - takeProfit*m.stopLossPercentage
 	stopLimitPrice := stopPrice * 0.99
-	return &models.OrderOCO{
+
+	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.SELL,
 		Quantity:  quantity,

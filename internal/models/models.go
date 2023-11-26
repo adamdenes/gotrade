@@ -194,7 +194,7 @@ const (
 	IOC             = "IOC"
 )
 
-type Order struct {
+type PostOrder struct {
 	Symbol                  string                  `json:"symbol"`
 	Side                    OrderSide               `json:"side"`
 	Type                    OrderType               `json:"type"`
@@ -214,7 +214,7 @@ type Order struct {
 	Timestamp               int64                   `json:"timestamp"`
 }
 
-func (o *Order) String() string {
+func (o *PostOrder) String() string {
 	var sb strings.Builder
 
 	if o.Symbol != "" {
@@ -284,32 +284,28 @@ const (
 	EXPIRED_IN_MATCH             = "EXPIRED_IN_MATCH"
 )
 
-type OrderResponse struct {
-	Symbol                  string      `json:"symbol"`
-	OrderID                 int64       `json:"orderId"`
-	OrderListID             int         `json:"orderListId"`
-	ClientOrderID           string      `json:"clientOrderId"`
-	Price                   string      `json:"price"`
-	OrigQty                 string      `json:"origQty"`
-	ExecutedQty             string      `json:"executedQty"`
-	CummulativeQuoteQty     string      `json:"cummulativeQuoteQty"`
-	Status                  OrderStatus `json:"status"`
-	TimeInForce             string      `json:"timeInForce"`
-	Type                    string      `json:"type"`
-	Side                    string      `json:"side"`
-	StopPrice               float64     `json:"stopPrice"`
-	IcebergQty              float64     `json:"icebergQty,omitempty"`
-	Time                    int64       `json:"time"`
-	UpdateTime              int64       `json:"updateTime"`
-	IsWokring               bool        `json:"isWorking"`
-	WorkingTime             int64       `json:"workingTime"`
-	OrigQuoteOrderQty       string      `json:"origQuoteOrderQty"`
-	SelfTradePreventionMode string      `json:"selfTradePreventionMode"`
+type PostOrderResponse struct {
+	Symbol                  string `json:"symbol"`
+	OrderID                 int64  `json:"orderId"`
+	OrderListID             int64  `json:"orderListId"`
+	ClientOrderID           string `json:"clientOrderId"`
+	TransactTime            int64  `json:"transactTime"`
+	Price                   string `json:"price"`
+	OrigQty                 string `json:"origQty"`
+	ExecutedQty             string `json:"executedQty"`
+	CummulativeQuoteQty     string `json:"cummulativeQuoteQty"`
+	Status                  string `json:"status"`
+	TimeInForce             string `json:"timeInForce"`
+	Type                    string `json:"type"`
+	Side                    string `json:"side"`
+	StopPrice               string `json:"stopPrice,omitempty"` // Maybe?
+	WorkingTime             int64  `json:"workingTime"`
+	SelfTradePreventionMode string `json:"selfTradePreventionMode"`
 }
 
 type StopLimitTimeInForce TimeInForce
 
-type OrderOCO struct {
+type PostOrderOCO struct {
 	Symbol                  string                  `json:"symbol"`
 	ListClientOrderId       string                  `json:"listClientOrderId,omitempty"`
 	Side                    OrderSide               `json:"side"`
@@ -333,7 +329,7 @@ type OrderOCO struct {
 	Timestamp               int64                   `json:"timestamp"`
 }
 
-func (o *OrderOCO) String() string {
+func (o *PostOrderOCO) String() string {
 	var sb strings.Builder
 
 	if o.Symbol != "" {
@@ -418,16 +414,19 @@ const (
 	REJECT                   = "REJECT"
 )
 
-type OrderOCOResponse struct {
-	OrderListID       int64           `json:"orderListId"`
-	ContingencyType   string          `json:"contingencyType"`
-	ListStatusType    OCOStatus       `json:"listStatusType"`
-	ListOrderStatus   OCOOrderStatus  `json:"listOrderStatus"`
-	ListClientOrderID string          `json:"listClientOrderId"`
-	TransactionTime   int64           `json:"transactionTime"`
-	Symbol            string          `json:"symbol"`
-	Orders            json.RawMessage `json:"orders"`
+type PostOrderOCOResponse struct {
+	OrderListID       int64             `json:"orderListId"`
+	ContingencyType   string            `json:"contingencyType"`
+	ListStatusType    OCOStatus         `json:"listStatusType"`
+	ListOrderStatus   OCOOrderStatus    `json:"listOrderStatus"`
+	ListClientOrderID string            `json:"listClientOrderId"`
+	TransactionTime   int64             `json:"transactionTime"`
+	Symbol            string            `json:"symbol"`
+	Orders            json.RawMessage   `json:"-"`
+	OrderReports      []PostOrderReport `json:"orderReports"`
 }
+
+type PostOrderReport = PostOrderResponse
 
 type Trade struct {
 	Strategy        string    `json:"strategy_name,omitempty"`

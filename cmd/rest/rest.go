@@ -130,7 +130,7 @@ func getBalance(asset string) (float64, error) {
 	return freeBalance, nil
 }
 
-func validateOrder(order *models.Order) error {
+func validateOrder(order *models.PostOrder) error {
 	switch order.Type {
 	case models.LIMIT:
 		if order.TimeInForce == "" || order.Quantity == 0.0 || order.Price == 0.0 {
@@ -384,7 +384,7 @@ Test New Order (TRADE)
 POST /api/v3/order/test
 Test new order creation and signature/recvWindow long. Creates and validates a new order but does not send it into the matching engine.
 */
-func TestOrder(order *models.Order) ([]byte, error) {
+func PostTestOrder(order *models.PostOrder) ([]byte, error) {
 	if err := validateOrder(order); err != nil {
 		return nil, err
 	}
@@ -419,7 +419,7 @@ Additional mandatory parameters based on type:
 	TAKE_PROFIT_LIMIT 	timeInForce, quantity, price, stopPrice or trailingDelta
 	LIMIT_MAKER 	        quantity, price
 */
-func Order(order *models.Order) ([]byte, error) {
+func PostOrder(order *models.PostOrder) (*models.PostOrderResponse, error) {
 	if err := validateOrder(order); err != nil {
 		return nil, err
 	}
@@ -435,7 +435,13 @@ func Order(order *models.Order) ([]byte, error) {
 		return nil, err
 	}
 
-	return resp, nil
+	var orderResponse models.PostOrderResponse
+	err = json.Unmarshal(resp, &orderResponse)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling response JSON: %v", err)
+	}
+
+	return &orderResponse, nil
 }
 
 /*
@@ -459,7 +465,7 @@ Order Rate Limit
 
 	OCO counts as 2 orders against the order rate limit
 */
-func OrderOCO(oco *models.OrderOCO) ([]byte, error) {
+func PostOrderOCO(oco *models.PostOrderOCO) (*models.PostOrderOCOResponse, error) {
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), oco.String())
 	if err != nil {
 		return nil, err
@@ -472,7 +478,13 @@ func OrderOCO(oco *models.OrderOCO) ([]byte, error) {
 		return nil, err
 	}
 
-	return resp, nil
+	var ocoResponse models.PostOrderOCOResponse
+	err = json.Unmarshal(resp, &ocoResponse)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling response JSON: %v", err)
+	}
+
+	return &ocoResponse, nil
 }
 
 /*
@@ -603,13 +615,13 @@ Notes:
 
   - The payload sample does not show all fields that can appear. Please refer to Conditional fields in Order Responses.
 */
-func GetAllOrders() ([]byte, error) {
+func GetAllOrders(symbol string) ([]*models.PostOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
 	}
 
-	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
+	q := fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
 	if err != nil {
 		return nil, err
@@ -621,7 +633,14 @@ func GetAllOrders() ([]byte, error) {
 		return nil, err
 	}
 
-	return resp, nil
+	var or []*models.PostOrderResponse
+
+	err = json.Unmarshal(resp, &or)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling all orders: %w", err)
+	}
+
+	return or, nil
 }
 
 /*
@@ -680,7 +699,7 @@ Parameters:
 	recvWindow 	        LONG 	NO 	The value cannot be greater than 60000
 	timestamp 	        LONG 	YES
 */
-func GetOCOOrder(id int64) (*models.OrderOCOResponse, error) {
+func GetOCOOrder(id int64) (*models.PostOrderOCOResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
@@ -702,7 +721,7 @@ func GetOCOOrder(id int64) (*models.OrderOCOResponse, error) {
 		return nil, fmt.Errorf("empty response body")
 	}
 
-	order := new(models.OrderOCOResponse)
+	order := new(models.PostOrderOCOResponse)
 	err = json.Unmarshal(resp, order)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling OCO order: %w", err)
@@ -729,7 +748,7 @@ Parameters:
 	recvWindow 	        LONG 	NO 	The value cannot be greater than 60000
 	timestamp 	        LONG 	YES
 */
-func GetOrder(symbol string, id int64) (*models.OrderResponse, error) {
+func GetOrder(symbol string, id int64) (*models.PostOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
@@ -751,11 +770,35 @@ func GetOrder(symbol string, id int64) (*models.OrderResponse, error) {
 		return nil, fmt.Errorf("empty response body")
 	}
 
-	order := new(models.OrderResponse)
+	order := new(models.PostOrderResponse)
 	err = json.Unmarshal(resp, order)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling order: %w", err)
 	}
 
 	return order, nil
+}
+
+func FindOrder(order *models.PostOrderResponse) (*models.PostOrderResponse, error) {
+	orders, err := GetAllOrders(order.Symbol)
+	if err != nil {
+		return nil, fmt.Errorf("error querying all orders: %w", err)
+	}
+
+	var (
+		ord   *models.PostOrderResponse
+		found bool
+	)
+	for _, o := range orders {
+		if o.OrderID == order.OrderID {
+			ord = o
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return nil, fmt.Errorf("order not found")
+	}
+	return ord, nil
 }

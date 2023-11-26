@@ -721,6 +721,267 @@ func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
 	return trades, nil
 }
 
+func (ts *TimescaleDB) SaveOrder(order *models.PostOrderResponse) error {
+	q := `
+		INSERT INTO binance.orders (
+			symbol,
+			order_id,
+            order_list_id,
+			client_order_id,
+			transact_time,
+			price,
+			orig_qty,
+			executed_qty,
+			cummulative_quote_qty,
+			status,
+			time_in_force,
+			type,
+			side,
+			stop_price,
+			working_time,
+			self_trade_prevention_mode
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        );
+	`
+
+	stmt, err := ts.db.Prepare(q)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	// Perform type conversions where needed
+	var price float64
+	if order.Price != "" {
+		price, err = strconv.ParseFloat(order.Price, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var origQty float64
+	if order.OrigQty != "" {
+		origQty, err = strconv.ParseFloat(order.OrigQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var executedQty float64
+	if order.ExecutedQty != "" {
+		executedQty, err = strconv.ParseFloat(order.ExecutedQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var cummulativeQuoteQty float64
+	if order.CummulativeQuoteQty != "" {
+		cummulativeQuoteQty, err = strconv.ParseFloat(order.CummulativeQuoteQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var stopPrice float64
+	if order.StopPrice != "" {
+		stopPrice, err = strconv.ParseFloat(order.StopPrice, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = stmt.Exec(
+		order.Symbol,
+		order.OrderID,
+		order.OrderListID,
+		order.ClientOrderID,
+		time.UnixMilli(order.TransactTime),
+		price,
+		origQty,
+		executedQty,
+		cummulativeQuoteQty,
+		order.Status,
+		order.TimeInForce,
+		order.Type,
+		order.Side,
+		stopPrice,
+		order.WorkingTime,
+		order.SelfTradePreventionMode,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
+	var orders []*models.PostOrderResponse
+
+	query := `
+		SELECT
+			symbol,
+			order_id,
+            order_list_id,
+			client_order_id,
+			transact_time,
+			price,
+			orig_qty,
+			executed_qty,
+			cummulative_quote_qty,
+			status,
+			time_in_force,
+			type,
+			side,
+			stop_price,
+			working_time,
+			self_trade_prevention_mode
+		FROM
+			binance.orders;
+	`
+
+	rows, err := ts.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			order        models.PostOrderResponse
+			transactTime time.Time
+		)
+		err := rows.Scan(
+			&order.Symbol,
+			&order.OrderID,
+			&order.OrderListID,
+			&order.ClientOrderID,
+			&transactTime,
+			&order.Price,
+			&order.OrigQty,
+			&order.ExecutedQty,
+			&order.CummulativeQuoteQty,
+			&order.Status,
+			&order.TimeInForce,
+			&order.Type,
+			&order.Side,
+			&order.StopPrice,
+			&order.WorkingTime,
+			&order.SelfTradePreventionMode,
+		)
+		if err != nil {
+			return nil, err
+		}
+		order.TransactTime = transactTime.UnixMilli()
+		orders = append(orders, &order)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
+}
+
+func (ts *TimescaleDB) UpdateOrder(order *models.PostOrderResponse) error {
+	q := `
+		UPDATE binance.orders
+		SET
+			symbol = $1,
+			orderListId = $2,
+			clientOrderId = $3,
+			transact_time = $4,
+			price = $5,
+			orig_qty = $6,
+			executed_qty = $7,
+			cummulative_quote_qty = $8,
+			status = $9,
+			time_in_force = $10,
+			type = $11,
+			side = $12,
+			stop_price = $13,
+			working_time = $14,
+			self_trade_prevention_mode = $15
+		WHERE
+			order_id = $16;
+	`
+
+	stmt, err := ts.db.Prepare(q)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	// Perform type conversions where needed
+	var price float64
+	if order.Price != "" {
+		price, err = strconv.ParseFloat(order.Price, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var origQty float64
+	if order.OrigQty != "" {
+		origQty, err = strconv.ParseFloat(order.OrigQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var executedQty float64
+	if order.ExecutedQty != "" {
+		executedQty, err = strconv.ParseFloat(order.ExecutedQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var cummulativeQuoteQty float64
+	if order.CummulativeQuoteQty != "" {
+		cummulativeQuoteQty, err = strconv.ParseFloat(order.CummulativeQuoteQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var stopPrice float64
+	if order.StopPrice != "" {
+		stopPrice, err = strconv.ParseFloat(order.StopPrice, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = stmt.Exec(
+		order.Symbol,
+		order.OrderListID,
+		order.ClientOrderID,
+		time.UnixMilli(order.TransactTime),
+		price,
+		origQty,
+		executedQty,
+		cummulativeQuoteQty,
+		order.Status,
+		order.TimeInForce,
+		order.Type,
+		order.Side,
+		stopPrice,
+		order.WorkingTime,
+		order.SelfTradePreventionMode,
+		order.OrderID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (ts *TimescaleDB) CreateBot(b *models.TradingBot) error {
 	// Check if a bot with the same parameters is already running
 	var count int

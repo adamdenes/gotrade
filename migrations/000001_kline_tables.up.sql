@@ -51,6 +51,25 @@ SELECT add_compression_policy('binance.kline', INTERVAL '14d');
 --         'binance.kline',
 --         now()::timestamp - INTERVAL '1 week') i;
 
+CREATE TABLE IF NOT EXISTS binance.orders (
+    symbol VARCHAR(255) NOT NULL,
+    order_id BIGINT PRIMARY KEY,
+    order_list_id BIGINT NOT NULL,
+    client_order_id VARCHAR(255) NOT NULL,
+    transact_time TIMESTAMPTZ NOT NULL,
+    price FLOAT NOT NULL,
+    orig_qty FLOAT,
+    executed_qty FLOAT,
+    cummulative_quote_qty FLOAT,
+    status VARCHAR(255) NOT NULL,
+    time_in_force VARCHAR(255),
+    type VARCHAR(255),
+    side VARCHAR(255) NOT NULL,
+    stop_price FLOAT NOT NULL,
+    working_time BIGINT,
+    self_trade_prevention_mode VARCHAR(255)
+);
+
 CREATE TABLE IF NOT EXISTS binance.trades (
     id SERIAL PRIMARY KEY,
     strategy VARCHAR(255) NOT NULL,

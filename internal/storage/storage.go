@@ -21,6 +21,9 @@ type Storage interface {
 	GetTrade(int64) (*models.Trade, error)
 	UpdateTrade(int64, string) error
 	FetchTrades() ([]*models.Trade, error)
+	SaveOrder(*models.PostOrderResponse) error
+	FetchOrders() ([]*models.PostOrderResponse, error)
+	UpdateOrder(*models.PostOrderResponse) error
 	CreateBot(*models.TradingBot) error
 	GetBot(string, string) (*models.TradingBot, error)
 	DeleteBot(int) error

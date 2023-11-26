@@ -74,7 +74,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 
 	for i, order := range orders {
 		switch order := order.(type) {
-		case *models.Order:
+		case *models.PostOrder:
 			if order.Side == models.BUY {
 				// Calculate the cost of buying the specified quantity at the open price
 				cost := currBar.Open * order.Quantity
@@ -136,7 +136,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 					b.DataChannel <- order
 				}
 			}
-		case *models.OrderOCO:
+		case *models.PostOrderOCO:
 			var cost float64
 
 			if order.Side == "BUY" {

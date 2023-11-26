@@ -1,8 +1,6 @@
 package strategy
 
 import (
-	"encoding/json"
-	"fmt"
 	"math"
 	"time"
 
@@ -103,7 +101,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 	currBar := s.data[len(s.data)-1]
 
 	switch order := o.(type) {
-	case *models.Order:
+	case *models.PostOrder:
 		if s.orderLimit >= len(s.orders) {
 			logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
 			if s.backtest {
@@ -112,43 +110,19 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 				return
 			}
 
-			resp, err := rest.Order(order)
+			order.NewOrderRespType = models.OrderRespType("RESULT")
+			orderResponse, err := rest.PostOrder(order)
 			if err != nil {
-				logger.Error.Printf("Failed to send OCO order: %v", err)
+				logger.Error.Printf("Failed to send order: %v", err)
 				return
 			}
-
-			var orderResponse models.OrderResponse
-			err = json.Unmarshal(resp, &orderResponse)
-			if err != nil {
-				logger.Error.Println("Error unmarshalling OCO response JSON:", err)
-				return
-			}
-
-			t := &models.Trade{
-				Strategy: s.name,
-				Status:   string(models.NEW),
-				Symbol:   orderResponse.Symbol,
-				OrderID:  orderResponse.OrderID,
-				Price:    fmt.Sprintf("%f", order.Price),
-				Qty:      fmt.Sprintf("%f", order.Quantity),
-				Time:     time.Now(),
-			}
-			if order.Side == models.BUY {
-				t.IsBuyer = true
-				t.IsMaker = false
-			} else {
-				t.IsBuyer = false
-				t.IsMaker = true
-			}
-
-			if err := s.db.SaveTrade(t); err != nil {
-				logger.Error.Printf("Error saving buy trade: %v", err)
+			if err := s.db.SaveOrder(orderResponse); err != nil {
+				logger.Error.Printf("Error saving order: %v", err)
 			}
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", s.orderLimit)
 		}
-	case *models.OrderOCO:
+	case *models.PostOrderOCO:
 		if s.orderLimit >= len(s.orders) {
 			logger.Info.Printf("Side: %s, Quantity: %f, Price: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
 			if s.backtest {
@@ -157,38 +131,15 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 				return
 			}
 
-			resp, err := rest.OrderOCO(order)
+			ocoResponse, err := rest.PostOrderOCO(order)
 			if err != nil {
 				logger.Error.Printf("Failed to send OCO order: %v", err)
 				return
 			}
-
-			var ocoResponse models.OrderOCOResponse
-			err = json.Unmarshal(resp, &ocoResponse)
-			if err != nil {
-				logger.Error.Println("Error unmarshalling OCO response JSON:", err)
-				return
-			}
-
-			t := &models.Trade{
-				Strategy:    s.name,
-				Status:      string(models.EXECUTING),
-				Symbol:      ocoResponse.Symbol,
-				OrderListID: ocoResponse.OrderListID,
-				Price:       fmt.Sprintf("%f", order.Price),
-				Qty:         fmt.Sprintf("%f", order.Quantity),
-				Time:        time.Now(),
-			}
-			if order.Side == models.BUY {
-				t.IsBuyer = true
-				t.IsMaker = false
-			} else {
-				t.IsBuyer = false
-				t.IsMaker = true
-			}
-
-			if err := s.db.SaveTrade(t); err != nil {
-				logger.Error.Printf("Error saving sell trade: %v", err)
+			for _, resp := range ocoResponse.OrderReports {
+				if err := s.db.SaveOrder(&resp); err != nil {
+					logger.Error.Printf("Error saving OCO order: %v", err)
+				}
 			}
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", s.orderLimit)
@@ -202,7 +153,7 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 	stopPrice := takeProfit + takeProfit*s.stopLossPercentage
 	stopLimitPrice := stopPrice * 1.02
 
-	return &models.OrderOCO{
+	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.BUY,
 		Quantity:  quantity,
@@ -223,7 +174,7 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 	stopPrice := takeProfit - takeProfit*s.stopLossPercentage
 	stopLimitPrice := stopPrice * 0.98
 
-	return &models.OrderOCO{
+	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.SELL,
 		Quantity:  quantity,

@@ -53,7 +53,7 @@ func NewServer(
 
 func (s *Server) Run() {
 	go s.updateSymbolCache()
-	go s.monitorTrades()
+	go s.monitorOrders()
 
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
 	err := http.ListenAndServe(s.listenAddress, s.routes())
@@ -520,67 +520,42 @@ func (s *Server) updateSymbolCache() {
 	}
 }
 
-func (s *Server) monitorTrades() {
-	var id int64
-	var isOCO bool
-
+func (s *Server) monitorOrders() {
 	for {
-		trades, err := s.store.FetchTrades()
+		orders, err := s.store.FetchOrders()
 		if err != nil {
-			s.errorLog.Printf("error fetching trades from db: %v", err)
+			s.errorLog.Printf("error fetching orders from db: %v", err)
 			return
 		}
 
-		if len(trades) == 0 {
-			s.infoLog.Println("No trades found, going to sleep...")
+		if len(orders) == 0 {
+			s.infoLog.Println("No orders found, going to sleep...")
 			time.Sleep(60 * time.Second)
 			continue // Check again after sleep
 		}
 
-		for _, trade := range trades {
-			switch trade.Status {
+		for _, order := range orders {
+			fmt.Println("order:", order)
+			switch order.Status {
 			// Skip already finished trades
-			case "FILLED", "ALL_DONE":
+			case "FILLED", "EXPIRED":
 				continue
 			default:
-				if trade.OrderID != 0 {
-					id = trade.OrderID
-					isOCO = false
-				} else {
-					id = trade.OrderListID
-					isOCO = true
-				}
-				go s.monitorTrade(trade.Symbol, id, isOCO)
+				go s.monitorOrder(order)
 			}
 		}
 
-		s.infoLog.Println("monitorTrades() going to sleep for 60 seconds.")
+		s.infoLog.Println("monitorOrders() going to sleep for 60 seconds.")
 		time.Sleep(60 * time.Second)
 	}
 }
 
-func (s *Server) monitorTrade(symbol string, orderID int64, isOCOorder bool) {
-	var err error
-	var isEmpty bool
+func (s *Server) monitorOrder(ord *models.PostOrderResponse) {
 	for {
-		var o interface{}
-		if isOCOorder {
-			o, err = rest.GetOCOOrder(orderID)
-			if err != nil {
-				if re, ok := err.(*models.RequestError); ok && err != nil {
-					s.errorLog.Printf("error in oco order: %v", err)
-					time.Sleep(re.Timer * time.Second)
-					continue
-				} else if err.Error() == "empty response body" {
-					s.errorLog.Printf("error: %v", err)
-					isEmpty = true
-				} else {
-					s.errorLog.Printf("error getting OCO order: %v", err)
-					return
-				}
-			}
-		} else {
-			o, err = rest.GetOrder(symbol, orderID)
+		switch ord.OrderListID {
+		// normal order
+		case -1:
+			o, err := rest.GetOrder(ord.Symbol, ord.OrderID)
 			if err != nil {
 				if re, ok := err.(*models.RequestError); ok && err != nil {
 					s.errorLog.Printf("error in order: %v", err)
@@ -588,52 +563,64 @@ func (s *Server) monitorTrade(symbol string, orderID int64, isOCOorder bool) {
 					continue
 				} else if err.Error() == "empty response body" {
 					s.errorLog.Printf("error: %v", err)
-					isEmpty = true
+
+					// update order
+					if orderFound, err := rest.FindOrder(ord); err != nil {
+						err = s.store.UpdateOrder(orderFound)
+						if err != nil {
+							s.errorLog.Printf("error updating trade: %v", err)
+						}
+					}
+
 				} else {
 					s.errorLog.Printf("error getting order: %v", err)
 					return
 				}
 			}
-		}
+			if o.Status == "FILLED" {
+				s.infoLog.Printf("o %s! Updating Database...", o.Status)
 
-		// Process the order
-		switch order := o.(type) {
-		case *models.OrderResponse:
-			// API sends nothing if the order_list_id has been filled
-			if isEmpty {
-				err = s.store.UpdateTrade(orderID, models.FILLED)
-				if err != nil {
-					s.errorLog.Printf("error updating OCO trade: %v", err)
-					return
-				}
-				return
-			}
-			if order.Status == "FILLED" {
-				s.infoLog.Printf("Order %s! Updating Database...", order.Status)
-
-				err = s.store.UpdateTrade(order.OrderID, string(order.Status))
+				err = s.store.UpdateOrder(o)
 				if err != nil {
 					s.errorLog.Printf("error updating trade: %v", err)
 				}
 				// done updating, stop monitoring
 				return
 			}
-		case *models.OrderOCOResponse:
-			// API sends nothing if the order_list_id has been filled
-			if isEmpty {
-				err = s.store.UpdateTrade(orderID, models.ALL_DONE)
-				if err != nil {
-					s.errorLog.Printf("error updating OCO trade: %v", err)
+		// oco order
+		default:
+			o, err := rest.GetOCOOrder(ord.OrderListID)
+			if err != nil {
+				if re, ok := err.(*models.RequestError); ok && err != nil {
+					s.errorLog.Printf("error in oco order: %v", err)
+					time.Sleep(re.Timer * time.Second)
+					continue
+				} else if err.Error() == "empty response body" {
+					s.errorLog.Printf("error: %v", err)
+
+					// update order
+					if orderFound, err := rest.FindOrder(ord); err != nil {
+						fmt.Println("FindOrder() -> status:", orderFound.Status, "id:", orderFound.OrderID)
+						err = s.store.UpdateOrder(orderFound)
+						if err != nil {
+							s.errorLog.Printf("error updating trade: %v", err)
+						}
+					}
+
+				} else {
+					s.errorLog.Printf("error getting OCO order: %v", err)
 					return
 				}
-				return
 			}
-			if order.ListOrderStatus == "ALL_DONE" {
-				s.infoLog.Printf("OCO Order %s! Updating Database...", order.ListOrderStatus)
+			if o.ListOrderStatus == "ALL_DONE" {
+				s.infoLog.Printf("OCO Order %s! Updating Database...", o.ListOrderStatus)
 
-				err = s.store.UpdateTrade(order.OrderListID, string(order.ListOrderStatus))
-				if err != nil {
-					s.errorLog.Printf("error updating OCO trade: %v", err)
+				for _, resp := range o.OrderReports {
+					fmt.Println("OrderReport:\n\t", resp)
+					err = s.store.UpdateOrder(&resp)
+					if err != nil {
+						s.errorLog.Printf("error updating trade: %v", err)
+					}
 				}
 				// done updating, stop monitoring
 				return
