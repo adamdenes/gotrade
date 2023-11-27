@@ -554,7 +554,7 @@ func (s *Server) monitorOrders() {
 				continue
 			default:
 				s.infoLog.Printf("Monitoring order: %v", order)
-				go func(order *models.PostOrderResponse, m *sync.Mutex) {
+				go func(order *models.GetOrderResponse, m *sync.Mutex) {
 					// Mark the order as monitored
 					m.Lock()
 					monitoredOrders[order.OrderID] = struct{}{}
@@ -576,7 +576,7 @@ func (s *Server) monitorOrders() {
 	}
 }
 
-func (s *Server) monitorOrder(ord *models.PostOrderResponse) {
+func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 	for {
 		o, err := rest.GetOrder(ord.Symbol, ord.OrderID)
 		if err != nil {
@@ -608,7 +608,14 @@ func (s *Server) monitorOrder(ord *models.PostOrderResponse) {
 			o.OrderListID,
 			"| STATUS =",
 			o.Status,
+			"| TIME =",
+			o.Time,
+			"| UPDATE_TIME =",
+			o.UpdateTime,
+			"| WORKING_TIME =",
+			o.WorkingTime,
 		)
+
 		if o.Status != "NEW" {
 			s.infoLog.Printf("Order %s! Updating Database...", o.Status)
 

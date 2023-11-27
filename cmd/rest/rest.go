@@ -615,7 +615,7 @@ Notes:
 
   - The payload sample does not show all fields that can appear. Please refer to Conditional fields in Order Responses.
 */
-func GetAllOrders(symbol string) ([]*models.PostOrderResponse, error) {
+func GetAllOrders(symbol string) ([]*models.GetOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
@@ -633,7 +633,7 @@ func GetAllOrders(symbol string) ([]*models.PostOrderResponse, error) {
 		return nil, err
 	}
 
-	var or []*models.PostOrderResponse
+	var or []*models.GetOrderResponse
 
 	err = json.Unmarshal(resp, &or)
 	if err != nil {
@@ -748,7 +748,7 @@ Parameters:
 	recvWindow 	        LONG 	NO 	The value cannot be greater than 60000
 	timestamp 	        LONG 	YES
 */
-func GetOrder(symbol string, id int64) (*models.PostOrderResponse, error) {
+func GetOrder(symbol string, id int64) (*models.GetOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
@@ -770,7 +770,7 @@ func GetOrder(symbol string, id int64) (*models.PostOrderResponse, error) {
 		return nil, fmt.Errorf("empty response body")
 	}
 
-	order := new(models.PostOrderResponse)
+	order := new(models.GetOrderResponse)
 	err = json.Unmarshal(resp, order)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling order: %w", err)
@@ -779,14 +779,14 @@ func GetOrder(symbol string, id int64) (*models.PostOrderResponse, error) {
 	return order, nil
 }
 
-func FindOrder(order *models.PostOrderResponse) (*models.PostOrderResponse, error) {
+func FindOrder(order *models.GetOrderResponse) (*models.GetOrderResponse, error) {
 	orders, err := GetAllOrders(order.Symbol)
 	if err != nil {
 		return nil, fmt.Errorf("error querying all orders: %w", err)
 	}
 
 	var (
-		ord   *models.PostOrderResponse
+		ord   *models.GetOrderResponse
 		found bool
 	)
 	for _, o := range orders {
