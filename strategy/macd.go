@@ -151,7 +151,7 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 				logger.Error.Printf("Failed to send order: %v", err)
 				return
 			}
-			if err := m.db.SaveOrder(orderResponse); err != nil {
+			if err := m.db.SaveOrder(m.name, orderResponse); err != nil {
 				logger.Error.Printf("Error saving order: %v", err)
 			}
 		} else {
@@ -173,7 +173,7 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 			}
 
 			for _, resp := range ocoResponse.OrderReports {
-				if err := m.db.SaveOrder(&resp); err != nil {
+				if err := m.db.SaveOrder(m.name, &resp); err != nil {
 					logger.Error.Printf("Error saving OCO order: %v", err)
 				}
 			}

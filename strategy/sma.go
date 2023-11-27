@@ -116,7 +116,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 				logger.Error.Printf("Failed to send order: %v", err)
 				return
 			}
-			if err := s.db.SaveOrder(orderResponse); err != nil {
+			if err := s.db.SaveOrder(s.name, orderResponse); err != nil {
 				logger.Error.Printf("Error saving order: %v", err)
 			}
 		} else {
@@ -137,7 +137,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 				return
 			}
 			for _, resp := range ocoResponse.OrderReports {
-				if err := s.db.SaveOrder(&resp); err != nil {
+				if err := s.db.SaveOrder(s.name, &resp); err != nil {
 					logger.Error.Printf("Error saving OCO order: %v", err)
 				}
 			}
