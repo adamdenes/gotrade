@@ -578,9 +578,6 @@ func (s *Server) monitorOrders() {
 
 func (s *Server) monitorOrder(ord *models.PostOrderResponse) {
 	for {
-		// switch ord.OrderListID {
-		// normal order
-		// case -1:
 		o, err := rest.GetOrder(ord.Symbol, ord.OrderID)
 		if err != nil {
 			if re, ok := err.(*models.RequestError); ok && err != nil {
@@ -612,8 +609,8 @@ func (s *Server) monitorOrder(ord *models.PostOrderResponse) {
 			"| STATUS =",
 			o.Status,
 		)
-		if o.Status == "FILLED" {
-			s.infoLog.Printf("o %s! Updating Database...", o.Status)
+		if o.Status != "NEW" {
+			s.infoLog.Printf("Order %s! Updating Database...", o.Status)
 
 			err = s.store.UpdateOrder(o)
 			if err != nil {
@@ -622,46 +619,6 @@ func (s *Server) monitorOrder(ord *models.PostOrderResponse) {
 			// done updating, stop monitoring
 			return
 		}
-
-		// oco order
-		// default:
-		// 	o, err := rest.GetOCOOrder(ord.OrderListID)
-		// 	if err != nil {
-		// 		if re, ok := err.(*models.RequestError); ok && err != nil {
-		// 			s.errorLog.Printf("error in oco order: %v", err)
-		// 			time.Sleep(re.Timer * time.Second)
-		// 			continue
-		// 		} else if err.Error() == "empty response body" {
-		// 			s.errorLog.Printf("error: %v", err)
-		//
-		// 			// update order
-		// 			if orderFound, err := rest.FindOrder(ord); err != nil {
-		// 				fmt.Println("FindOrder() -> status:", orderFound.Status, "id:", orderFound.OrderID)
-		// 				err = s.store.UpdateOrder(orderFound)
-		// 				if err != nil {
-		// 					s.errorLog.Printf("error updating trade: %v", err)
-		// 				}
-		// 			}
-		//
-		// 		} else {
-		// 			s.errorLog.Printf("error getting OCO order: %v", err)
-		// 			return
-		// 		}
-		// 	}
-
-		// 	if o.ListOrderStatus == "ALL_DONE" {
-		// 		s.infoLog.Printf("OCO Order %s! Updating Database...", o.ListOrderStatus)
-		//
-		// 		for _, resp := range o.OrderReports {
-		// 			err = s.store.UpdateOrder(&resp)
-		// 			if err != nil {
-		// 				s.errorLog.Printf("error updating trade: %v", err)
-		// 			}
-		// 		}
-		// 		// done updating, stop monitoring
-		// 		return
-		// 	}
-		// }
 
 		time.Sleep(30 * time.Second)
 	}
