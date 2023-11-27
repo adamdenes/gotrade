@@ -891,8 +891,8 @@ func (ts *TimescaleDB) UpdateOrder(order *models.PostOrderResponse) error {
 		UPDATE binance.orders
 		SET
 			symbol = $1,
-			orderListId = $2,
-			clientOrderId = $3,
+			order_list_id = $2,
+			client_order_id= $3,
 			transact_time = $4,
 			price = $5,
 			orig_qty = $6,
