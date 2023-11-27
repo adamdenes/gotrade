@@ -53,22 +53,28 @@ SELECT add_compression_policy('binance.kline', INTERVAL '14d');
 
 CREATE TABLE IF NOT EXISTS binance.orders (
     symbol VARCHAR(255) NOT NULL,
+    strategy VARCHAR(255) NOT NULL,
     order_id BIGINT PRIMARY KEY,
     order_list_id BIGINT NOT NULL,
     client_order_id VARCHAR(255) NOT NULL,
-    transact_time TIMESTAMPTZ NOT NULL,
     price FLOAT NOT NULL,
-    orig_qty FLOAT,
+    orig_qty FLOAT NOT NULL,
     executed_qty FLOAT,
     cummulative_quote_qty FLOAT,
     status VARCHAR(255) NOT NULL,
-    time_in_force VARCHAR(255),
-    type VARCHAR(255),
+    time_in_force VARCHAR(255) NOT NULL,
+    type VARCHAR(255) NOT NULL,
     side VARCHAR(255) NOT NULL,
     stop_price FLOAT NOT NULL,
-    working_time BIGINT,
-    self_trade_prevention_mode VARCHAR(255)
+    iceberg_qty FLOAT NOT NULL,
+    time TIMESTAMPTZ NOT NULL,
+    update_time TIMESTAMPTZ NOT NULL,
+    is_working BOOLEAN NOT NULL,
+    working_time TIMESTAMPTZ NOT NULL,
+    orig_quote_order_qty FLOAT,
+    self_trade_prevention_mode VARCHAR(255) NOT NULL
 );
+
 
 CREATE TABLE IF NOT EXISTS binance.trades (
     id SERIAL PRIMARY KEY,

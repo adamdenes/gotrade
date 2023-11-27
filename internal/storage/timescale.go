@@ -721,14 +721,14 @@ func (ts *TimescaleDB) FetchTrades() ([]*models.Trade, error) {
 	return trades, nil
 }
 
-func (ts *TimescaleDB) SaveOrder(order *models.PostOrderResponse) error {
+func (ts *TimescaleDB) SaveOrder(strategy string, order *models.PostOrderResponse) error {
 	q := `
 		INSERT INTO binance.orders (
 			symbol,
+            strategy,
 			order_id,
             order_list_id,
 			client_order_id,
-			transact_time,
 			price,
 			orig_qty,
 			executed_qty,
@@ -738,10 +738,15 @@ func (ts *TimescaleDB) SaveOrder(order *models.PostOrderResponse) error {
 			type,
 			side,
 			stop_price,
+            iceberg_qty,
+            time,
+            update_time,
+            is_working,
 			working_time,
+            orig_quote_order_qty,
 			self_trade_prevention_mode
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
         );
 	`
 
@@ -794,10 +799,10 @@ func (ts *TimescaleDB) SaveOrder(order *models.PostOrderResponse) error {
 
 	_, err = stmt.Exec(
 		order.Symbol,
+		strategy,
 		order.OrderID,
 		order.OrderListID,
 		order.ClientOrderID,
-		time.UnixMilli(order.TransactTime),
 		price,
 		origQty,
 		executedQty,
@@ -807,7 +812,12 @@ func (ts *TimescaleDB) SaveOrder(order *models.PostOrderResponse) error {
 		order.Type,
 		order.Side,
 		stopPrice,
-		order.WorkingTime,
+		0.0, // iceberg_qty
+		time.UnixMilli(order.TransactTime),
+		time.UnixMilli(order.TransactTime),
+		true, // is_working
+		time.UnixMilli(order.TransactTime),
+		0.0, // orig_quote_order_qty
 		order.SelfTradePreventionMode,
 	)
 
@@ -818,8 +828,8 @@ func (ts *TimescaleDB) SaveOrder(order *models.PostOrderResponse) error {
 	return nil
 }
 
-func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
-	var orders []*models.PostOrderResponse
+func (ts *TimescaleDB) FetchOrders() ([]*models.GetOrderResponse, error) {
+	var orders []*models.GetOrderResponse
 
 	query := `
 		SELECT
@@ -827,7 +837,6 @@ func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
 			order_id,
             order_list_id,
 			client_order_id,
-			transact_time,
 			price,
 			orig_qty,
 			executed_qty,
@@ -837,7 +846,12 @@ func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
 			type,
 			side,
 			stop_price,
+            iceberg_qty,
+            time,
+            update_time,
+            is_working,
 			working_time,
+            orig_quote_order_qty,
 			self_trade_prevention_mode
 		FROM
 			binance.orders;
@@ -851,15 +865,16 @@ func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
 
 	for rows.Next() {
 		var (
-			order        models.PostOrderResponse
-			transactTime time.Time
+			order       models.GetOrderResponse
+			ttime       time.Time
+			updateTime  time.Time
+			workingTime time.Time
 		)
 		err := rows.Scan(
 			&order.Symbol,
 			&order.OrderID,
 			&order.OrderListID,
 			&order.ClientOrderID,
-			&transactTime,
 			&order.Price,
 			&order.OrigQty,
 			&order.ExecutedQty,
@@ -869,13 +884,21 @@ func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
 			&order.Type,
 			&order.Side,
 			&order.StopPrice,
-			&order.WorkingTime,
+			&order.IcebergQty,
+			&ttime,
+			&updateTime,
+			&order.IsWorking,
+			&workingTime,
+			&order.OrigQuoteOrderQty,
 			&order.SelfTradePreventionMode,
 		)
 		if err != nil {
 			return nil, err
 		}
-		order.TransactTime = transactTime.UnixMilli()
+
+		order.Time = ttime.UnixMilli()
+		order.UpdateTime = updateTime.UnixMilli()
+		order.WorkingTime = workingTime.UnixMilli()
 		orders = append(orders, &order)
 	}
 
@@ -886,27 +909,31 @@ func (ts *TimescaleDB) FetchOrders() ([]*models.PostOrderResponse, error) {
 	return orders, nil
 }
 
-func (ts *TimescaleDB) UpdateOrder(order *models.PostOrderResponse) error {
+func (ts *TimescaleDB) UpdateOrder(order *models.GetOrderResponse) error {
 	q := `
 		UPDATE binance.orders
 		SET
 			symbol = $1,
 			order_list_id = $2,
 			client_order_id= $3,
-			transact_time = $4,
-			price = $5,
-			orig_qty = $6,
-			executed_qty = $7,
-			cummulative_quote_qty = $8,
-			status = $9,
-			time_in_force = $10,
-			type = $11,
-			side = $12,
-			stop_price = $13,
-			working_time = $14,
-			self_trade_prevention_mode = $15
+			price = $4,
+			orig_qty = $5,
+			executed_qty = $6,
+			cummulative_quote_qty = $7,
+			status = $8,
+			time_in_force = $9,
+			type = $10,
+			side = $11,
+			stop_price = $12,
+            iceberg_qty = $13,
+            time = $14,
+            update_time = $15,
+            is_working = $16,
+			working_time = $17,
+            orig_quote_order_qty = $18,
+			self_trade_prevention_mode = $19
 		WHERE
-			order_id = $16;
+			order_id = $20;
 	`
 
 	stmt, err := ts.db.Prepare(q)
@@ -956,11 +983,26 @@ func (ts *TimescaleDB) UpdateOrder(order *models.PostOrderResponse) error {
 		}
 	}
 
+	var icebergQty float64
+	if order.IcebergQty != "" {
+		icebergQty, err = strconv.ParseFloat(order.IcebergQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	var origQuoteOrderQty float64
+	if order.OrigQuoteOrderQty != "" {
+		origQuoteOrderQty, err = strconv.ParseFloat(order.OrigQuoteOrderQty, 64)
+		if err != nil {
+			return err
+		}
+	}
+
 	_, err = stmt.Exec(
 		order.Symbol,
 		order.OrderListID,
 		order.ClientOrderID,
-		time.UnixMilli(order.TransactTime),
 		price,
 		origQty,
 		executedQty,
@@ -970,7 +1012,12 @@ func (ts *TimescaleDB) UpdateOrder(order *models.PostOrderResponse) error {
 		order.Type,
 		order.Side,
 		stopPrice,
-		order.WorkingTime,
+		icebergQty,
+		time.UnixMilli(order.Time),
+		time.UnixMilli(order.UpdateTime),
+		order.IsWorking,
+		time.UnixMilli(order.WorkingTime),
+		origQuoteOrderQty,
 		order.SelfTradePreventionMode,
 		order.OrderID,
 	)
