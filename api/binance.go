@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
@@ -26,14 +27,20 @@ type Binance struct {
 	debugLog    *log.Logger
 	errorLog    *log.Logger
 	dataChannel chan []byte
+	closing     context.Context
+	closeSignal context.CancelFunc
+	wg          sync.WaitGroup
 }
 
 func NewBinance(ctx context.Context, cs <-chan *models.CandleSubsciption) *Binance {
+	closingCtx, cancelFunc := context.WithCancel(context.Background())
 	b := &Binance{
 		ctx:         ctx,
 		debugLog:    logger.Debug,
 		errorLog:    logger.Error,
 		dataChannel: make(chan []byte, 1),
+		closing:     closingCtx,
+		closeSignal: cancelFunc,
 	}
 
 	b.debugLog.Printf(
@@ -46,14 +53,17 @@ func NewBinance(ctx context.Context, cs <-chan *models.CandleSubsciption) *Binan
 }
 
 func (b *Binance) close() {
-	b.debugLog.Printf("Closing data channel: %v\n", b.dataChannel)
+	// Signal all goroutines to stop sending messages
+	b.closeSignal()
+
+	// Wait for all goroutines to finish
+	b.wg.Wait()
+
+	// Now it's safe to close the channel
 	close(b.dataChannel)
-	b.debugLog.Printf("Closing Binance WebSocket connection on: %v\n", &b.ws)
+
+	// Close the WebSocket connection
 	b.ws.Close(websocket.StatusNormalClosure, "Closed by client")
-	b.debugLog.Printf(
-		"BINANCE connection closed successfully for request: %v\n",
-		b.ctx.Value(RequestIDContextKey),
-	)
 }
 
 func (b *Binance) subscribe(subdata *models.CandleSubsciption) error {
@@ -78,28 +88,36 @@ func (b *Binance) subscribe(subdata *models.CandleSubsciption) error {
 }
 
 func (b *Binance) handleWsLoop() {
+	b.wg.Add(1)
+	defer b.wg.Done()
+
 	b.debugLog.Printf("Websocket loop started on channel: %v\n", b.dataChannel)
 	for {
-		b.ws.SetReadLimit(65536)
-		_, msg, err := b.ws.Read(b.ctx)
-		if err != nil {
-			b.errorLog.Println("error:", err)
-			if errors.Is(err, b.ctx.Err()) {
-				// StatusCode(-1) -> just closing/switching to other stream
-				b.debugLog.Println("Context cancelled successfully.", err)
-				break
+		select {
+		case <-b.closing.Done():
+			return // Stop the goroutine if the closing signal is received
+		default:
+			b.ws.SetReadLimit(65536)
+			_, msg, err := b.ws.Read(b.ctx)
+			if err != nil {
+				b.errorLog.Println("error:", err)
+				if errors.Is(err, b.ctx.Err()) {
+					// StatusCode(-1) -> just closing/switching to other stream
+					b.debugLog.Println("Context cancelled successfully.", err)
+					break
+				}
+				if errors.Is(err, net.ErrClosed) {
+					b.errorLog.Printf("Unexpected error: %v", err)
+					break
+				}
+				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+					b.errorLog.Printf("WebSocket closed: %v", err)
+					break
+				}
+				continue
 			}
-			if errors.Is(err, net.ErrClosed) {
-				b.errorLog.Printf("Unexpected error: %v", err)
-				break
-			}
-			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-				b.errorLog.Printf("WebSocket closed: %v", err)
-				break
-			}
-			continue
+			b.dataChannel <- msg
 		}
-		b.dataChannel <- msg
 	}
 }
 
