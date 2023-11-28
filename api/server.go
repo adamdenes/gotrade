@@ -677,7 +677,7 @@ func (s *Server) processBars(
 
 		// Only evaluate closed bars
 		if kws.Data.Kline.IsKlineClosed {
-			s.infoLog.Println(kws)
+			// s.infoLog.Println(kws)
 			bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
 			bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
 			bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
