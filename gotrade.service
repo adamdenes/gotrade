@@ -1,0 +1,26 @@
+# Sample systemd service file
+# /etc/systemd/system/gotrade.service
+
+[Unit]
+Description=GoTrade Service
+After=network.target
+
+[Service]
+# where the project is cloned
+WorkingDirectory=/home/xyz/projects/gotrade
+
+# modify to your needs
+ExecStart=/bin/bash -c "docker start timescale && /home/xyz/projects/gotrade/bin/gotrade"
+ExecStop=/usr/bin/make -C /home/xzy/projects/go/gotrade stop
+User=xyz
+Group=xyz
+
+Restart=always
+RestartSec=10
+
+# for exmaple database DSN and API keys
+Environment="VARIABLE=value"
+Environment="ANOTHER_VARIABLE=another value"
+
+[Install]
+WantedBy=multi-user.target
