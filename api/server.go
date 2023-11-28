@@ -31,7 +31,7 @@ type Server struct {
 	errorLog      *log.Logger
 	templateCache map[string]*template.Template
 	symbolCache   map[string]struct{}
-	botContexts   map[int]context.CancelFunc
+	botContexts   sync.Map
 }
 
 func NewServer(
@@ -47,7 +47,7 @@ func NewServer(
 		errorLog:      logger.Error,
 		templateCache: templates,
 		symbolCache:   make(map[string]struct{}, 1),
-		botContexts:   make(map[int]context.CancelFunc),
+		botContexts:   sync.Map{},
 	}
 }
 
@@ -142,7 +142,7 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Update bot context map
 	ctx, cancel := context.WithCancel(context.Background())
-	s.botContexts[bot.ID] = cancel
+	s.botContexts.Store(bot.ID, cancel)
 
 	// Get data from exchange
 	b := connectExchange(ctx, kr.Symbol, kr.Interval)
@@ -173,14 +173,14 @@ func (s *Server) deleteBotHandler(w http.ResponseWriter, r *http.Request) {
 
 	botID := r.URL.Query().Get("id")
 	if botID == "" {
-		s.errorLog.Panicln("Bot ID is required for deletion.")
+		s.errorLog.Println("Bot ID is required for deletion.")
 		s.clientError(w, http.StatusBadRequest)
 		return
 	}
 
 	id, err := strconv.Atoi(botID)
 	if err != nil {
-		s.errorLog.Panicln("Invalid bot ID")
+		s.errorLog.Println("Invalid bot ID")
 		s.clientError(w, http.StatusBadRequest)
 		return
 	}
@@ -193,11 +193,11 @@ func (s *Server) deleteBotHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cancel the WebSocket connection context
-	if cancel, ok := s.botContexts[id]; ok {
-		cancel()
-		delete(s.botContexts, id)
+	if cancel, ok := s.botContexts.LoadAndDelete(id); ok {
+		if c, ok := cancel.(context.CancelFunc); ok {
+			c() // Cancel the context
+		}
 	}
-
 	s.writeResponse(w, "ok")
 }
 
@@ -524,7 +524,7 @@ func (s *Server) superviseBots() {
 		s.infoLog.Printf("#%d. bot starting up from db -> %+v\n", i+1, bot)
 
 		ctx, cancel := context.WithCancel(context.Background())
-		s.botContexts[bot.ID] = cancel
+		s.botContexts.Store(bot.ID, cancel)
 
 		strat, err := getStrategy(bot.Strategy, s.store)
 		if err != nil {
