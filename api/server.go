@@ -608,7 +608,7 @@ func (s *Server) monitorOrders() {
 			}
 		}
 
-		s.infoLog.Println("monitorOrders() going to sleep for 60 seconds.")
+		// s.infoLog.Println("monitorOrders() going to sleep for 60 seconds.")
 		time.Sleep(60 * time.Second)
 	}
 }
@@ -638,23 +638,8 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 			}
 		}
 
-		s.infoLog.Println(
-			"ORDER RESP:\tID =",
-			o.OrderID,
-			"| LIST_ID =",
-			o.OrderListID,
-			"| STATUS =",
-			o.Status,
-			"| TIME =",
-			o.Time,
-			"| UPDATE_TIME =",
-			o.UpdateTime,
-			"| WORKING_TIME =",
-			o.WorkingTime,
-		)
-
 		if o.Status != "NEW" {
-			s.infoLog.Printf("Order %s! Updating Database...", o.Status)
+			s.infoLog.Printf("Order ID=%v Status=%v! Updating Database...", o.OrderID, o.Status)
 
 			err = s.store.UpdateOrder(o)
 			if err != nil {
