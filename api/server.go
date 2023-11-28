@@ -53,6 +53,7 @@ func NewServer(
 
 func (s *Server) Run() {
 	go s.updateSymbolCache()
+	go s.superviseBots()
 	go s.monitorOrders()
 
 	s.infoLog.Printf("Server listening on localhost%s\n", s.listenAddress)
@@ -144,21 +145,16 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 	s.botContexts[bot.ID] = cancel
 
 	// Get data from exchange
-	cs := &models.CandleSubsciption{Symbol: strings.ToLower(kr.Symbol), Interval: kr.Interval}
-	b := NewBinance(ctx, inbound(cs))
+	b := connectExchange(ctx, kr.Symbol, kr.Interval)
 
 	// Select strategy
-	strategies := map[string]backtest.Strategy[any]{
-		"sma":  strategy.NewSMAStrategy(12, 24, 5, s.store),
-		"macd": strategy.NewMACDStrategy(5, s.store),
-	}
-	selectedStrategy, found := strategies[kr.Strat]
-	if !found {
+	selectedStrategy, err := getStrategy(kr.Strat, s.store)
+	if err != nil {
 		s.clientError(w, http.StatusBadRequest)
 		return
 	}
 
-	go s.processBars(kr, selectedStrategy, b.dataChannel)
+	go s.processBars(kr.Symbol, kr.Interval, selectedStrategy, b.dataChannel)
 
 	select {
 	case <-r.Context().Done():
@@ -222,20 +218,15 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithCancel(r.Context())
 	if !local {
 		// Construct `Binance` with a read-only channel and start processing incoming data
-		cs := &models.CandleSubsciption{Symbol: symbol, Interval: interval}
-		b := NewBinance(ctx, inbound(cs))
+		b := connectExchange(ctx, symbol, interval)
 
 		defer s.cleanUp(w, r, conn, cancel)
 		go receiver[[]byte](r.Context(), b.dataChannel, conn)
 	} else {
 		defer s.cleanUp(w, r, conn, cancel)
 
-		strategies := map[string]backtest.Strategy[any]{
-			"sma":  strategy.NewSMAStrategy(12, 24, 5, s.store),
-			"macd": strategy.NewMACDStrategy(5, s.store),
-		}
-		selectedStrategy, found := strategies[strat]
-		if !found {
+		selectedStrategy, err := getStrategy(strat, s.store)
+		if err != nil {
 			s.clientError(w, http.StatusBadRequest)
 			return
 		}
@@ -520,6 +511,52 @@ func (s *Server) updateSymbolCache() {
 	}
 }
 
+// superviseBots will restart bots based on database presence
+func (s *Server) superviseBots() {
+	// Fetch bots from DB -> GetBots
+	bots, err := s.store.GetBots()
+	if err != nil {
+		s.errorLog.Println(err)
+		return
+	}
+	// Start bot connection with exchange again
+	for i, bot := range bots {
+		s.infoLog.Printf("#%d. bot starting up from db -> %+v\n", i+1, bot)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		s.botContexts[bot.ID] = cancel
+
+		strat, err := getStrategy(bot.Strategy, s.store)
+		if err != nil {
+			s.errorLog.Println(err)
+			return
+		}
+
+		b := connectExchange(ctx, bot.Symbol, bot.Interval)
+		go s.processBars(bot.Symbol, bot.Interval, strat, b.dataChannel)
+	}
+}
+
+func connectExchange(ctx context.Context, symbol string, interval string) *Binance {
+	cs := &models.CandleSubsciption{
+		Symbol:   strings.ToLower(symbol),
+		Interval: interval,
+	}
+	return NewBinance(ctx, inbound(cs))
+}
+
+func getStrategy(strat string, db storage.Storage) (backtest.Strategy[any], error) {
+	strategies := map[string]backtest.Strategy[any]{
+		"sma":  strategy.NewSMAStrategy(12, 24, 5, db),
+		"macd": strategy.NewMACDStrategy(5, db),
+	}
+	strategy, found := strategies[strat]
+	if !found {
+		return nil, fmt.Errorf("Error, startegy not found!")
+	}
+	return strategy, nil
+}
+
 func (s *Server) monitorOrders() {
 	// Map to keep track of monitored order IDs and a mutex to protect it
 	monitoredOrders := make(map[int64]struct{})
@@ -632,14 +669,14 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 }
 
 func (s *Server) processBars(
-	kr *models.KlineRequest,
+	symbol, interval string,
 	strategy backtest.Strategy[any],
 	dc chan []byte,
 ) {
 	// Prefetch data here for talib calculations
-	bars, err := convertKlines(kr.Symbol, kr.Interval)
+	bars, err := convertKlines(symbol, interval)
 	strategy.SetData(bars)
-	strategy.SetAsset(kr.Symbol)
+	strategy.SetAsset(symbol)
 
 	for data := range dc {
 		// Unmarshal bar data
