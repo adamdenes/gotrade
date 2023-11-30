@@ -97,6 +97,8 @@ func getBalance(asset string) (float64, error) {
 		} `json:"balances"`
 	}
 
+	logger.Debug.Println("ACC info:")
+	logger.Debug.Println("\t", string(acc))
 	if err := json.Unmarshal(acc, &balances); err != nil {
 		return 0.0, fmt.Errorf("error marshalling account data: %w", err)
 	}
