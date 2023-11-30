@@ -2,6 +2,8 @@ package strategy
 
 import (
 	"testing"
+
+	"github.com/markcheno/go-talib"
 )
 
 func Test_crossover(t *testing.T) {
@@ -80,7 +82,7 @@ func Test_crossover(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := crossover(tt.args.series1, tt.args.series2); got != tt.want {
+			if got := talib.Crossover(tt.args.series1, tt.args.series2); got != tt.want {
 				t.Errorf("crossover() = %v, want %v", got, tt.want)
 			}
 		})
@@ -134,7 +136,7 @@ func Test_crossunder(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := crossunder(tt.args.series1, tt.args.series2); got != tt.want {
+			if got := talib.Crossunder(tt.args.series1, tt.args.series2); got != tt.want {
 				t.Errorf("crossunder() = %v, want %v", got, tt.want)
 			}
 		})
