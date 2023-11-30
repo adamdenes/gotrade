@@ -35,6 +35,10 @@ func NewTimescaleDB(dsn string) (*TimescaleDB, error) {
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
 	return &TimescaleDB{db: db}, nil
 }
 
