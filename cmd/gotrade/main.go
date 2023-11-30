@@ -26,6 +26,8 @@ func main() {
 	}
 	defer db.Close()
 
+	db.Init()
+
 	go api.PollHistoricalData(db)
 
 	server := api.NewServer(*addr, db, tc)

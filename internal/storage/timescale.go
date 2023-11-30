@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,39 @@ func NewTimescaleDB(dsn string) (*TimescaleDB, error) {
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	return &TimescaleDB{db: db}, nil
+}
+
+func (ts *TimescaleDB) Init() {
+	password := os.Getenv("DB_PASSWORD")
+	if password == "" {
+		logger.Debug.Fatal("DB_PASSWORD environment variable is not set")
+	}
+
+	// Creating a role if it does not exist
+	q := fmt.Sprintf(`
+    DO
+    $$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web') THEN
+            CREATE ROLE web WITH LOGIN PASSWORD '%s';
+        END IF;
+    END
+    $$;`, password)
+
+	_, err := ts.db.Exec(q)
+	if err != nil {
+		logger.Debug.Fatalf("failed to create database role: %v", err)
+		return
+	}
+
+	q2 := "GRANT ALL PRIVILEGES ON DATABASE binance_db TO web;"
+	_, err = ts.db.Exec(q2)
+	if err != nil {
+		logger.Debug.Fatalf("failed to set database privileges to role: %v", err)
+		return
+	}
+
+	logger.Debug.Println("Database role and privileges set up successfully.")
 }
 
 func (ts *TimescaleDB) Close() {
