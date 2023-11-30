@@ -23,11 +23,12 @@ RUN wget https://github.com/golang-migrate/migrate/releases/download/v4.15.1/mig
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/gotrade /root/gotrade
-
 # Copy the entrypoint script to the final image
 COPY --from=builder /app/entry-point.sh /root/entry-point.sh
 # Copy migration files
 COPY --from=builder /app/migrations /root/migrations
+# Copy template files for webserver
+COPY --from=builder /app/web /root/web
 
 # Make the script executable
 RUN chmod +x /root/entry-point.sh
