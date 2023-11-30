@@ -14,7 +14,9 @@ services:
       timeout: 5s
       retries: 5
     restart: on-failure
-
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      
   app:
     build: .
     image: gotrade-app
@@ -29,3 +31,6 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+
+volumes:
+  timescaledb_data:
