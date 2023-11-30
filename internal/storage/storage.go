@@ -28,4 +28,5 @@ type Storage interface {
 	GetBot(string, string) (*models.TradingBot, error)
 	DeleteBot(int) error
 	GetBots() ([]*models.TradingBot, error)
+	RefreshContinuousAggregate(string) error
 }

@@ -180,6 +180,21 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 		}
 	}
 	wg.Wait()
+
+	aggregates := []string{
+		"binance.aggregate_1w",
+		"binance.aggregate_1d",
+		"binance.aggregate_4h",
+		"binance.aggregate_1h",
+		"binance.aggregate_5m",
+		"binance.aggregate_1m",
+	}
+	for _, agg := range aggregates {
+		err := s.RefreshContinuousAggregate(agg)
+		if err != nil {
+			logger.Debug.Fatalf("failed to refresh continuous aggregate %s: %v", agg, err)
+		}
+	}
 }
 
 // Concurrently make HTTP requests for given URLs (zip files), and stream them to the database

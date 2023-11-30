@@ -1144,6 +1144,16 @@ func (ts *TimescaleDB) GetBots() ([]*models.TradingBot, error) {
 	return bots, nil
 }
 
+func (ts *TimescaleDB) RefreshContinuousAggregate(agg string) error {
+	_, err := ts.db.Exec(
+		fmt.Sprintf(
+			"CALL refresh_continuous_aggregate('%s', now()::timestamp - INTERVAL '1 year', now()::timestamp);",
+			agg,
+		),
+	)
+	return err
+}
+
 // Using CopyFromSource interface
 type csvCopySource struct {
 	symbolIntervalID int64
