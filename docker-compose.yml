@@ -16,7 +16,7 @@ services:
     restart: on-failure
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
-      
+
   app:
     build: .
     image: gotrade-app

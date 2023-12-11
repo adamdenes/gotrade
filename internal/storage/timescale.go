@@ -494,16 +494,13 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 
 		// Send queued up queries
 		br := conn.SendBatch(ctx, &batch)
+		defer br.Close()
 
 		_, err = br.Exec()
 		if err != nil {
 			return err
 		}
 		logger.Debug.Println("Total rows:", len(rawData))
-
-		if err := conn.Close(ctx); err != nil {
-			return err
-		}
 
 		return nil
 	})
@@ -1145,13 +1142,18 @@ func (ts *TimescaleDB) GetBots() ([]*models.TradingBot, error) {
 }
 
 func (ts *TimescaleDB) RefreshContinuousAggregate(agg string) error {
-	_, err := ts.db.Exec(
-		fmt.Sprintf(
-			"CALL refresh_continuous_aggregate('%s', now()::timestamp - INTERVAL '1 year', now()::timestamp);",
-			agg,
-		),
+	q := fmt.Sprintf(
+		"CALL refresh_continuous_aggregate('%s', now()::timestamp - INTERVAL '1 year', now()::timestamp);",
+		agg,
 	)
-	return err
+	_, err := ts.db.Exec(q)
+	if err != nil {
+		logger.Error.Println(err)
+		return err
+	}
+
+	logger.Debug.Println(q)
+	return nil
 }
 
 // Using CopyFromSource interface
