@@ -207,7 +207,8 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	takeProfit := price * 1.015
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice := takeProfit - takeProfit*m.stopLossPercentage
+	// stopPrice := takeProfit - takeProfit*m.stopLossPercentage
+	stopPrice := price * 0.995
 	stopLimitPrice := stopPrice * 0.99
 
 	return &models.PostOrderOCO{

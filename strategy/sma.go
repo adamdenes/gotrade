@@ -171,7 +171,8 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	takeProfit := price * 1.05
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice := takeProfit - takeProfit*s.stopLossPercentage
+	// stopPrice := takeProfit - takeProfit*s.stopLossPercentage
+	stopPrice := price * 0.995
 	stopLimitPrice := stopPrice * 0.98
 
 	return &models.PostOrderOCO{
