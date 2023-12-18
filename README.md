@@ -8,3 +8,7 @@
 * [x] make sure to use go-talib
 * [x] pre-fetch data for indicators to avoid long wait times before the first trade
 * [x] make strategies use the pre-fetched data (macd done, sma left)
+
+## Improvement idea
+* [] create a telegram/discord bot for instant notifications
+* [] add bot commands to manage the app

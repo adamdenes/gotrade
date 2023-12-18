@@ -630,6 +630,9 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 					if err != nil {
 						s.errorLog.Printf("error updating trade: %v", err)
 					}
+				} else {
+					// order not found
+					s.errorLog.Printf("error finding order: %v", err)
 				}
 
 			} else {
