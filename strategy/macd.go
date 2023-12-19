@@ -83,8 +83,8 @@ func (m *MACDStrategy) Execute() {
 			// - macd crossover happens under the zero line
 			if talib.Crossover(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] > 0 &&
 				m.macd[len(m.macd)-1] < 0 {
-				// Generate a "BUY" signal
-				order = m.Buy(m.asset, quantity, currentPrice)
+				// Generate a "SELL" signal
+				order = m.Sell(m.asset, quantity, currentPrice)
 				m.PlaceOrder(order)
 			}
 		} else if currentPrice < ema200 {
@@ -95,8 +95,8 @@ func (m *MACDStrategy) Execute() {
 			// - macd crossover happens above zero line
 			if talib.Crossunder(m.macd, m.macdsignal) && m.macdhist[len(m.macdhist)-1] < 0 &&
 				m.macd[len(m.macd)-1] > 0 {
-				// Generate a "SELL" signal
-				order = m.Sell(m.asset, quantity, currentPrice)
+				// Generate a "BUY" signal
+				order = m.Buy(m.asset, quantity, currentPrice)
 				m.PlaceOrder(order)
 			}
 		}
@@ -207,8 +207,7 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	takeProfit := price * 1.015
 	// SELL: Limit Price > Last Price > Stop Price
-	// stopPrice := takeProfit - takeProfit*m.stopLossPercentage
-	stopPrice := price * 0.995
+	stopPrice := takeProfit - takeProfit*m.stopLossPercentage
 	stopLimitPrice := stopPrice * 0.99
 
 	return &models.PostOrderOCO{

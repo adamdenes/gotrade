@@ -85,13 +85,14 @@ func (s *SMAStrategy) Execute() {
 		ema200 := s.ema200[len(s.ema200)-1]
 		var order models.TypeOfOrder
 
+		// Flipping buy/sell orders
 		if currentPrice > ema200 && talib.Crossover(s.shortSMA, s.longSMA) {
-			// Generate buy signal based on SMA crossover and EMA 200 condition
-			order = s.Buy(s.asset, quantity, currentPrice)
-			s.PlaceOrder(order)
-		} else if currentPrice < ema200 && talib.Crossunder(s.shortSMA, s.longSMA) {
 			// Generate sell signal based on SMA crossunder or EMA 200 condition
 			order = s.Sell(s.asset, quantity, currentPrice)
+			s.PlaceOrder(order)
+		} else if currentPrice < ema200 && talib.Crossunder(s.shortSMA, s.longSMA) {
+			// Generate buy signal based on SMA crossover and EMA 200 condition
+			order = s.Buy(s.asset, quantity, currentPrice)
 			s.PlaceOrder(order)
 		}
 	}
@@ -171,8 +172,7 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	takeProfit := price * 1.05
 	// SELL: Limit Price > Last Price > Stop Price
-	// stopPrice := takeProfit - takeProfit*s.stopLossPercentage
-	stopPrice := price * 0.995
+	stopPrice := takeProfit - takeProfit*s.stopLossPercentage
 	stopLimitPrice := stopPrice * 0.98
 
 	return &models.PostOrderOCO{
