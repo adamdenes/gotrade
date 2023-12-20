@@ -625,14 +625,17 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 				s.errorLog.Printf("error: %v", err)
 
 				// update order
-				if orderFound, err := rest.FindOrder(ord); err != nil {
+				if orderFound, err := rest.FindOrder(ord); err == nil && orderFound != nil {
+					s.infoLog.Printf("Found order with ID=%d and Status=%s. Updating Database...", orderFound.OrderID, orderFound.Status)
+					o = orderFound
 					err = s.store.UpdateOrder(orderFound)
 					if err != nil {
 						s.errorLog.Printf("error updating trade: %v", err)
 					}
 				} else {
-					// order not found
+					s.infoLog.Printf("Order with 'ID=%d and Status=%s' not found, stopping monitoring", ord.OrderID, ord.Status)
 					s.errorLog.Printf("error finding order: %v", err)
+					return
 				}
 
 			} else {
