@@ -29,6 +29,10 @@ type MACDStrategy struct {
 	macdsignal         []float64
 	macdhist           []float64
 	ema200             []float64
+	highs              []float64
+	lows               []float64
+	swingHigh          float64
+	swingLow           float64
 }
 
 func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDStrategy] {
@@ -36,17 +40,23 @@ func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDS
 		name:               "macd",
 		db:                 db,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.15,
+		stopLossPercentage: 0.05,
 		orderLimit:         orderLimit,
 	}
 }
 
 func (m *MACDStrategy) Execute() {
 	m.GetClosePrices()
+
 	currBar := m.data[len(m.data)-1]
+	m.highs = append(m.highs, currBar.High)
+	m.lows = append(m.lows, currBar.Low)
 	m.closePrices = append(m.closePrices, currBar.Close)
 	currentPrice := m.closePrices[len(m.closePrices)-1]
 
+	// Get swing high and low from the nearest 10 bar highs and lows
+	m.GetRecentHigh()
+	m.GetRecentLow()
 	// Get entry based on MACD & EMA200
 	m.EMA()
 	m.MACD()
@@ -184,10 +194,20 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 }
 
 func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
-	takeProfit := price * 0.985
 	// BUY: Limit Price < Last Price < Stop Price
-	stopPrice := takeProfit + takeProfit*m.stopLossPercentage
-	stopLimitPrice := stopPrice * 1.01
+	takeProfit, stopPrice, stopLimitPrice, riskAmount := m.calculateParams("BUY", price, 1.5)
+
+	logger.Debug.Println(
+		"price =", price,
+		"tp =",
+		takeProfit,
+		"sp =",
+		stopPrice,
+		"slp =",
+		stopLimitPrice,
+		"riska =",
+		riskAmount,
+	)
 
 	return &models.PostOrderOCO{
 		Symbol:    asset,
@@ -205,10 +225,20 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 }
 
 func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
-	takeProfit := price * 1.015
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice := takeProfit - takeProfit*m.stopLossPercentage
-	stopLimitPrice := stopPrice * 0.99
+	takeProfit, stopPrice, stopLimitPrice, riskAmount := m.calculateParams("SELL", price, 1.5)
+
+	logger.Debug.Println(
+		"price =", price,
+		"tp =",
+		takeProfit,
+		"sp =",
+		stopPrice,
+		"slp =",
+		stopLimitPrice,
+		"riska =",
+		riskAmount,
+	)
 
 	return &models.PostOrderOCO{
 		Symbol:    asset,
@@ -261,13 +291,85 @@ func (m *MACDStrategy) SetAsset(asset string) {
 	m.asset = asset
 }
 
-// getClosePrices() takes the close prices from the bar.
-// It returns if closePrices has already items in it.
 func (m *MACDStrategy) GetClosePrices() {
 	if len(m.closePrices) > 0 {
 		return
 	}
 	for _, bar := range m.data {
 		m.closePrices = append(m.closePrices, bar.Close)
+		m.highs = append(m.highs, bar.High)
+		m.lows = append(m.lows, bar.Low)
 	}
+}
+
+func (m *MACDStrategy) GetRecentHigh() {
+	if len(m.highs) >= 10 {
+		m.highs = m.highs[len(m.highs)-10:]
+		max_h := m.highs[0]
+		for i := 0; i < len(m.highs); i++ {
+			if m.highs[i] > max_h {
+				max_h = m.highs[i]
+			}
+		}
+		m.swingHigh = max_h
+	}
+	// Keep the last 10 elements
+	if len(m.highs) > 10 {
+		m.highs = m.highs[1:]
+	}
+}
+
+func (m *MACDStrategy) GetRecentLow() {
+	if len(m.lows) >= 10 {
+		m.lows = m.lows[len(m.lows)-10:]
+		min_l := m.lows[0]
+		for i := 0; i < len(m.lows); i++ {
+			if m.lows[i] < min_l {
+				min_l = m.lows[i]
+			}
+		}
+		m.swingLow = min_l
+	}
+	// Keep the last 10 elements
+	if len(m.lows) > 10 {
+		m.lows = m.lows[1:]
+	}
+}
+
+func (m *MACDStrategy) calculateParams(
+	side string,
+	currentPrice, riskRewardRatio float64,
+) (float64, float64, float64, float64) {
+	var stopPrice, takeProfit, stopLimitPrice, riskAmount float64
+
+	if side == "SELL" {
+		// SELL: Limit Price > Last Price > Stop Price
+		// Calculate parameters for sell orders
+		stopPrice = m.swingHigh * (1 + m.stopLossPercentage)
+		if stopPrice >= currentPrice {
+			stopPrice = currentPrice * (1 - m.stopLossPercentage)
+		}
+		riskAmount = math.Abs(currentPrice - stopPrice)
+		takeProfit = currentPrice + (riskAmount * riskRewardRatio)
+		if takeProfit <= currentPrice {
+			takeProfit = currentPrice * (1 + m.stopLossPercentage)
+		}
+		stopLimitPrice = stopPrice * 0.99 // Example adjustment
+	} else if side == "BUY" {
+
+		// BUY: Limit Price < Last Price < Stop Price
+		// Calculate parameters for buy orders
+		stopPrice = m.swingLow * (1 - m.stopLossPercentage)
+		if stopPrice <= currentPrice {
+			stopPrice = currentPrice * (1 + m.stopLossPercentage)
+		}
+		riskAmount = math.Abs(stopPrice - currentPrice)
+		takeProfit = currentPrice - (riskAmount * riskRewardRatio)
+		if takeProfit >= currentPrice {
+			takeProfit = currentPrice * (1 - m.stopLossPercentage)
+		}
+		stopLimitPrice = stopPrice * 1.01
+	}
+
+	return stopPrice, takeProfit, stopLimitPrice, riskAmount
 }

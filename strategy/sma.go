@@ -29,7 +29,11 @@ type SMAStrategy struct {
 	shortSMA           []float64             // Calculated short SMA values
 	longSMA            []float64             // Calculated long SMA values
 	ema200             []float64             // EMA 200 values
-	closePrices        []float64
+	closePrices        []float64             // Close prices
+	highs              []float64             // High prices
+	lows               []float64             // Low prices
+	swingHigh          float64
+	swingLow           float64
 }
 
 // NewSMAStrategy creates a new SMA crossover strategy with the specified short and long periods.
@@ -44,7 +48,7 @@ func NewSMAStrategy(
 		shortPeriod:        shortPeriod,
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.15,
+		stopLossPercentage: 0.05,
 		orderLimit:         orderLimit,
 	}
 }
@@ -52,10 +56,16 @@ func NewSMAStrategy(
 // Execute implements the Execute method of the BacktestStrategy interface.
 func (s *SMAStrategy) Execute() {
 	s.GetClosePrices()
+
 	currBar := s.data[len(s.data)-1]
+	s.highs = append(s.highs, currBar.High)
+	s.lows = append(s.lows, currBar.Low)
 	s.closePrices = append(s.closePrices, currBar.Close)
 	currentPrice := s.closePrices[len(s.closePrices)-1]
 
+	// Get swing high and low from the nearest 10 bar highs and lows
+	s.GetRecentHigh()
+	s.GetRecentLow()
 	// Calculate SMA values
 	s.calculateSMAs()
 
@@ -149,11 +159,24 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 }
 
 func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
-	takeProfit := price * 0.95
-	// BUY: Limit Price < Last Price < Stop Price
-	stopPrice := takeProfit + takeProfit*s.stopLossPercentage
-	stopLimitPrice := stopPrice * 1.02
+	// takeProfit := price * 0.95
+	// stopPrice := takeProfit + takeProfit*s.stopLossPercentage
+	// stopLimitPrice := stopPrice * 1.02
 
+	// BUY: Limit Price < Last Price < Stop Price
+	takeProfit, stopPrice, stopLimitPrice, riskAmount := s.calculateParams("BUY", price, 1.5)
+
+	logger.Debug.Println(
+		"price =", price,
+		"tp =",
+		takeProfit,
+		"sp =",
+		stopPrice,
+		"slp =",
+		stopLimitPrice,
+		"riska =",
+		riskAmount,
+	)
 	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.BUY,
@@ -170,11 +193,24 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 }
 
 func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
-	takeProfit := price * 1.05
-	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice := takeProfit - takeProfit*s.stopLossPercentage
-	stopLimitPrice := stopPrice * 0.98
+	// takeProfit := price * 1.05
+	// stopPrice := takeProfit - takeProfit*s.stopLossPercentage
+	// stopLimitPrice := stopPrice * 0.98
 
+	// SELL: Limit Price > Last Price > Stop Price
+	takeProfit, stopPrice, stopLimitPrice, riskAmount := s.calculateParams("SELL", price, 1.5)
+
+	logger.Debug.Println(
+		"price =", price,
+		"tp =",
+		takeProfit,
+		"sp =",
+		stopPrice,
+		"slp =",
+		stopLimitPrice,
+		"riska =",
+		riskAmount,
+	)
 	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.SELL,
@@ -226,15 +262,6 @@ func (s *SMAStrategy) SetAsset(asset string) {
 	s.asset = asset
 }
 
-func (s *SMAStrategy) GetClosePrices() {
-	if len(s.closePrices) > 0 {
-		return
-	}
-	for _, bar := range s.data {
-		s.closePrices = append(s.closePrices, bar.Close)
-	}
-}
-
 // calculateSMAs calculates both short and long SMAs.
 func (s *SMAStrategy) calculateSMAs() {
 	// Calculate short SMA
@@ -265,4 +292,87 @@ func (s *SMAStrategy) calculateSMAs() {
 	if len(s.ema200) > 2 {
 		s.ema200 = s.ema200[1:]
 	}
+}
+
+func (s *SMAStrategy) GetClosePrices() {
+	if len(s.closePrices) > 0 {
+		return
+	}
+	for _, bar := range s.data {
+		s.closePrices = append(s.closePrices, bar.Close)
+		s.highs = append(s.highs, bar.High)
+		s.lows = append(s.lows, bar.Low)
+	}
+}
+
+func (s *SMAStrategy) GetRecentHigh() {
+	if len(s.highs) >= 10 {
+		s.highs = s.highs[len(s.highs)-10:]
+		max_h := s.highs[0]
+		for i := 0; i < len(s.highs); i++ {
+			if s.highs[i] > max_h {
+				max_h = s.highs[i]
+			}
+		}
+		s.swingHigh = max_h
+	}
+	// Keep the last 10 elements
+	if len(s.highs) > 10 {
+		s.highs = s.highs[1:]
+	}
+}
+
+func (s *SMAStrategy) GetRecentLow() {
+	if len(s.lows) >= 10 {
+		s.lows = s.lows[len(s.lows)-10:]
+		min_l := s.lows[0]
+		for i := 0; i < len(s.lows); i++ {
+			if s.lows[i] < min_l {
+				min_l = s.lows[i]
+			}
+		}
+		s.swingLow = min_l
+	}
+	// Keep the last 10 elements
+	if len(s.lows) > 10 {
+		s.lows = s.lows[1:]
+	}
+}
+
+func (s *SMAStrategy) calculateParams(
+	side string,
+	currentPrice, riskRewardRatio float64,
+) (float64, float64, float64, float64) {
+	var stopPrice, takeProfit, stopLimitPrice, riskAmount float64
+
+	if side == "SELL" {
+		// SELL: Limit Price > Last Price > Stop Price
+		// Calculate parameters for sell orders
+		stopPrice = s.swingHigh * (1 + s.stopLossPercentage)
+		if stopPrice >= currentPrice {
+			stopPrice = currentPrice * (1 - s.stopLossPercentage)
+		}
+		riskAmount = math.Abs(currentPrice - stopPrice)
+		takeProfit = currentPrice + (riskAmount * riskRewardRatio)
+		if takeProfit <= currentPrice {
+			takeProfit = currentPrice * (1 + s.stopLossPercentage)
+		}
+		stopLimitPrice = stopPrice * 0.99 // Example adjustment
+	} else if side == "BUY" {
+
+		// BUY: Limit Price < Last Price < Stop Price
+		// Calculate parameters for buy orders
+		stopPrice = s.swingLow * (1 - s.stopLossPercentage)
+		if stopPrice <= currentPrice {
+			stopPrice = currentPrice * (1 + s.stopLossPercentage)
+		}
+		riskAmount = math.Abs(stopPrice - currentPrice)
+		takeProfit = currentPrice - (riskAmount * riskRewardRatio)
+		if takeProfit >= currentPrice {
+			takeProfit = currentPrice * (1 - s.stopLossPercentage)
+		}
+		stopLimitPrice = stopPrice * 1.01
+	}
+
+	return stopPrice, takeProfit, stopLimitPrice, riskAmount
 }
