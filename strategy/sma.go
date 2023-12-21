@@ -48,7 +48,7 @@ func NewSMAStrategy(
 		shortPeriod:        shortPeriod,
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.05,
+		stopLossPercentage: 0.10,
 		orderLimit:         orderLimit,
 	}
 }
