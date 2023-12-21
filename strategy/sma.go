@@ -164,7 +164,7 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 	// stopLimitPrice := stopPrice * 1.02
 
 	// BUY: Limit Price < Last Price < Stop Price
-	takeProfit, stopPrice, stopLimitPrice, riskAmount := s.calculateParams("BUY", price, 1.5)
+	stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams("BUY", price, 1.5)
 
 	logger.Debug.Println(
 		"price =", price,
@@ -198,7 +198,7 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 	// stopLimitPrice := stopPrice * 0.98
 
 	// SELL: Limit Price > Last Price > Stop Price
-	takeProfit, stopPrice, stopLimitPrice, riskAmount := s.calculateParams("SELL", price, 1.5)
+	stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams("SELL", price, 1.5)
 
 	logger.Debug.Println(
 		"price =", price,

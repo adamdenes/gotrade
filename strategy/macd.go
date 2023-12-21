@@ -195,7 +195,7 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
 	// BUY: Limit Price < Last Price < Stop Price
-	takeProfit, stopPrice, stopLimitPrice, riskAmount := m.calculateParams("BUY", price, 1.5)
+	stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("BUY", price, 1.5)
 
 	logger.Debug.Println(
 		"price =", price,
@@ -226,7 +226,7 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 
 func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	// SELL: Limit Price > Last Price > Stop Price
-	takeProfit, stopPrice, stopLimitPrice, riskAmount := m.calculateParams("SELL", price, 1.5)
+	stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("SELL", price, 1.5)
 
 	logger.Debug.Println(
 		"price =", price,
