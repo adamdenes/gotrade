@@ -3,6 +3,7 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
@@ -11,14 +12,19 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/adamdenes/gotrade/cmd/rest"
+	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
+	"github.com/adamdenes/gotrade/strategy"
 	"github.com/jackc/pgx/v5"
+	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
 )
 
 const (
@@ -399,4 +405,48 @@ func stringToTime(str string) (time.Time, error) {
 		return time.UnixMilli(unixTime), nil
 	}
 	return time.Parse(layout, str)
+}
+
+func inbound[T any](in *T) <-chan *T {
+	out := make(chan *T)
+	go func() {
+		out <- in
+		close(out)
+	}()
+	return out
+}
+
+func receiver[T ~string | ~[]byte](
+	ctx context.Context,
+	in chan T,
+	conn *websocket.Conn,
+) {
+	// Process data received from the data channel
+	for data := range in {
+		// Write the data to the WebSocket connection
+		if err := wsjson.Write(ctx, conn, string(data)); err != nil {
+			logger.Error.Printf("Error writing data to WebSocket: %v\n", err)
+			continue
+		}
+	}
+}
+
+func connectExchange(ctx context.Context, symbol string, interval string) *Binance {
+	cs := &models.CandleSubsciption{
+		Symbol:   strings.ToLower(symbol),
+		Interval: interval,
+	}
+	return NewBinance(ctx, inbound(cs))
+}
+
+func getStrategy(strat string, db storage.Storage) (backtest.Strategy[any], error) {
+	strategies := map[string]backtest.Strategy[any]{
+		"sma":  strategy.NewSMAStrategy(12, 24, 5, db),
+		"macd": strategy.NewMACDStrategy(5, db),
+	}
+	strategy, found := strategies[strat]
+	if !found {
+		return nil, fmt.Errorf("Error, startegy not found!")
+	}
+	return strategy, nil
 }
