@@ -189,12 +189,9 @@ func (b *Binance) handleSymbolSubscriptions() {
 func (b *Binance) reconnect(sd *models.CandleSubsciption) error {
 	// Close and clean up the old instance
 	b.close()
-
 	// Re-establish the subscription using stored subdata
 	_ = connectExchange(b.ctx, sd.Symbol, sd.Interval)
-
 	b.debugLog.Println("Reconnected and created a new Binance instance.")
-
 	return nil
 }
 
