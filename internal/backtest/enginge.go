@@ -25,4 +25,5 @@ type Strategy[S any] interface {
 	Sell(asset string, quantity float64, price float64) models.TypeOfOrder
 	PlaceOrder(o models.TypeOfOrder)
 	GetClosePrices()
+	GetName() string
 }

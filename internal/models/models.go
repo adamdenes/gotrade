@@ -10,6 +10,7 @@ import (
 type CandleSubsciption struct {
 	Symbol   string
 	Interval string
+	Strategy string
 }
 
 type Kline struct {

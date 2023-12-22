@@ -14,6 +14,7 @@ import (
 
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
+	"github.com/adamdenes/gotrade/internal/storage"
 	"nhooyr.io/websocket"
 )
 
@@ -24,6 +25,7 @@ const (
 )
 
 type Binance struct {
+	db          storage.Storage
 	ws          *websocket.Conn
 	ctx         context.Context
 	debugLog    *log.Logger
@@ -34,9 +36,14 @@ type Binance struct {
 	subdata     *models.CandleSubsciption
 }
 
-func NewBinance(ctx context.Context, cs <-chan *models.CandleSubsciption) *Binance {
+func NewBinance(
+	ctx context.Context,
+	db storage.Storage,
+	cs <-chan *models.CandleSubsciption,
+) *Binance {
 	closingCtx, cancelFunc := context.WithCancel(context.Background())
 	b := &Binance{
+		db:          db,
 		ctx:         ctx,
 		debugLog:    logger.Debug,
 		errorLog:    logger.Error,
@@ -189,9 +196,18 @@ func (b *Binance) handleSymbolSubscriptions() {
 func (b *Binance) reconnect(sd *models.CandleSubsciption) error {
 	// Close and clean up the old instance
 	b.close()
+
+	strat, err := getStrategy(sd.Strategy, b.db)
+	if err != nil {
+		b.errorLog.Println(err)
+		return err
+	}
 	// Re-establish the subscription using stored subdata
-	_ = connectExchange(b.ctx, sd.Symbol, sd.Interval)
+	x := connectExchange(b.ctx, b.db, sd.Symbol, sd.Interval, sd.Strategy)
 	b.debugLog.Println("Reconnected and created a new Binance instance.")
+	// Start data processing
+	go processBars(sd.Symbol, sd.Interval, strat, x.dataChannel)
+
 	return nil
 }
 
