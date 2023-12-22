@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/adamdenes/gotrade/cmd/rest"
@@ -259,7 +260,11 @@ func (s *SMAStrategy) SetData(data []*models.KlineSimple) {
 }
 
 func (s *SMAStrategy) SetAsset(asset string) {
-	s.asset = asset
+	s.asset = strings.ToUpper(asset)
+}
+
+func (s *SMAStrategy) GetName() string {
+	return s.name
 }
 
 // calculateSMAs calculates both short and long SMAs.

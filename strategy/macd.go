@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/adamdenes/gotrade/cmd/rest"
@@ -288,7 +289,11 @@ func (m *MACDStrategy) SetData(data []*models.KlineSimple) {
 }
 
 func (m *MACDStrategy) SetAsset(asset string) {
-	m.asset = asset
+	m.asset = strings.ToUpper(asset)
+}
+
+func (m *MACDStrategy) GetName() string {
+	return m.name
 }
 
 func (m *MACDStrategy) GetClosePrices() {
