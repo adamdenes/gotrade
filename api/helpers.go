@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -431,12 +432,17 @@ func receiver[T ~string | ~[]byte](
 	}
 }
 
-func connectExchange(ctx context.Context, symbol string, interval string) *Binance {
+func connectExchange(
+	ctx context.Context,
+	db storage.Storage,
+	symbol, interval, strategy string,
+) *Binance {
 	cs := &models.CandleSubsciption{
 		Symbol:   strings.ToLower(symbol),
 		Interval: interval,
+		Strategy: strategy,
 	}
-	return NewBinance(ctx, inbound(cs))
+	return NewBinance(ctx, db, inbound(cs))
 }
 
 func getStrategy(strat string, db storage.Storage) (backtest.Strategy[any], error) {
@@ -449,4 +455,78 @@ func getStrategy(strat string, db storage.Storage) (backtest.Strategy[any], erro
 		return nil, fmt.Errorf("Error, startegy not found!")
 	}
 	return strategy, nil
+}
+
+func processBars(
+	symbol, interval string,
+	strategy backtest.Strategy[any],
+	dc chan []byte,
+) {
+	// Prefetch data here for talib calculations
+	bars, err := convertKlines(symbol, interval)
+	strategy.SetData(bars)
+	strategy.SetAsset(symbol)
+
+	for data := range dc {
+		// Unmarshal bar data
+		var (
+			bar = &models.KlineSimple{}
+			kws = &models.KlineWebSocket{}
+		)
+		err = json.Unmarshal(data, &kws)
+		if err != nil {
+			logger.Error.Println(err)
+			return
+		}
+
+		// Only evaluate closed bars
+		if kws.Data.Kline.IsKlineClosed {
+			// logger.Info.Println(kws)
+			bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
+			bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
+			bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
+			bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
+			bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
+			bars = append(bars, bar)
+
+			strategy.SetData(bars)
+			strategy.Execute()
+		}
+	}
+}
+
+func convertKlines(symbol, interval string) ([]*models.KlineSimple, error) {
+	bars := []*models.KlineSimple{}
+
+	// Prefetch data here for talib calculations?
+	resp, err := rest.GetKlines(
+		fmt.Sprintf("symbol=%s&interval=%s", strings.ToUpper(symbol), interval),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error getting klines: %w", err)
+	}
+
+	var klines [][]interface{}
+	err = json.Unmarshal(resp, &klines)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling klines: %w", err)
+	}
+
+	for _, k := range klines {
+		open, _ := strconv.ParseFloat(k[1].(string), 64)
+		high, _ := strconv.ParseFloat(k[2].(string), 64)
+		low, _ := strconv.ParseFloat(k[3].(string), 64)
+		cloze, _ := strconv.ParseFloat(k[4].(string), 64)
+		volume, _ := strconv.ParseFloat(k[5].(string), 64)
+		b := &models.KlineSimple{
+			OpenTime: time.UnixMilli(int64(k[0].(float64))),
+			Open:     open,
+			High:     high,
+			Low:      low,
+			Close:    cloze,
+			Volume:   volume,
+		}
+		bars = append(bars, b)
+	}
+	return bars, nil
 }
