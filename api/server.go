@@ -143,9 +143,6 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.botContexts.Store(bot.ID, cancel)
 
-	// Get data from exchange
-	b := connectExchange(ctx, kr.Symbol, kr.Interval)
-
 	// Select strategy
 	selectedStrategy, err := getStrategy(kr.Strat, s.store)
 	if err != nil {
@@ -153,7 +150,11 @@ func (s *Server) startBotHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go s.processBars(kr.Symbol, kr.Interval, selectedStrategy, b.dataChannel)
+	// Get data from exchange
+	b := connectExchange(ctx, s.store, kr.Symbol, kr.Interval, selectedStrategy.GetName())
+
+	// Process incoming data
+	go processBars(kr.Symbol, kr.Interval, selectedStrategy, b.dataChannel)
 
 	select {
 	case <-r.Context().Done():
@@ -217,7 +218,7 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithCancel(r.Context())
 	if !local {
 		// Construct `Binance` with a read-only channel and start processing incoming data
-		b := connectExchange(ctx, symbol, interval)
+		b := connectExchange(ctx, s.store, symbol, interval, strat)
 
 		defer s.cleanUp(w, r, conn, cancel)
 		go receiver[[]byte](r.Context(), b.dataChannel, conn)
@@ -507,8 +508,8 @@ func (s *Server) superviseBots() {
 			return
 		}
 
-		b := connectExchange(ctx, bot.Symbol, bot.Interval)
-		go s.processBars(bot.Symbol, bot.Interval, strat, b.dataChannel)
+		b := connectExchange(ctx, s.store, bot.Symbol, bot.Interval, bot.Strategy)
+		go processBars(bot.Symbol, bot.Interval, strat, b.dataChannel)
 	}
 }
 
@@ -612,80 +613,6 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 
 		time.Sleep(30 * time.Second)
 	}
-}
-
-func (s *Server) processBars(
-	symbol, interval string,
-	strategy backtest.Strategy[any],
-	dc chan []byte,
-) {
-	// Prefetch data here for talib calculations
-	bars, err := convertKlines(symbol, interval)
-	strategy.SetData(bars)
-	strategy.SetAsset(symbol)
-
-	for data := range dc {
-		// Unmarshal bar data
-		var (
-			bar = &models.KlineSimple{}
-			kws = &models.KlineWebSocket{}
-		)
-		err = json.Unmarshal(data, &kws)
-		if err != nil {
-			s.errorLog.Println(err)
-			return
-		}
-
-		// Only evaluate closed bars
-		if kws.Data.Kline.IsKlineClosed {
-			// s.infoLog.Println(kws)
-			bar.OpenTime = time.UnixMilli(kws.Data.Kline.StartTime)
-			bar.Open, _ = strconv.ParseFloat(kws.Data.Kline.OpenPrice, 64)
-			bar.High, _ = strconv.ParseFloat(kws.Data.Kline.HighPrice, 64)
-			bar.Low, _ = strconv.ParseFloat(kws.Data.Kline.LowPrice, 64)
-			bar.Close, _ = strconv.ParseFloat(kws.Data.Kline.ClosePrice, 64)
-			bars = append(bars, bar)
-
-			strategy.SetData(bars)
-			strategy.Execute()
-		}
-	}
-}
-
-func convertKlines(symbol, interval string) ([]*models.KlineSimple, error) {
-	bars := []*models.KlineSimple{}
-
-	// Prefetch data here for talib calculations?
-	resp, err := rest.GetKlines(
-		fmt.Sprintf("symbol=%s&interval=%s", strings.ToUpper(symbol), interval),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("error getting klines: %w", err)
-	}
-
-	var klines [][]interface{}
-	err = json.Unmarshal(resp, &klines)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling klines: %w", err)
-	}
-
-	for _, k := range klines {
-		open, _ := strconv.ParseFloat(k[1].(string), 64)
-		high, _ := strconv.ParseFloat(k[2].(string), 64)
-		low, _ := strconv.ParseFloat(k[3].(string), 64)
-		cloze, _ := strconv.ParseFloat(k[4].(string), 64)
-		volume, _ := strconv.ParseFloat(k[5].(string), 64)
-		b := &models.KlineSimple{
-			OpenTime: time.UnixMilli(int64(k[0].(float64))),
-			Open:     open,
-			High:     high,
-			Low:      low,
-			Close:    cloze,
-			Volume:   volume,
-		}
-		bars = append(bars, b)
-	}
-	return bars, nil
 }
 
 func (s *Server) render(w http.ResponseWriter, status int, page string, data any) {
