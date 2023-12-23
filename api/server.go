@@ -601,7 +601,11 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 		}
 
 		if o.Status != "NEW" {
-			s.infoLog.Printf("Order ID=%v Status=%v! Updating Database...", o.OrderID, o.Status)
+			s.infoLog.Printf(
+				"Order ID=%v Status=%v CummulativeQuoteQty=%v! Updating Database...",
+				o.OrderID,
+				o.Status, o.CummulativeQuoteQty,
+			)
 
 			err = s.store.UpdateOrder(o)
 			if err != nil {
