@@ -79,6 +79,13 @@ func CalculatePositionSize(asset string, risk float64, invalidation float64) (fl
 	}
 	// 4. Calculate the position size
 	posSize := freeBalance * risk / invalidation
+	logger.Debug.Printf(
+		"posSize = %f, freeBalance = %f, risk = %f, invalidation = %f",
+		posSize,
+		freeBalance,
+		risk,
+		invalidation,
+	)
 	return posSize, nil
 }
 
