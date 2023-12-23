@@ -286,45 +286,45 @@ const (
 )
 
 type GetOrderResponse struct {
-	Symbol                  string `json:"symbol"`
-	OrderID                 int64  `json:"orderId"`
-	OrderListID             int64  `json:"orderListId"`
-	ClientOrderID           string `json:"clientOrderId"`
-	Price                   string `json:"price"`
-	OrigQty                 string `json:"origQty"`
-	ExecutedQty             string `json:"executedQty"`
-	CummulativeQuoteQty     string `json:"cummulativeQuoteQty"`
-	Status                  string `json:"status"`
-	TimeInForce             string `json:"timeInForce"`
-	Type                    string `json:"type"`
-	Side                    string `json:"side"`
-	StopPrice               string `json:"stopPrice"`
-	IcebergQty              string `json:"icebergQty"`
-	Time                    int64  `json:"time"`
-	UpdateTime              int64  `json:"updateTime"`
-	IsWorking               bool   `json:"isWorking"`
-	WorkingTime             int64  `json:"workingTime"`
-	OrigQuoteOrderQty       string `json:"origQuoteOrderQty"`
-	SelfTradePreventionMode string `json:"selfTradePreventionMode"`
+	Symbol                  string                  `json:"symbol"`
+	OrderID                 int64                   `json:"orderId"`
+	OrderListID             int64                   `json:"orderListId"`
+	ClientOrderID           string                  `json:"clientOrderId"`
+	Price                   string                  `json:"price"`
+	OrigQty                 string                  `json:"origQty"`
+	ExecutedQty             string                  `json:"executedQty"`
+	CummulativeQuoteQty     string                  `json:"cummulativeQuoteQty"`
+	Status                  OrderStatus             `json:"status"`
+	TimeInForce             TimeInForce             `json:"timeInForce"`
+	Type                    OrderType               `json:"type"`
+	Side                    OrderSide               `json:"side"`
+	StopPrice               string                  `json:"stopPrice"`
+	IcebergQty              string                  `json:"icebergQty"`
+	Time                    int64                   `json:"time"`
+	UpdateTime              int64                   `json:"updateTime"`
+	IsWorking               bool                    `json:"isWorking"`
+	WorkingTime             int64                   `json:"workingTime"`
+	OrigQuoteOrderQty       string                  `json:"origQuoteOrderQty"`
+	SelfTradePreventionMode SelfTradePreventionMode `json:"selfTradePreventionMode"`
 }
 
 type PostOrderResponse struct {
-	Symbol                  string `json:"symbol"`
-	OrderID                 int64  `json:"orderId"`
-	OrderListID             int64  `json:"orderListId"`
-	ClientOrderID           string `json:"clientOrderId"`
-	TransactTime            int64  `json:"transactTime"`
-	Price                   string `json:"price"`
-	OrigQty                 string `json:"origQty"`
-	ExecutedQty             string `json:"executedQty"`
-	CummulativeQuoteQty     string `json:"cummulativeQuoteQty"`
-	Status                  string `json:"status"`
-	TimeInForce             string `json:"timeInForce"`
-	Type                    string `json:"type"`
-	Side                    string `json:"side"`
-	StopPrice               string `json:"stopPrice,omitempty"` // Maybe?
-	WorkingTime             int64  `json:"workingTime"`
-	SelfTradePreventionMode string `json:"selfTradePreventionMode"`
+	Symbol                  string                  `json:"symbol"`
+	OrderID                 int64                   `json:"orderId"`
+	OrderListID             int64                   `json:"orderListId"`
+	ClientOrderID           string                  `json:"clientOrderId"`
+	TransactTime            int64                   `json:"transactTime"`
+	Price                   string                  `json:"price"`
+	OrigQty                 string                  `json:"origQty"`
+	ExecutedQty             string                  `json:"executedQty"`
+	CummulativeQuoteQty     string                  `json:"cummulativeQuoteQty"`
+	Status                  OrderStatus             `json:"status"`
+	TimeInForce             TimeInForce             `json:"timeInForce"`
+	Type                    OrderType               `json:"type"`
+	Side                    OrderSide               `json:"side"`
+	StopPrice               string                  `json:"stopPrice,omitempty"` // Maybe?
+	WorkingTime             int64                   `json:"workingTime"`
+	SelfTradePreventionMode SelfTradePreventionMode `json:"selfTradePreventionMode"`
 }
 
 type StopLimitTimeInForce TimeInForce
@@ -451,6 +451,60 @@ type PostOrderOCOResponse struct {
 }
 
 type PostOrderReport = PostOrderResponse
+
+type CancelRestrictions string
+
+const (
+	ONLY_NEW              CancelRestrictions = "ONLY_NEW"
+	ONLY_PARTIALLY_FILLED                    = "ONLY_PARTIALLY_FILLED"
+)
+
+type DeleteOrder struct {
+	Symbol             string             `json:"symbol"`
+	OrderID            int64              `json:"orderId,omitempty"`
+	OrigClientOrderID  string             `json:"origClientOrderId,omitempty"`
+	NewClientOrderID   string             `json:"newClientOrderId,omitempty"`
+	CancelRestrictions CancelRestrictions `json:"cancelRestrictions,omitempty"`
+	RecvWindow         int64              `json:"recvWindow,omitempty"`
+	Timestamp          int64              `json:"timestamp"`
+}
+
+type DeleteOrderResponse struct {
+	Symbol                  string                  `json:"symbol"`
+	OrigClientOrderID       string                  `json:"origClientOrderId"`
+	OrderID                 int64                   `json:"orderId"`
+	OrderListID             int64                   `json:"orderListId"`
+	ClientOrderID           string                  `json:"clientOrderId"`
+	TransactTime            int64                   `json:"transactTime"`
+	Price                   string                  `json:"price"`
+	OrigQty                 string                  `json:"origQty"`
+	ExecutedQty             string                  `json:"executedQty"`
+	CummulativeQuoteQty     string                  `json:"cummulativeQuoteQty"`
+	Status                  OrderStatus             `json:"status"`
+	TimeInForce             string                  `json:"timeInForce"`
+	Type                    OrderType               `json:"type"`
+	Side                    OrderSide               `json:"side"`
+	SelfTradePreventionMode SelfTradePreventionMode `json:"selfTradePreventionMode"`
+}
+
+func (dor *DeleteOrderResponse) DeleteToGet() *GetOrderResponse {
+	return &GetOrderResponse{
+		Symbol:                  dor.Symbol,
+		OrderID:                 dor.OrderID,
+		OrderListID:             dor.OrderListID,
+		ClientOrderID:           dor.ClientOrderID,
+		Price:                   dor.Price,
+		OrigQty:                 dor.OrigQty,
+		ExecutedQty:             dor.ExecutedQty,
+		CummulativeQuoteQty:     dor.CummulativeQuoteQty,
+		Status:                  dor.Status,
+		TimeInForce:             TimeInForce(dor.TimeInForce),
+		Time:                    dor.TransactTime,
+		Type:                    OrderType(dor.Type),
+		Side:                    OrderSide(dor.Type),
+		SelfTradePreventionMode: dor.SelfTradePreventionMode,
+	}
+}
 
 type Trade struct {
 	Strategy        string    `json:"strategy_name,omitempty"`
