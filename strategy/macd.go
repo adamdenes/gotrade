@@ -204,6 +204,7 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 		"sp =", stopPrice,
 		"slp =", stopLimitPrice,
 		"riska =", riskAmount,
+		"swingh =", m.swingHigh,
 		"swingl =", m.swingLow,
 	)
 
@@ -233,6 +234,7 @@ func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) model
 		"slp =", stopLimitPrice,
 		"riska =", riskAmount,
 		"swingh =", m.swingHigh,
+		"swingl =", m.swingLow,
 	)
 
 	return &models.PostOrderOCO{
@@ -344,7 +346,7 @@ func (m *MACDStrategy) calculateParams(
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
 		// Calculate parameters for sell orders
-		stopPrice = m.swingHigh // * (1 + m.stopLossPercentage)
+		stopPrice = m.swingLow // * (1 + m.stopLossPercentage)
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - m.stopLossPercentage)
 		}
@@ -358,7 +360,7 @@ func (m *MACDStrategy) calculateParams(
 
 		// BUY: Limit Price < Last Price < Stop Price
 		// Calculate parameters for buy orders
-		stopPrice = m.swingLow // * (1 - m.stopLossPercentage)
+		stopPrice = m.swingHigh // * (1 - m.stopLossPercentage)
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + m.stopLossPercentage)
 		}

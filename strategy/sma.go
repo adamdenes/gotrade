@@ -173,6 +173,7 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 		"sp =", stopPrice,
 		"slp =", stopLimitPrice,
 		"riska =", riskAmount,
+		"swingh =", s.swingHigh,
 		"swingl =", s.swingLow,
 	)
 	return &models.PostOrderOCO{
@@ -205,6 +206,7 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 		"slp =", stopLimitPrice,
 		"riska =", riskAmount,
 		"swingh =", s.swingHigh,
+		"swingl =", s.swingLow,
 	)
 	return &models.PostOrderOCO{
 		Symbol:    asset,
@@ -347,7 +349,7 @@ func (s *SMAStrategy) calculateParams(
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
 		// Calculate parameters for sell orders
-		stopPrice = s.swingHigh // * (1 + s.stopLossPercentage)
+		stopPrice = s.swingLow // * (1 + s.stopLossPercentage)
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - s.stopLossPercentage)
 		}
@@ -361,7 +363,7 @@ func (s *SMAStrategy) calculateParams(
 
 		// BUY: Limit Price < Last Price < Stop Price
 		// Calculate parameters for buy orders
-		stopPrice = s.swingLow // * (1 - s.stopLossPercentage)
+		stopPrice = s.swingHigh // * (1 - s.stopLossPercentage)
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + s.stopLossPercentage)
 		}
