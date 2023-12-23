@@ -49,7 +49,7 @@ func NewSMAStrategy(
 		shortPeriod:        shortPeriod,
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.10,
+		stopLossPercentage: 0.05,
 		orderLimit:         orderLimit,
 	}
 }
@@ -169,14 +169,11 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 
 	logger.Debug.Println(
 		"price =", price,
-		"tp =",
-		takeProfit,
-		"sp =",
-		stopPrice,
-		"slp =",
-		stopLimitPrice,
-		"riska =",
-		riskAmount,
+		"tp =", takeProfit,
+		"sp =", stopPrice,
+		"slp =", stopLimitPrice,
+		"riska =", riskAmount,
+		"swingl =", s.swingLow,
 	)
 	return &models.PostOrderOCO{
 		Symbol:    asset,
@@ -203,14 +200,11 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 
 	logger.Debug.Println(
 		"price =", price,
-		"tp =",
-		takeProfit,
-		"sp =",
-		stopPrice,
-		"slp =",
-		stopLimitPrice,
-		"riska =",
-		riskAmount,
+		"tp =", takeProfit,
+		"sp =", stopPrice,
+		"slp =", stopLimitPrice,
+		"riska =", riskAmount,
+		"swingh =", s.swingHigh,
 	)
 	return &models.PostOrderOCO{
 		Symbol:    asset,
@@ -353,7 +347,7 @@ func (s *SMAStrategy) calculateParams(
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
 		// Calculate parameters for sell orders
-		stopPrice = s.swingHigh * (1 + s.stopLossPercentage)
+		stopPrice = s.swingHigh // * (1 + s.stopLossPercentage)
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - s.stopLossPercentage)
 		}
@@ -362,12 +356,12 @@ func (s *SMAStrategy) calculateParams(
 		if takeProfit <= currentPrice {
 			takeProfit = currentPrice * (1 + s.stopLossPercentage)
 		}
-		stopLimitPrice = stopPrice * 0.99 // Example adjustment
+		stopLimitPrice = stopPrice * 0.995
 	} else if side == "BUY" {
 
 		// BUY: Limit Price < Last Price < Stop Price
 		// Calculate parameters for buy orders
-		stopPrice = s.swingLow * (1 - s.stopLossPercentage)
+		stopPrice = s.swingLow // * (1 - s.stopLossPercentage)
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + s.stopLossPercentage)
 		}
@@ -376,7 +370,7 @@ func (s *SMAStrategy) calculateParams(
 		if takeProfit >= currentPrice {
 			takeProfit = currentPrice * (1 - s.stopLossPercentage)
 		}
-		stopLimitPrice = stopPrice * 1.01
+		stopLimitPrice = stopPrice * 1.005
 	}
 
 	return stopPrice, takeProfit, stopLimitPrice, riskAmount

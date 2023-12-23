@@ -41,7 +41,7 @@ func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDS
 		name:               "macd",
 		db:                 db,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.10,
+		stopLossPercentage: 0.05,
 		orderLimit:         orderLimit,
 	}
 }
@@ -196,18 +196,15 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
 	// BUY: Limit Price < Last Price < Stop Price
-	stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("BUY", price, 1.5)
+	stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("BUY", price, 1.2)
 
 	logger.Debug.Println(
 		"price =", price,
-		"tp =",
-		takeProfit,
-		"sp =",
-		stopPrice,
-		"slp =",
-		stopLimitPrice,
-		"riska =",
-		riskAmount,
+		"tp =", takeProfit,
+		"sp =", stopPrice,
+		"slp =", stopLimitPrice,
+		"riska =", riskAmount,
+		"swingl =", m.swingLow,
 	)
 
 	return &models.PostOrderOCO{
@@ -227,18 +224,15 @@ func (m *MACDStrategy) Buy(asset string, quantity float64, price float64) models
 
 func (m *MACDStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("SELL", price, 1.5)
+	stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("SELL", price, 1.2)
 
 	logger.Debug.Println(
 		"price =", price,
-		"tp =",
-		takeProfit,
-		"sp =",
-		stopPrice,
-		"slp =",
-		stopLimitPrice,
-		"riska =",
-		riskAmount,
+		"tp =", takeProfit,
+		"sp =", stopPrice,
+		"slp =", stopLimitPrice,
+		"riska =", riskAmount,
+		"swingh =", m.swingHigh,
 	)
 
 	return &models.PostOrderOCO{
@@ -350,7 +344,7 @@ func (m *MACDStrategy) calculateParams(
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
 		// Calculate parameters for sell orders
-		stopPrice = m.swingHigh * (1 + m.stopLossPercentage)
+		stopPrice = m.swingHigh // * (1 + m.stopLossPercentage)
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - m.stopLossPercentage)
 		}
@@ -359,12 +353,12 @@ func (m *MACDStrategy) calculateParams(
 		if takeProfit <= currentPrice {
 			takeProfit = currentPrice * (1 + m.stopLossPercentage)
 		}
-		stopLimitPrice = stopPrice * 0.99 // Example adjustment
+		stopLimitPrice = stopPrice * 0.995
 	} else if side == "BUY" {
 
 		// BUY: Limit Price < Last Price < Stop Price
 		// Calculate parameters for buy orders
-		stopPrice = m.swingLow * (1 - m.stopLossPercentage)
+		stopPrice = m.swingLow // * (1 - m.stopLossPercentage)
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + m.stopLossPercentage)
 		}
@@ -373,7 +367,7 @@ func (m *MACDStrategy) calculateParams(
 		if takeProfit >= currentPrice {
 			takeProfit = currentPrice * (1 - m.stopLossPercentage)
 		}
-		stopLimitPrice = stopPrice * 1.01
+		stopLimitPrice = stopPrice * 1.005
 	}
 
 	return stopPrice, takeProfit, stopLimitPrice, riskAmount
