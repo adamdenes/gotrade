@@ -543,7 +543,7 @@ func (s *Server) monitorOrders() {
 
 			switch order.Status {
 			// Skip already finished trades
-			case "FILLED", "EXPIRED":
+			case "FILLED", "EXPIRED", "CANCELED":
 				continue
 			default:
 				s.infoLog.Printf("Monitoring order: %v", order)
