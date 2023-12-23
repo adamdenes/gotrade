@@ -133,7 +133,7 @@ func PollHistoricalData(storage storage.Storage) {
 				"&limit=1000",
 			)
 
-			b, err := rest.Query(uri)
+			b, err := rest.Query("GET", uri, "application/json", nil)
 			if err != nil {
 				if re, ok := err.(*models.RequestError); ok && err != nil {
 					time.Sleep(re.Timer * time.Second)
@@ -238,8 +238,8 @@ func processMonthlyData(
 // Stream will return a *zip.Reader from which the zip data can be read.
 // It enables seamless data streaming directly between HTTP and PostgresSQL,
 // reducing memory consumption and minimizing IO operations.
-func stream(url string) (*zip.Reader, error) {
-	b, err := rest.Query(url)
+func stream(uri string) (*zip.Reader, error) {
+	b, err := rest.Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -277,15 +277,15 @@ func streamZIP(path string) (*zip.Reader, error) {
 }
 
 // Download kline data with 1s interval in ZIP format
-func downloadZIP(url string) error {
+func downloadZIP(uri string) error {
 	// Send HTTP GET request to download the ZIP file
-	resp, err := rest.Query(url)
+	resp, err := rest.Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return err
 	}
 
 	// Create or open the destination file for writing
-	dst := "./internal/tmp/" + filepath.Base(url)
+	dst := "./internal/tmp/" + filepath.Base(uri)
 	file, err := os.Create(dst)
 	if err != nil {
 		return err

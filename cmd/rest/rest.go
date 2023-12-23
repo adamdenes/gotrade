@@ -191,13 +191,14 @@ func validateOrder(order *models.PostOrder) error {
 // Query makes a GET request for the given query string/url with an additional backoff timer.
 // Once a "Retry-After" header is received, the query mechanism will go to sleep. The caller
 // has to implement retry mechanism.
-func Query(qs string) ([]byte, error) {
-	req, err := http.NewRequest("GET", qs, bytes.NewBuffer([]byte("")))
+func Query(rt, qs string, contType string, jsonBody []byte) ([]byte, error) {
+	req, err := http.NewRequest(rt, qs, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Add("X-MBX-APIKEY", os.Getenv(apiKey))
+	req.Header.Add("Content-Type", contType)
 
 	client := &http.Client{}
 
@@ -232,46 +233,16 @@ func Query(qs string) ([]byte, error) {
 		}
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, err
-	}
-
 	r, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	return r, nil
-}
-
-func Post(url string, contType string, jsonBody []byte) ([]byte, error) {
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("X-MBX-APIKEY", os.Getenv(apiKey))
-	req.Header.Add("Content-Type", contType)
-
-	client := &http.Client{}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check the response status code for errors
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP Status: %s\nResponse Body: %s", resp.Status, body)
+		return nil, fmt.Errorf("HTTP Status: %s\n\tResponse Body: %s", resp.Status, r)
 	}
 
-	return body, nil
+	return r, nil
 }
 
 /* The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
@@ -308,7 +279,7 @@ GET /api/v3/klines
 */
 func GetKlines(q ...string) ([]byte, error) {
 	uri := BuildURI(apiEndpoint+"klines?", q...)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +300,7 @@ GET /api/v3/uiKlines
 */
 func GetUiKlines(q ...string) ([]byte, error) {
 	uri := BuildURI(apiEndpoint+"uiKlines?", q...)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +321,7 @@ GET /api/v3/exchangeInfo
 */
 func NewSymbolCache() (map[string]struct{}, error) {
 	uri := BuildURI(apiEndpoint + "exchangeInfo")
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +368,7 @@ func PostTestOrder(order *models.PostOrder) ([]byte, error) {
 
 	uri := BuildURI(apiEndpoint + "order/test")
 	jb := []byte(order.String() + "&signature=" + signedQuery)
-	resp, err := Post(uri, "application/json", jb)
+	resp, err := Query("POST", uri, "application/json", jb)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +403,7 @@ func PostOrder(order *models.PostOrder) (*models.PostOrderResponse, error) {
 
 	uri := BuildURI(apiEndpoint + "order")
 	jb := []byte(order.String() + "&signature=" + signedQuery)
-	resp, err := Post(uri, "application/json", jb)
+	resp, err := Query("POST", uri, "application/json", jb)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +446,7 @@ func PostOrderOCO(oco *models.PostOrderOCO) (*models.PostOrderOCOResponse, error
 
 	uri := BuildURI(apiEndpoint + "order/oco")
 	jb := []byte(oco.String() + "&signature=" + signedQuery)
-	resp, err := Post(uri, "application/json", jb)
+	resp, err := Query("POST", uri, "application/json", jb)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +473,7 @@ Weight(IP): 1
 */
 func GetServerTime() (int64, error) {
 	uri := BuildURI(apiEndpoint + "time")
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return 0, err
 	}
@@ -544,7 +515,7 @@ func GetAccount() ([]byte, error) {
 	}
 
 	uri := BuildURI(apiEndpoint+"account?", q, "&signature=", signedQuery)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +550,7 @@ func GetOrderCountUsage() ([]byte, error) {
 	}
 
 	uri := BuildURI(apiEndpoint+"rateLimit/order?", q, "&signature=", signedQuery)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -630,7 +601,7 @@ func GetAllOrders(symbol string) ([]*models.GetOrderResponse, error) {
 	}
 
 	uri := BuildURI(apiEndpoint+"allOrders?", q, "&signature=", signedQuery)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -676,7 +647,7 @@ func GetOpenOrders(symbol string) ([]byte, error) {
 	}
 
 	uri := BuildURI(apiEndpoint+"openOrders?", q, "&signature=", signedQuery)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +685,7 @@ func GetOCOOrder(id int64) (*models.PostOrderOCOResponse, error) {
 	}
 
 	uri := BuildURI(apiEndpoint+"orderList?", q, "&signature=", signedQuery)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -763,7 +734,7 @@ func GetOrder(symbol string, id int64) (*models.GetOrderResponse, error) {
 	}
 
 	uri := BuildURI(apiEndpoint+"order?", q, "&signature=", signedQuery)
-	resp, err := Query(uri)
+	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -803,4 +774,40 @@ func FindOrder(order *models.GetOrderResponse) (*models.GetOrderResponse, error)
 		return nil, fmt.Errorf("order not found")
 	}
 	return ord, nil
+}
+
+/*
+Cancel Order (TRADE)
+
+DELETE /api/v3/order
+
+Cancel an active order.
+
+Weight(IP): 1
+*/
+func CancelOrder(symbol string, id int64) (*models.DeleteOrderResponse, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	q := fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
+	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(apiEndpoint+"order?", q, "&signature=", signedQuery)
+	resp, err := Query("DELETE", uri, "application/json", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	order := new(models.DeleteOrderResponse)
+	err = json.Unmarshal(resp, order)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling order: %w", err)
+	}
+
+	return order, nil
 }
