@@ -357,7 +357,6 @@ func (m *MACDStrategy) calculateParams(
 		}
 		stopLimitPrice = stopPrice * 0.995
 	} else if side == "BUY" {
-
 		// BUY: Limit Price < Last Price < Stop Price
 		// Calculate parameters for buy orders
 		stopPrice = m.swingHigh // * (1 - m.stopLossPercentage)
