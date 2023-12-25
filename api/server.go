@@ -29,7 +29,7 @@ type Server struct {
 	infoLog       *log.Logger
 	errorLog      *log.Logger
 	templateCache map[string]*template.Template
-	symbolCache   map[string]struct{}
+	symbolCache   map[string]*models.SymbolFilter
 	botContexts   sync.Map
 }
 
@@ -45,7 +45,7 @@ func NewServer(
 		infoLog:       logger.Info,
 		errorLog:      logger.Error,
 		templateCache: templates,
-		symbolCache:   make(map[string]struct{}, 1),
+		symbolCache:   make(map[string]*models.SymbolFilter, 1),
 		botContexts:   sync.Map{},
 	}
 }
@@ -526,6 +526,7 @@ func (s *Server) monitorOrders() {
 		}
 
 		if len(orders) == 0 {
+			// TODO: check GetAllOrders() to save stuff to DB.
 			s.infoLog.Println("No orders found, going to sleep...")
 			time.Sleep(60 * time.Second)
 			continue // Check again after sleep
@@ -543,7 +544,7 @@ func (s *Server) monitorOrders() {
 
 			switch order.Status {
 			// Skip already finished trades
-			case "FILLED", "EXPIRED", "CANCELED":
+			case "FILLED", "EXPIRED", "CANCELED", "EXPIRED_IN_MATCH":
 				continue
 			default:
 				s.infoLog.Printf("Monitoring order: %v", order)

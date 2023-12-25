@@ -355,7 +355,7 @@ func readCSVFile(filePath string) ([][]string, error) {
 	return records, nil
 }
 
-func ValidateSymbol(symbol string, symbolCache map[string]struct{}) error {
+func ValidateSymbol(symbol string, symbolCache map[string]*models.SymbolFilter) error {
 	if symbol == "" {
 		return fmt.Errorf("no symbol provided: %q", symbol)
 	}

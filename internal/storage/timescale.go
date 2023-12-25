@@ -80,11 +80,28 @@ func (ts *TimescaleDB) Close() {
 	ts.db.Close()
 }
 
-func (ts *TimescaleDB) GetSymbol(symbol string) (int64, error) {
-	var id int64
-	q := fmt.Sprintf("SELECT symbol_id FROM binance.symbols WHERE symbol = '%s';", symbol)
-	err := ts.db.QueryRow(q).Scan(&id)
-	return id, err
+func (ts *TimescaleDB) GetSymbol(symbol string) (int64, *models.SymbolFilter, error) {
+	var (
+		id         int64
+		baseAsset  string
+		quoteAsset string
+	)
+
+	// Adjusted query to retrieve base_asset and quote_asset as well
+	q := `SELECT symbol_id, base_asset, quote_asset FROM binance.symbols WHERE symbol = $1;`
+	err := ts.db.QueryRow(q, symbol).Scan(&id, &baseAsset, &quoteAsset)
+	if err != nil {
+		// Return nil for SymbolFilter if there's an error
+		return 0, nil, err
+	}
+
+	symbolFilter := &models.SymbolFilter{
+		Symbol:     symbol,
+		BaseAsset:  baseAsset,
+		QuoteAsset: quoteAsset,
+	}
+
+	return id, symbolFilter, nil
 }
 
 func (ts *TimescaleDB) GetSymbols() (*sql.Rows, error) {
@@ -93,18 +110,24 @@ func (ts *TimescaleDB) GetSymbols() (*sql.Rows, error) {
 	return rows, err
 }
 
-func (ts *TimescaleDB) CreateSymbol(symbol string) (int64, error) {
+func (ts *TimescaleDB) CreateSymbol(sf *models.SymbolFilter) (int64, error) {
 	var id int64
-	q := `INSERT INTO binance.symbols (symbol) 
-    VALUES ($1) ON CONFLICT (symbol) DO NOTHING
+	q := `INSERT INTO binance.symbols (symbol, base_asset, quote_asset) 
+    VALUES ($1, $2, $3) ON CONFLICT (symbol) DO NOTHING
     RETURNING symbol_id;`
 
-	err := ts.db.QueryRow(q, symbol).Scan(&id)
+	err := ts.db.QueryRow(q, sf.Symbol, sf.BaseAsset, sf.QuoteAsset).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 
-	logger.Debug.Printf("INSERT INTO binance.symbols-> (%s), returning symbol_id: %d", symbol, id)
+	logger.Debug.Printf(
+		"INSERT INTO binance.symbols-> (%s, %s, %s), returning symbol_id: %d",
+		sf.Symbol,
+		sf.BaseAsset,
+		sf.QuoteAsset,
+		id,
+	)
 	return id, nil
 }
 
@@ -172,11 +195,14 @@ func (ts *TimescaleDB) GetSymbolIntervalID(sid, iid int64) (int64, error) {
 }
 
 func (ts *TimescaleDB) CreateSIID(s, i string) (int64, error) {
-	symbolID, err := ts.GetSymbol(s)
+	symbolID, sf, err := ts.GetSymbol(s)
 	if err != nil {
 		// Shouldn't return any row on conflict!
 		if errors.Is(err, sql.ErrNoRows) {
-			symbolID, err = ts.CreateSymbol(s)
+			sf = &models.SymbolFilter{
+				Symbol: s,
+			}
+			symbolID, err = ts.CreateSymbol(sf)
 			if err != nil {
 				return -1, err
 			}
@@ -215,6 +241,93 @@ func (ts *TimescaleDB) CreateSIID(s, i string) (int64, error) {
 	}
 
 	return symbolIntervalID, nil
+}
+
+func (ts *TimescaleDB) SaveFilters(symbolID int64, filters []models.Filter) error {
+	for _, filter := range filters {
+		if err := ts.CreateFilter(symbolID, filter); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ts *TimescaleDB) CreateFilter(symbolID int64, filter models.Filter) error {
+	var (
+		err error
+		q   string
+	)
+
+	switch f := filter.(type) {
+	case *models.PriceFilter:
+		maxPrice, _ := strconv.ParseFloat(f.MaxPrice, 64)
+		minPrice, _ := strconv.ParseFloat(f.MinPrice, 64)
+		tickSize, _ := strconv.ParseFloat(f.TickSize, 64)
+		q = `INSERT INTO binance.price_filters (symbol_id, max_price, min_price, tick_size) 
+              VALUES ($1, $2, $3, $4);`
+		_, err = ts.db.Exec(q, symbolID, maxPrice, minPrice, tickSize)
+
+	case *models.LotSizeFilter:
+		maxQty, _ := strconv.ParseFloat(f.MaxQty, 64)
+		minQty, _ := strconv.ParseFloat(f.MinQty, 64)
+		stepSize, _ := strconv.ParseFloat(f.StepSize, 64)
+		q = `INSERT INTO binance.lot_size_filters (symbol_id, max_qty, min_qty, step_size) 
+              VALUES ($1, $2, $3, $4);`
+		_, err = ts.db.Exec(q, symbolID, maxQty, minQty, stepSize)
+
+	case *models.IcebergPartsFilter:
+		q = `INSERT INTO binance.iceberg_parts_filters (symbol_id, parts_limit) 
+              VALUES ($1, $2);`
+		_, err = ts.db.Exec(q, symbolID, f.Limit)
+
+	case *models.MarketLotSizeFilter:
+		maxQty, _ := strconv.ParseFloat(f.MaxQty, 64)
+		minQty, _ := strconv.ParseFloat(f.MinQty, 64)
+		stepSize, _ := strconv.ParseFloat(f.StepSize, 64)
+		q = `INSERT INTO binance.market_lot_size_filters (symbol_id, max_qty, min_qty, step_size) 
+              VALUES ($1, $2, $3, $4);`
+		_, err = ts.db.Exec(q, symbolID, maxQty, minQty, stepSize)
+
+	case *models.TrailingDeltaFilter:
+		q = `INSERT INTO binance.trailing_delta_filters (symbol_id, max_trailing_above_delta, max_trailing_below_delta, min_trailing_above_delta, min_trailing_below_delta) 
+              VALUES ($1, $2, $3, $4, $5);`
+		_, err = ts.db.Exec(q, symbolID, f.MaxTrailingAboveDelta, f.MaxTrailingBelowDelta, f.MinTrailingAboveDelta, f.MinTrailingBelowDelta)
+
+	case *models.PercentPriceBySideFilter:
+		askMultiplierDown, _ := strconv.ParseFloat(f.AskMultiplierDown, 64)
+		askMultiplierUp, _ := strconv.ParseFloat(f.AskMultiplierUp, 64)
+		bidMultiplierDown, _ := strconv.ParseFloat(f.BidMultiplierDown, 64)
+		bidMultiplierUp, _ := strconv.ParseFloat(f.BidMultiplierUp, 64)
+		q = `INSERT INTO binance.percent_price_by_side_filters (symbol_id, ask_multiplier_down, ask_multiplier_up, avg_price_mins, bid_multiplier_down, bid_multiplier_up) 
+              VALUES ($1, $2, $3, $4, $5, $6);`
+		_, err = ts.db.Exec(q, symbolID, askMultiplierDown, askMultiplierUp, f.AvgPriceMins, bidMultiplierDown, bidMultiplierUp)
+
+	case *models.NotionalFilter:
+		maxNotional, _ := strconv.ParseFloat(f.MaxNotional, 64)
+		minNotional, _ := strconv.ParseFloat(f.MinNotional, 64)
+		q = `INSERT INTO binance.notional_filters (symbol_id, apply_max_to_market, apply_min_to_market, max_notional, min_notional) 
+              VALUES ($1, $2, $3, $4, $5);`
+		_, err = ts.db.Exec(q, symbolID, f.ApplyMaxToMarket, f.ApplyMinToMarket, maxNotional, minNotional)
+
+	case *models.MaxNumOrdersFilter:
+		q = `INSERT INTO binance.max_num_orders_filters (symbol_id, max_num_orders) 
+              VALUES ($1, $2);`
+		_, err = ts.db.Exec(q, symbolID, f.MaxNumOrders)
+
+	case *models.MaxNumAlgoOrdersFilter:
+		q = `INSERT INTO binance.max_num_algo_orders_filters (symbol_id, max_num_algo_orders) 
+              VALUES ($1, $2);`
+		_, err = ts.db.Exec(q, symbolID, f.MaxNumAlgoOrders)
+
+	default:
+		return fmt.Errorf("unknown filter type")
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func ConvertInterval(intervalString string) string {
@@ -612,12 +725,17 @@ func (ts *TimescaleDB) QueryLastRow() (*models.KlineRequest, error) {
 	return kr, nil
 }
 
-func (ts *TimescaleDB) SaveSymbols(sc map[string]struct{}) error {
-	for symbol := range sc {
-		if _, err := ts.CreateSymbol(symbol); err != nil {
+func (ts *TimescaleDB) SaveSymbols(sf map[string]*models.SymbolFilter) error {
+	for _, filterData := range sf {
+		symbolID, err := ts.CreateSymbol(filterData)
+		if err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
+		}
+
+		if err := ts.SaveFilters(symbolID, filterData.Filters); err != nil {
+			return err
 		}
 	}
 	return nil

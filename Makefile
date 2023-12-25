@@ -5,12 +5,12 @@ GOTEST=$(GOCMD) test
 BINARY_NAME=gotrade
 
 # Postgres
-DB_CONTAINER_NAME=timescale
+DB_CONTAINER_NAME=gotrade-timescaledb-1
 DB_NAME=binance_db
 DB_PORT=5432
 DB_USER=web
-DB_VOLUME=my-postgres-data
-DB_VOLUME_PATH=/home/adenes/docker_volumes/data
+DB_VOLUME=timescaledb_data
+DB_VOLUME_PATH=/var/lib/postgresql/data
 
 VERSION=""
 

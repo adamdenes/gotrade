@@ -538,3 +538,151 @@ type TradingBot struct {
 	Status    BotStatus `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type FilterType string
+
+const (
+	PRICE_FILTER          FilterType = "PRICE_FILTER"
+	LOT_SIZE                         = "LOT_SIZE"
+	ICEBERG_PARTS                    = "ICEBERG_PARTS"
+	MARKET_LOT_SIZE                  = "MARKET_LOT_SIZE"
+	TRAILING_DELTA                   = "TRAILING_DELTA"
+	PERCENT_PRICE_BY_SIDE            = "PERCENT_PRICE_BY_SIDE"
+	NOTIONAL                         = "NOTIONAL"
+	MAX_NUM_ORDERS                   = "MAX_NUM_ORDERS"
+	MAX_NUM_ALGO_ORDERS              = "MAX_NUM_ALGO_ORDERS"
+)
+
+type Filter interface {
+	GetFilterType() FilterType
+}
+
+type BaseFilter struct {
+	FilterType FilterType `json:"filterType"`
+}
+
+func (f *BaseFilter) GetFilterType() FilterType {
+	return f.FilterType
+}
+
+type PriceFilter struct {
+	BaseFilter
+	MaxPrice string `json:"maxPrice"`
+	MinPrice string `json:"minPrice"`
+	TickSize string `json:"tickSize"`
+}
+
+type LotSizeFilter struct {
+	BaseFilter
+	MaxQty   string `json:"maxQty"`
+	MinQty   string `json:"minQty"`
+	StepSize string `json:"stepSize"`
+}
+
+type IcebergPartsFilter struct {
+	BaseFilter
+	Limit int `json:"limit"`
+}
+
+type MarketLotSizeFilter struct {
+	BaseFilter
+	MaxQty   string `json:"maxQty"`
+	MinQty   string `json:"minQty"`
+	StepSize string `json:"stepSize"`
+}
+
+type TrailingDeltaFilter struct {
+	BaseFilter
+	MaxTrailingAboveDelta int `json:"maxTrailingAboveDelta"`
+	MaxTrailingBelowDelta int `json:"maxTrailingBelowDelta"`
+	MinTrailingAboveDelta int `json:"minTrailingAboveDelta"`
+	MinTrailingBelowDelta int `json:"minTrailingBelowDelta"`
+}
+
+type PercentPriceBySideFilter struct {
+	BaseFilter
+	AskMultiplierDown string `json:"askMultiplierDown"`
+	AskMultiplierUp   string `json:"askMultiplierUp"`
+	AvgPriceMins      int    `json:"avgPriceMins"`
+	BidMultiplierDown string `json:"bidMultiplierDown"`
+	BidMultiplierUp   string `json:"bidMultiplierUp"`
+}
+
+type NotionalFilter struct {
+	BaseFilter
+	ApplyMaxToMarket bool   `json:"applyMaxToMarket"`
+	ApplyMinToMarket bool   `json:"applyMinToMarket"`
+	MaxNotional      string `json:"maxNotional"`
+	MinNotional      string `json:"minNotional"`
+}
+
+type MaxNumOrdersFilter struct {
+	BaseFilter
+	MaxNumOrders int `json:"maxNumOrders"`
+}
+
+type MaxNumAlgoOrdersFilter struct {
+	BaseFilter
+	MaxNumAlgoOrders int `json:"maxNumAlgoOrders"`
+}
+
+type SymbolFilter struct {
+	Symbol     string   `json:"symbol"`
+	BaseAsset  string   `json:"baseAsset"`
+	QuoteAsset string   `json:"quoteAsset"`
+	Filters    []Filter `json:"filters"`
+}
+
+func (sf *SymbolFilter) UnmarshalJSON(data []byte) error {
+	var temp struct {
+		Symbol     string            `json:"symbol"`
+		BaseAsset  string            `json:"baseAsset"`
+		QuoteAsset string            `json:"quoteAsset"`
+		RawFilters []json.RawMessage `json:"filters"`
+	}
+
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	sf.Symbol = temp.Symbol
+	sf.BaseAsset = temp.BaseAsset
+	sf.QuoteAsset = temp.QuoteAsset
+
+	for _, rawFilter := range temp.RawFilters {
+		var baseFilter BaseFilter
+		if err := json.Unmarshal(rawFilter, &baseFilter); err != nil {
+			return err
+		}
+
+		var filter Filter
+		switch baseFilter.GetFilterType() {
+		case PRICE_FILTER:
+			filter = &PriceFilter{}
+		case LOT_SIZE:
+			filter = &LotSizeFilter{}
+		case ICEBERG_PARTS:
+			filter = &IcebergPartsFilter{}
+		case MARKET_LOT_SIZE:
+			filter = &MarketLotSizeFilter{}
+		case TRAILING_DELTA:
+			filter = &TrailingDeltaFilter{}
+		case PERCENT_PRICE_BY_SIDE:
+			filter = &PercentPriceBySideFilter{}
+		case NOTIONAL:
+			filter = &NotionalFilter{}
+		case MAX_NUM_ORDERS:
+			filter = &MaxNumOrdersFilter{}
+		case MAX_NUM_ALGO_ORDERS:
+			filter = &MaxNumAlgoOrdersFilter{}
+		}
+
+		if err := json.Unmarshal(rawFilter, filter); err != nil {
+			return err
+		}
+
+		sf.Filters = append(sf.Filters, filter)
+	}
+
+	return nil
+}

@@ -326,7 +326,7 @@ GET /api/v3/exchangeInfo
 	Notes: If the value provided to symbol or symbols do not exist,
 	the endpoint will throw an error saying the symbol is invalid.
 */
-func NewSymbolCache() (map[string]struct{}, error) {
+func NewSymbolCache() (map[string]*models.SymbolFilter, error) {
 	uri := BuildURI(apiEndpoint + "exchangeInfo")
 	resp, err := Query("GET", uri, "application/json", nil)
 	if err != nil {
@@ -335,20 +335,18 @@ func NewSymbolCache() (map[string]struct{}, error) {
 
 	// Define a struct to unmarshal the JSON response
 	var exchangeInfo struct {
-		Symbols []struct {
-			Symbol string `json:"symbol"`
-		} `json:"symbols"`
+		Symbols []models.SymbolFilter `json:"symbols"`
 	}
 
-	// Parse the JSON response
 	err = json.Unmarshal(resp, &exchangeInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	cache := make(map[string]struct{}, len(exchangeInfo.Symbols))
-	for _, s := range exchangeInfo.Symbols {
-		cache[s.Symbol] = struct{}{}
+	cache := make(map[string]*models.SymbolFilter, len(exchangeInfo.Symbols))
+	for i := range exchangeInfo.Symbols {
+		symbolFilter := &exchangeInfo.Symbols[i]
+		cache[symbolFilter.Symbol] = symbolFilter
 	}
 
 	return cache, nil
