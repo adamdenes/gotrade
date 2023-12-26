@@ -112,23 +112,16 @@ func (ts *TimescaleDB) GetSymbols() (*sql.Rows, error) {
 
 func (ts *TimescaleDB) CreateSymbol(sf *models.SymbolFilter) (int64, error) {
 	var id int64
-	insertQuery := `INSERT INTO binance.symbols (symbol, base_asset, quote_asset) 
-                    VALUES ($1, $2, $3) ON CONFLICT (symbol) DO NOTHING
-                    RETURNING symbol_id;`
+	upsertQuery := `
+        INSERT INTO binance.symbols (symbol, base_asset, quote_asset) 
+        VALUES ($1, $2, $3)
+        ON CONFLICT (symbol) DO 
+        UPDATE SET base_asset = EXCLUDED.base_asset, quote_asset = EXCLUDED.quote_asset
+        RETURNING symbol_id;`
 
-	err := ts.db.QueryRow(insertQuery, sf.Symbol, sf.BaseAsset, sf.QuoteAsset).Scan(&id)
+	err := ts.db.QueryRow(upsertQuery, sf.Symbol, sf.BaseAsset, sf.QuoteAsset).Scan(&id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// No new row was inserted because of a conflict. Fetch the existing symbol_id
-			selectQuery := `SELECT symbol_id FROM binance.symbols WHERE symbol = $1;`
-			err = ts.db.QueryRow(selectQuery, sf.Symbol).Scan(&id)
-			if err != nil {
-				return 0, err
-			}
-		} else {
-			// Some other error occurred
-			return 0, err
-		}
+		return 0, err
 	}
 
 	logger.Debug.Printf(
@@ -204,7 +197,7 @@ func (ts *TimescaleDB) GetSymbolIntervalID(sid, iid int64) (int64, error) {
 func (ts *TimescaleDB) CreateSIID(s, i string) (int64, error) {
 	symbolID, sf, err := ts.GetSymbol(s)
 	if err != nil {
-		// Shouldn't return any row on conflict!
+		// If no symbol found, create or update the symbol
 		if errors.Is(err, sql.ErrNoRows) {
 			sf = &models.SymbolFilter{
 				Symbol: s,
@@ -338,6 +331,19 @@ func (ts *TimescaleDB) CreateFilter(symbolID int64, filter models.Filter) error 
 }
 
 func (ts *TimescaleDB) ExecuteMaterializedViewCreation(mvc *models.MaterializedViewConfig) error {
+	// Check if the materialized view already exists
+	var exists bool
+	err := ts.db.QueryRow("SELECT EXISTS (SELECT FROM pg_matviews WHERE matviewname = $1 AND schemaname = 'binance')", mvc.Name).
+		Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("error checking if materialized view exists: %v", err)
+	}
+
+	// If the materialized view exists, skip creation
+	if exists {
+		return &models.MaterializedViewExistsError{ViewName: mvc.Name}
+	}
+
 	// Begin a transaction
 	tx, err := ts.db.Begin()
 	if err != nil {

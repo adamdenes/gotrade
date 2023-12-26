@@ -733,3 +733,11 @@ func (mvc *MaterializedViewConfig) CreateAddCompPolicyQuery() string {
         SELECT add_compression_policy('binance.%s', compress_after => INTERVAL '%s');`,
 		mvc.Name, mvc.Name, mvc.CompressAfter)
 }
+
+type MaterializedViewExistsError struct {
+	ViewName string
+}
+
+func (e *MaterializedViewExistsError) Error() string {
+	return fmt.Sprintf("materialized view %s already exists", e.ViewName)
+}
