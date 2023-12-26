@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o gotrade -v cmd/gotrade/main.go
 FROM alpine:latest  
 
 # Install dependencies
-RUN apk --no-cache add ca-certificates bash wget
+RUN apk --no-cache add ca-certificates bash wget postgresql-client
 
 # Set the working directory
 WORKDIR /root/
