@@ -112,21 +112,28 @@ func (ts *TimescaleDB) GetSymbols() (*sql.Rows, error) {
 
 func (ts *TimescaleDB) CreateSymbol(sf *models.SymbolFilter) (int64, error) {
 	var id int64
-	q := `INSERT INTO binance.symbols (symbol, base_asset, quote_asset) 
-    VALUES ($1, $2, $3) ON CONFLICT (symbol) DO NOTHING
-    RETURNING symbol_id;`
+	insertQuery := `INSERT INTO binance.symbols (symbol, base_asset, quote_asset) 
+                    VALUES ($1, $2, $3) ON CONFLICT (symbol) DO NOTHING
+                    RETURNING symbol_id;`
 
-	err := ts.db.QueryRow(q, sf.Symbol, sf.BaseAsset, sf.QuoteAsset).Scan(&id)
+	err := ts.db.QueryRow(insertQuery, sf.Symbol, sf.BaseAsset, sf.QuoteAsset).Scan(&id)
 	if err != nil {
-		return 0, err
+		if errors.Is(err, sql.ErrNoRows) {
+			// No new row was inserted because of a conflict. Fetch the existing symbol_id
+			selectQuery := `SELECT symbol_id FROM binance.symbols WHERE symbol = $1;`
+			err = ts.db.QueryRow(selectQuery, sf.Symbol).Scan(&id)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			// Some other error occurred
+			return 0, err
+		}
 	}
 
 	logger.Debug.Printf(
-		"INSERT INTO binance.symbols-> (%s, %s, %s), returning symbol_id: %d",
-		sf.Symbol,
-		sf.BaseAsset,
-		sf.QuoteAsset,
-		id,
+		"Processed symbol in binance.symbols -> (%s, %s, %s), returning symbol_id: %d",
+		sf.Symbol, sf.BaseAsset, sf.QuoteAsset, id,
 	)
 	return id, nil
 }
