@@ -93,6 +93,7 @@ func PollHistoricalData(storage storage.Storage) {
 
 				select {
 				case <-done:
+					logger.Debug.Println("<-done channel signaling received")
 					// Create and Update timescale policies
 					if err := refreshAggregates(storage); err != nil {
 						logger.Error.Panicln("Failed to refresh aggregates:", err)
