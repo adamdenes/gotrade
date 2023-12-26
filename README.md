@@ -2,7 +2,9 @@
 
 ### TODOs 0.9.0
 * [] rework `CalculateStopLoss` - incorporate ATR
-* [] store symbol filters from exchangeInfo
+* [x] store symbol filters from exchangeInfo
+* [] update strategies with the new trade filters
+* [] revisit `RefreshContinuousAggregate` -> not updatging
 * [] if database is empty (no orders) -> query all orderds with `GetAllOrders`
 
 ## Improvement idea
