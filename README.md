@@ -6,7 +6,7 @@
 * [x] during Stream base and quote assests are missing
      Processed symbol in binance.symbols -> (BTCUSDT, , ), returning symbol_id: 168
 * [x] revisit `RefreshContinuousAggregate` -> not updatging
-* [] if database is empty (no orders) -> query all orderds with `GetAllOrders`
+* [x] if database is empty (no orders) -> query all orderds with `GetAllOrders`
 
 ## Improvement ideas
 * [] rework `CalculateStopLoss` - incorporate ATR
