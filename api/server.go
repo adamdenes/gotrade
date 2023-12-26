@@ -526,10 +526,34 @@ func (s *Server) monitorOrders() {
 		}
 
 		if len(orders) == 0 {
-			// TODO: check GetAllOrders() to save stuff to DB.
-			s.infoLog.Println("No orders found, going to sleep...")
-			time.Sleep(60 * time.Second)
-			continue // Check again after sleep
+			s.infoLog.Println("No orders found in database, querying API for open orders...")
+
+			openOrders, err := rest.GetOpenOrders("")
+			if err != nil {
+				s.errorLog.Println(err)
+				time.Sleep(60 * time.Second)
+				continue
+			}
+
+			if len(openOrders) != 0 {
+				for _, oo := range openOrders {
+					s.infoLog.Printf(
+						"Found open order with ID=%d and Status=%s. Updating Database...",
+						oo.OrderID,
+						oo.Status,
+					)
+
+					if err := s.store.SaveOrder(oo.Symbol, oo.ToPostOrderResponse()); err != nil {
+						s.errorLog.Printf("error saving open order: %v", err)
+						time.Sleep(60 * time.Second)
+						continue
+					}
+				}
+			} else {
+				s.infoLog.Println("No orders found...")
+				time.Sleep(60 * time.Second)
+				continue // Check again after sleep
+			}
 		}
 
 		for _, order := range orders {

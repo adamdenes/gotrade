@@ -308,6 +308,27 @@ type GetOrderResponse struct {
 	SelfTradePreventionMode SelfTradePreventionMode `json:"selfTradePreventionMode"`
 }
 
+func (gor *GetOrderResponse) ToPostOrderResponse() *PostOrderResponse {
+	return &PostOrderResponse{
+		Symbol:                  gor.Symbol,
+		OrderID:                 gor.OrderID,
+		OrderListID:             gor.OrderListID,
+		ClientOrderID:           gor.ClientOrderID,
+		TransactTime:            gor.UpdateTime,
+		Price:                   gor.Price,
+		OrigQty:                 gor.OrigQty,
+		ExecutedQty:             gor.ExecutedQty,
+		CummulativeQuoteQty:     gor.CummulativeQuoteQty,
+		Status:                  gor.Status,
+		TimeInForce:             gor.TimeInForce,
+		Type:                    gor.Type,
+		Side:                    gor.Side,
+		StopPrice:               gor.StopPrice,
+		WorkingTime:             gor.WorkingTime,
+		SelfTradePreventionMode: gor.SelfTradePreventionMode,
+	}
+}
+
 type PostOrderResponse struct {
 	Symbol                  string                  `json:"symbol"`
 	OrderID                 int64                   `json:"orderId"`

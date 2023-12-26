@@ -639,13 +639,19 @@ Parameters:
 
 If the symbol is not sent, orders for all symbols will be returned in an array.
 */
-func GetOpenOrders(symbol string) ([]byte, error) {
+func GetOpenOrders(symbol string) ([]*models.GetOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
 	}
 
-	q := fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
+	var q string
+	if symbol == "" {
+		q = fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
+	} else {
+		q = fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
+	}
+
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
 	if err != nil {
 		return nil, err
@@ -657,7 +663,14 @@ func GetOpenOrders(symbol string) ([]byte, error) {
 		return nil, err
 	}
 
-	return resp, nil
+	var orders []*models.GetOrderResponse
+
+	err = json.Unmarshal(resp, &orders)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling open orders: %w", err)
+	}
+
+	return orders, nil
 }
 
 /*
