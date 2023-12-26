@@ -87,13 +87,17 @@ func PollHistoricalData(storage storage.Storage) {
 				// Poll one year worth of data
 				startDate = time.Now().AddDate(-1, 0, 0)
 				endDate = time.Now()
-				update(storage, true, startDate, endDate)
 
-				// Create and Update timescale policies
-				if err := refreshAggregates(storage); err != nil {
-					logger.Error.Fatal("Failed to refresh aggregates:", err)
+				done := make(chan bool)
+				go update(storage, true, startDate, endDate, done)
+
+				select {
+				case <-done:
+					// Create and Update timescale policies
+					if err := refreshAggregates(storage); err != nil {
+						logger.Error.Panicln("Failed to refresh aggregates:", err)
+					}
 				}
-
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}
@@ -160,7 +164,7 @@ func PollHistoricalData(storage storage.Storage) {
 	}
 }
 
-func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
+func update(s storage.Storage, isFull bool, startDate, endDate time.Time, done chan<- bool) {
 	// always get 1s interval data -> aggregate later
 	var wg sync.WaitGroup
 
@@ -191,7 +195,9 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 			}
 		}
 	}
-	wg.Wait()
+
+	wg.Wait()    // Wait for all goroutines to finish
+	done <- true // Signal that all goroutines are done
 }
 
 func generateMatViewConfigs() []*models.MaterializedViewConfig {
