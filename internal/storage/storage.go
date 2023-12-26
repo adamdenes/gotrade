@@ -28,5 +28,6 @@ type Storage interface {
 	GetBot(string, string) (*models.TradingBot, error)
 	DeleteBot(int) error
 	GetBots() ([]*models.TradingBot, error)
+	ExecuteMaterializedViewCreation(mvc *models.MaterializedViewConfig) error
 	RefreshContinuousAggregate(string) error
 }

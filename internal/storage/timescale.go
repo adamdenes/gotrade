@@ -337,6 +337,50 @@ func (ts *TimescaleDB) CreateFilter(symbolID int64, filter models.Filter) error 
 	return nil
 }
 
+func (ts *TimescaleDB) ExecuteMaterializedViewCreation(mvc *models.MaterializedViewConfig) error {
+	// Begin a transaction
+	tx, err := ts.db.Begin()
+	if err != nil {
+		return fmt.Errorf("error beginning transaction: %v", err)
+	}
+
+	// Function to handle rollback in case of an error
+	rollbackOnError := func(err error) error {
+		rbErr := tx.Rollback()
+		if rbErr != nil {
+			return fmt.Errorf("error rolling back transaction: %v, original error: %v", rbErr, err)
+		}
+		return err
+	}
+
+	// Execute CreateQuery
+	if _, err := tx.Exec(mvc.CreateQuery()); err != nil {
+		return rollbackOnError(fmt.Errorf("error creating materialized view: %v", err))
+	}
+
+	// Execute CreateContAggPolicyQuery
+	if _, err := tx.Exec(mvc.CreateContAggPolicyQuery()); err != nil {
+		return rollbackOnError(fmt.Errorf("error creating continuous aggregate policy: %v", err))
+	}
+
+	// Execute CreateIndexQuery
+	if _, err := tx.Exec(mvc.CreateIndexQuery()); err != nil {
+		return rollbackOnError(fmt.Errorf("error creating index: %v", err))
+	}
+
+	// Execute CreateAddCompPolicyQuery
+	if _, err := tx.Exec(mvc.CreateAddCompPolicyQuery()); err != nil {
+		return rollbackOnError(fmt.Errorf("error creating compression policy: %v", err))
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %v", err)
+	}
+
+	return nil
+}
+
 func ConvertInterval(intervalString string) string {
 	const (
 		SECOND = "s"

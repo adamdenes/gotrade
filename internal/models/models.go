@@ -686,3 +686,50 @@ func (sf *SymbolFilter) UnmarshalJSON(data []byte) error {
 
 	return nil
 }
+
+type MaterializedViewConfig struct {
+	Name             string
+	Interval         string
+	StartOffset      string
+	EndOffset        string
+	ScheduleInterval string
+	CompressAfter    string
+}
+
+func (mvc *MaterializedViewConfig) CreateQuery() string {
+	return fmt.Sprintf(`
+        CREATE MATERIALIZED VIEW binance.%s
+        WITH (timescaledb.continuous) AS 
+        SELECT 
+            kd.symbol_interval_id as siid,
+            time_bucket(INTERVAL '%s', kd.open_time) as bucket,
+            FIRST(kd.open, kd.open_time) as first_open,
+            MAX(kd.high) as max_high,
+            MIN(kd.low) as min_low,
+            LAST(kd.close, kd.close_time) as last_close,
+            SUM(kd.volume) as total_volume
+        FROM binance.kline AS kd
+        GROUP BY bucket, kd.symbol_interval_id
+        WITH NO DATA;`, mvc.Name, mvc.Interval)
+}
+
+func (mvc *MaterializedViewConfig) CreateContAggPolicyQuery() string {
+	return fmt.Sprintf(`
+        SELECT add_continuous_aggregate_policy(
+            'binance.%s',
+            start_offset => INTERVAL '%s',
+            end_offset => INTERVAL '%s',
+            schedule_interval => INTERVAL '%s');`,
+		mvc.Name, mvc.StartOffset, mvc.EndOffset, mvc.ScheduleInterval)
+}
+
+func (mvc *MaterializedViewConfig) CreateIndexQuery() string {
+	return fmt.Sprintf(`CREATE INDEX ON binance.%s (bucket, siid);`, mvc.Name)
+}
+
+func (mvc *MaterializedViewConfig) CreateAddCompPolicyQuery() string {
+	return fmt.Sprintf(`
+        ALTER MATERIALIZED VIEW binance.%s SET (timescaledb.compress = true);
+        SELECT add_compression_policy('binance.%s', compress_after => INTERVAL '%s');`,
+		mvc.Name, mvc.Name, mvc.CompressAfter)
+}

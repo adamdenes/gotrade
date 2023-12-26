@@ -88,7 +88,6 @@ func PollHistoricalData(storage storage.Storage) {
 				startDate = time.Now().AddDate(-1, 0, 0)
 				endDate = time.Now()
 				update(storage, true, startDate, endDate)
-				refreshAggregates(storage)
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}
@@ -151,6 +150,7 @@ func PollHistoricalData(storage storage.Storage) {
 		} else {
 			// Wait 24 hours and start again
 			logger.Info.Println("Database is up to date! Polling is going to sleep...")
+			refreshAggregates(storage)
 			time.Sleep(time.Hour * 24)
 		}
 	}
@@ -190,7 +190,88 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 	wg.Wait()
 }
 
+func generateMatViewConfigs() []*models.MaterializedViewConfig {
+	viewConfigs := map[string]map[string]string{
+		"aggregate_1m": {
+			"Interval":         "1 minute",
+			"StartOffset":      "1 hour",
+			"EndOffset":        "1 minute",
+			"ScheduleInterval": "5 minutes",
+			"CompressAfter":    "7 days",
+		},
+		"aggregate_5m": {
+			"Interval":         "5 minutes",
+			"StartOffset":      "1 day",
+			"EndOffset":        "5 minutes",
+			"ScheduleInterval": "15 minutes",
+			"CompressAfter":    "7 days",
+		},
+		"aggregate_1h": {
+			"Interval":         "1 hour",
+			"StartOffset":      "1 day",
+			"EndOffset":        "1 hour",
+			"ScheduleInterval": "2 hours",
+			"CompressAfter":    "7 days",
+		},
+		"aggregate_4h": {
+			"Interval":         "4 hours",
+			"StartOffset":      "1 day",
+			"EndOffset":        "4 hours",
+			"ScheduleInterval": "8 hours",
+			"CompressAfter":    "7 days",
+		},
+		"aggregate_1d": {
+			"Interval":         "1 day",
+			"StartOffset":      "1 week",
+			"EndOffset":        "1 day",
+			"ScheduleInterval": "2 days",
+			"CompressAfter":    "8 days",
+		},
+		"aggregate_1w": {
+			"Interval":         "1 week",
+			"StartOffset":      "15 days",
+			"EndOffset":        "1 day",
+			"ScheduleInterval": "1 week",
+			"CompressAfter":    "1 month",
+		},
+	}
+
+	var materializedViews []*models.MaterializedViewConfig
+
+	for name, config := range viewConfigs {
+		mvc := &models.MaterializedViewConfig{
+			Name:             name,
+			Interval:         config["Interval"],
+			StartOffset:      config["StartOffset"],
+			EndOffset:        config["EndOffset"],
+			ScheduleInterval: config["ScheduleInterval"],
+			CompressAfter:    config["CompressAfter"],
+		}
+		materializedViews = append(materializedViews, mvc)
+	}
+	return materializedViews
+}
+
+func createMatView(s storage.Storage) error {
+	mvcs := generateMatViewConfigs()
+
+	for _, mvc := range mvcs {
+		// Execute the creation logic for each materialized view
+		err := s.ExecuteMaterializedViewCreation(mvc)
+		if err != nil {
+			logger.Error.Printf("Failed to create materialized view %s: %v", mvc.Name, err)
+			return err
+		}
+		logger.Info.Printf("Materialized view %s created successfully.\n", mvc.Name)
+	}
+	return nil
+}
+
 func refreshAggregates(s storage.Storage) {
+	if err := createMatView(s); err != nil {
+		logger.Debug.Fatal(err)
+	}
+
 	aggregates := []string{
 		"binance.aggregate_1w",
 		"binance.aggregate_1d",

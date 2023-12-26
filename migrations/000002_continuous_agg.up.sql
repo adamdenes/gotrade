@@ -1,6 +1,6 @@
 BEGIN;
 
-CREATE MATERIALIZED VIEW binance.aggregate_1m
+CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_1m
 WITH (timescaledb.continuous) AS 
 SELECT 
     kd.symbol_interval_id as siid,
@@ -27,7 +27,7 @@ SELECT add_compression_policy('binance.aggregate_1m', compress_after => INTERVAL
 
 -- ###############################################################################################################
 
-CREATE MATERIALIZED VIEW binance.aggregate_5m
+CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_5m
 WITH (timescaledb.continuous) AS 
 SELECT 
     kd.symbol_interval_id as siid,
@@ -54,7 +54,7 @@ SELECT add_compression_policy('binance.aggregate_5m', compress_after => INTERVAL
 
 -- ###############################################################################################################
 
-CREATE MATERIALIZED VIEW binance.aggregate_1h
+CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_1h
 WITH (timescaledb.continuous) AS 
 SELECT 
     kd.symbol_interval_id as siid,
@@ -81,7 +81,7 @@ SELECT add_compression_policy('binance.aggregate_1h', compress_after => INTERVAL
 
 -- ###############################################################################################################
 
-CREATE MATERIALIZED VIEW binance.aggregate_4h
+CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_4h
 WITH (timescaledb.continuous) AS 
 SELECT 
     kd.symbol_interval_id as siid,
@@ -108,7 +108,7 @@ SELECT add_compression_policy('binance.aggregate_4h', compress_after => INTERVAL
 
 -- ###############################################################################################################
 
-CREATE MATERIALIZED VIEW binance.aggregate_1d
+CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_1d
 WITH (timescaledb.continuous) AS 
 SELECT 
     kd.symbol_interval_id as siid,
@@ -135,7 +135,7 @@ SELECT add_compression_policy('binance.aggregate_1d', compress_after => INTERVAL
 
 -- ###############################################################################################################
 
-CREATE MATERIALIZED VIEW binance.aggregate_1w
+CREATE MATERIALIZED VIEW IF NOT EXISTS binance.aggregate_1w
 WITH (timescaledb.continuous) AS 
 SELECT 
     kd.symbol_interval_id as siid,
