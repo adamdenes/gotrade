@@ -88,6 +88,7 @@ func PollHistoricalData(storage storage.Storage) {
 				startDate = time.Now().AddDate(-1, 0, 0)
 				endDate = time.Now()
 				update(storage, true, startDate, endDate)
+				refreshAggregates(storage)
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}
@@ -187,7 +188,9 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 		}
 	}
 	wg.Wait()
+}
 
+func refreshAggregates(s storage.Storage) {
 	aggregates := []string{
 		"binance.aggregate_1w",
 		"binance.aggregate_1d",
@@ -197,11 +200,13 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 		"binance.aggregate_1m",
 	}
 	for _, agg := range aggregates {
+		logger.Info.Printf("Refreshing aggregate %s", agg)
 		err := s.RefreshContinuousAggregate(agg)
 		if err != nil {
 			logger.Debug.Fatalf("failed to refresh continuous aggregate %s: %v", agg, err)
 		}
 	}
+	logger.Info.Println("Finished refreshing aggregates!")
 }
 
 // Concurrently make HTTP requests for given URLs (zip files), and stream them to the database
