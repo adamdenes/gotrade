@@ -88,11 +88,16 @@ func PollHistoricalData(storage storage.Storage) {
 				startDate = time.Now().AddDate(-1, 0, 0)
 				endDate = time.Now()
 				update(storage, true, startDate, endDate)
+
+				// Create and Update timescale policies
+				if err := refreshAggregates(storage); err != nil {
+					logger.Error.Fatal("Failed to refresh aggregates:", err)
+				}
+
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}
 		}
-
 		epoch := row.CloseTime
 		var (
 			eYear    int        = epoch.Year()
@@ -150,7 +155,6 @@ func PollHistoricalData(storage storage.Storage) {
 		} else {
 			// Wait 24 hours and start again
 			logger.Info.Println("Database is up to date! Polling is going to sleep...")
-			refreshAggregates(storage)
 			time.Sleep(time.Hour * 24)
 		}
 	}
@@ -259,7 +263,6 @@ func createMatView(s storage.Storage) error {
 		// Execute the creation logic for each materialized view
 		err := s.ExecuteMaterializedViewCreation(mvc)
 		if err != nil {
-			logger.Error.Printf("Failed to create materialized view %s: %v", mvc.Name, err)
 			return err
 		}
 		logger.Info.Printf("Materialized view %s created successfully.\n", mvc.Name)
@@ -267,9 +270,14 @@ func createMatView(s storage.Storage) error {
 	return nil
 }
 
-func refreshAggregates(s storage.Storage) {
+func refreshAggregates(s storage.Storage) error {
 	if err := createMatView(s); err != nil {
-		logger.Debug.Fatal(err)
+		if _, ok := err.(*models.MaterializedViewExistsError); ok {
+			logger.Info.Println(err)
+			return nil
+		}
+		logger.Error.Println("Failed to create materialized views:", err)
+		return err
 	}
 
 	aggregates := []string{
@@ -285,9 +293,11 @@ func refreshAggregates(s storage.Storage) {
 		err := s.RefreshContinuousAggregate(agg)
 		if err != nil {
 			logger.Debug.Fatalf("failed to refresh continuous aggregate %s: %v", agg, err)
+			return err
 		}
 	}
 	logger.Info.Println("Finished refreshing aggregates!")
+	return nil
 }
 
 // Concurrently make HTTP requests for given URLs (zip files), and stream them to the database
