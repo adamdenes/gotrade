@@ -531,7 +531,11 @@ func (s *Server) monitorOrders() {
 			openOrders, err := rest.GetOpenOrders("")
 			if err != nil {
 				s.errorLog.Println(err)
-				time.Sleep(60 * time.Second)
+				if re, ok := err.(*models.RequestError); ok {
+					time.Sleep(re.Timer * time.Second)
+				} else {
+					time.Sleep(60 * time.Second)
+				}
 				continue
 			}
 
