@@ -351,7 +351,7 @@ func (s *SMAStrategy) calculateParams(
 ) (float64, float64, float64, float64, float64) {
 	var quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount float64
 
-	filters, err := s.db.GetTradeFitlers(s.asset)
+	filters, err := s.db.GetTradeFilters(s.asset)
 	if err != nil {
 		logger.Error.Printf("Error fetching trade filters: %v", err)
 		return 0, 0, 0, 0, 0

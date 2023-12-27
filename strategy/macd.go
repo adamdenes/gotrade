@@ -346,7 +346,7 @@ func (m *MACDStrategy) calculateParams(
 ) (float64, float64, float64, float64, float64) {
 	var quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount float64
 
-	filters, err := m.db.GetTradeFitlers(m.asset)
+	filters, err := m.db.GetTradeFilters(m.asset)
 	if err != nil {
 		logger.Error.Printf("Error fetching trade filters: %v", err)
 		return 0, 0, 0, 0, 0
