@@ -799,61 +799,66 @@ func (ts *TimescaleDB) SaveSymbols(sf map[string]*models.SymbolFilter) error {
 }
 
 func (ts *TimescaleDB) GetPriceFilter(id int64) (*models.PriceFilter, error) {
-    pf := &models.PriceFilter{}
-    q := "SELECT * FROM binance.price_filters WHERE symbol_id = $1;"
+	pf := &models.PriceFilter{}
+	q := "SELECT * FROM binance.price_filters WHERE symbol_id = $1;"
 
 	err := ts.db.QueryRow(q, id).Scan(&pf.BaseFilter, &pf.MaxPrice, &pf.MaxPrice, &pf.TickSize)
 	if err != nil {
 		return nil, err
 	}
-    
-    return pf, nil
+
+	return pf, nil
 }
 
 func (ts *TimescaleDB) GetLotSizeFilter(id int64) (*models.LotSizeFilter, error) {
-    lf := &models.LotSizeFilter{}
-    q := "SELECT * FROM binance.lot_size_filters WHERE symbol_id = $1;"
+	lf := &models.LotSizeFilter{}
+	q := "SELECT * FROM binance.lot_size_filters WHERE symbol_id = $1;"
 
 	err := ts.db.QueryRow(q, id).Scan(&lf.BaseFilter, &lf.MaxQty, &lf.MinQty, &lf.StepSize)
 	if err != nil {
 		return nil, err
 	}
-    
-    return lf, nil
+
+	return lf, nil
 }
 
 func (ts *TimescaleDB) GetNotionalFilter(id int64) (*models.NotionalFilter, error) {
-    nf := &models.NotionalFilter{}
-    q := "SELECT * FROM binance.notional_filters WHERE symbol_id = $1;"
+	nf := &models.NotionalFilter{}
+	q := "SELECT * FROM binance.notional_filters WHERE symbol_id = $1;"
 
-	err := ts.db.QueryRow(q, id).Scan(&nf.BaseFilter, &nf.ApplyMaxToMarket, &nf.ApplyMinToMarket, &nf.MaxNotional, &nf.MinNotional)
+	err := ts.db.QueryRow(q, id).
+		Scan(&nf.BaseFilter, &nf.ApplyMaxToMarket, &nf.ApplyMinToMarket, &nf.MaxNotional, &nf.MinNotional)
 	if err != nil {
 		return nil, err
 	}
-    
-    return nf, nil
+
+	return nf, nil
 }
 
-func (ts *TimescaleDB) GetTradeFiltles(symbol string) (*models.TradeFilters, error) {
-    sid, _, err := ts.GetSymbol(symbol)
-    if err != nil {
-        return nil, err
-    }
+func (ts *TimescaleDB) GetTradeFilters(symbol string) (*models.TradeFilters, error) {
+	sid, _, err := ts.GetSymbol(symbol)
+	if err != nil {
+		return nil, err
+	}
 
-    priceFilter, err := ts.GetPriceFilter(sid);
-    if  err != nil {
-        return nil, fmt.Errorf("error getting priceFilter: %w", err)
-    }
-    lotSizeFilter, err := ts.GetLotSizeFilter(sid);
-    if  err != nil {
-        return nil, fmt.Errorf("error getting lotSizeFilter: %w", err)
-    }
-    notinalFilter, err := ts.GetNotionalFilter(sid);
-    if  err != nil {
-        return nil, fmt.Errorf("error getting notinalFilter: %w", err)
-    }
+	priceFilter, err := ts.GetPriceFilter(sid)
+	if err != nil {
+		return nil, fmt.Errorf("error getting priceFilter: %w", err)
+	}
+	lotSizeFilter, err := ts.GetLotSizeFilter(sid)
+	if err != nil {
+		return nil, fmt.Errorf("error getting lotSizeFilter: %w", err)
+	}
+	notinalFilter, err := ts.GetNotionalFilter(sid)
+	if err != nil {
+		return nil, fmt.Errorf("error getting notinalFilter: %w", err)
+	}
 
-    return &models.TradeFilters{PriceFilter: *priceFilter, LotSizeFilter: *lotSizeFilter, NotionalFilter: *notinalFilter}, nil
+	return &models.TradeFilters{
+		PriceFilter:    *priceFilter,
+		LotSizeFilter:  *lotSizeFilter,
+		NotionalFilter: *notinalFilter,
+	}, nil
 }
 
 func (ts *TimescaleDB) SaveTrade(t *models.Trade) error {

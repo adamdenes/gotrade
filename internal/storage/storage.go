@@ -17,7 +17,7 @@ type Storage interface {
 	Stream(*zip.Reader) error
 	QueryLastRow() (*models.KlineRequest, error)
 	SaveSymbols(map[string]*models.SymbolFilter) error
-	GetTradeFitlers(string) (*models.TradeFilters, error)
+	GetTradeFilters(string) (*models.TradeFilters, error)
 	SaveTrade(*models.Trade) error
 	GetTrade(int64) (*models.Trade, error)
 	UpdateTrade(int64, string) error

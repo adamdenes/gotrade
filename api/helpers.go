@@ -90,10 +90,10 @@ func PollHistoricalData(storage storage.Storage) {
 
 				update(storage, true, startDate, endDate)
 
-        // Create and Update timescale policies
-        if err := refreshAggregates(storage); err != nil {
-          logger.Error.Panicln("Failed to refresh aggregates:", err)
-        }
+				// Create and Update timescale policies
+				if err := refreshAggregates(storage); err != nil {
+					logger.Error.Panicln("Failed to refresh aggregates:", err)
+				}
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}

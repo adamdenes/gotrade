@@ -26,7 +26,6 @@ type Strategy[S any] interface {
 	PlaceOrder(o models.TypeOfOrder)
 	GetClosePrices()
 	GetName() string
-    RoundToStepSize(value, stepSize float64) float64
-    RoundToTickSize(value, tickSize float64) float64
-
+	RoundToStepSize(value, stepSize float64) float64
+	RoundToTickSize(value, tickSize float64) float64
 }

@@ -107,7 +107,7 @@ func (m *MACDStrategy) Execute() {
 				order = m.Buy(m.asset, currentPrice)
 			}
 		}
-        m.PlaceOrder(order)
+		m.PlaceOrder(order)
 	}
 }
 
@@ -193,7 +193,11 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 func (m *MACDStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	// BUY: Limit Price < Last Price < Stop Price
-	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("BUY", price, 1.2)
+	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams(
+		"BUY",
+		price,
+		1.2,
+	)
 
 	logger.Debug.Println(
 		"price =", price,
@@ -207,12 +211,12 @@ func (m *MACDStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	)
 
 	return &models.PostOrderOCO{
-		Symbol:    asset,
-		Side:      models.BUY,
-		Quantity:  quantity,
-		Price:     takeProfit, // Price to buy (Take Profit)
-		StopPrice: stopPrice,  // Where to start stop loss
-		StopLimitPrice:	stopLimitPrice, // Highest price you want to sell coins
+		Symbol:               asset,
+		Side:                 models.BUY,
+		Quantity:             quantity,
+		Price:                takeProfit,     // Price to buy (Take Profit)
+		StopPrice:            stopPrice,      // Where to start stop loss
+		StopLimitPrice:       stopLimitPrice, // Highest price you want to sell coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
@@ -221,7 +225,11 @@ func (m *MACDStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 
 func (m *MACDStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 	// SELL: Limit Price > Last Price > Stop Price
-	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams("SELL", price, 1.2)
+	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams(
+		"SELL",
+		price,
+		1.2,
+	)
 
 	logger.Debug.Println(
 		"price =", price,
@@ -235,12 +243,12 @@ func (m *MACDStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 	)
 
 	return &models.PostOrderOCO{
-		Symbol:    asset,
-		Side:      models.SELL,
-		Quantity:  quantity,
-		Price:     takeProfit, // Price to sell (Take Profit)
-		StopPrice: stopPrice,  // Where to start stop loss
-		StopLimitPrice:	stopLimitPrice, // Lowest price you want to buy coins
+		Symbol:               asset,
+		Side:                 models.SELL,
+		Quantity:             quantity,
+		Price:                takeProfit,     // Price to sell (Take Profit)
+		StopPrice:            stopPrice,      // Where to start stop loss
+		StopLimitPrice:       stopLimitPrice, // Lowest price you want to buy coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
@@ -338,15 +346,15 @@ func (m *MACDStrategy) calculateParams(
 ) (float64, float64, float64, float64, float64) {
 	var quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount float64
 
-    filters, err := m.db.GetTradeFitlers(m.asset)
-    if err != nil {
-        logger.Error.Printf("Error fetching trade filters: %v", err)
-        return 0,0,0,0,0 
-    }
+	filters, err := m.db.GetTradeFitlers(m.asset)
+	if err != nil {
+		logger.Error.Printf("Error fetching trade filters: %v", err)
+		return 0, 0, 0, 0, 0
+	}
 
-    stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
-    quantity = m.positionSize / currentPrice
-    quantity = m.RoundToStepSize(quantity, stepSize)
+	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
+	quantity = m.positionSize / currentPrice
+	quantity = m.RoundToStepSize(quantity, stepSize)
 
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
@@ -376,25 +384,24 @@ func (m *MACDStrategy) calculateParams(
 		stopLimitPrice = stopPrice * 1.005
 	}
 
-    tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
-    // Adjust stopPrice, takeProfit, and stopLimitPrice to comply with tick size
-    stopPrice = m.RoundToTickSize(stopPrice, tickSize)
-    takeProfit = m.RoundToTickSize(takeProfit, tickSize)
-    stopLimitPrice = m.RoundToTickSize(stopLimitPrice, tickSize)
+	tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
+	// Adjust stopPrice, takeProfit, and stopLimitPrice to comply with tick size
+	stopPrice = m.RoundToTickSize(stopPrice, tickSize)
+	takeProfit = m.RoundToTickSize(takeProfit, tickSize)
+	stopLimitPrice = m.RoundToTickSize(stopLimitPrice, tickSize)
 
-    minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
-    if quantity*currentPrice < minNotional {
-        logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-    }
+	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+	if quantity*currentPrice < minNotional {
+		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+	}
 
 	return quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount
 }
 
 func (m *MACDStrategy) RoundToStepSize(value, stepSize float64) float64 {
-    return math.Round(value/stepSize) * stepSize
+	return math.Round(value/stepSize) * stepSize
 }
 
 func (m *MACDStrategy) RoundToTickSize(value, tickSize float64) float64 {
-    return math.Round(value/tickSize) * tickSize
+	return math.Round(value/tickSize) * tickSize
 }
-
