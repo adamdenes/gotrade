@@ -800,9 +800,9 @@ func (ts *TimescaleDB) SaveSymbols(sf map[string]*models.SymbolFilter) error {
 
 func (ts *TimescaleDB) GetPriceFilter(id int64) (*models.PriceFilter, error) {
 	pf := &models.PriceFilter{}
-	q := "SELECT * FROM binance.price_filters WHERE symbol_id = $1;"
+	q := "SELECT max_price, min_price, tick_size FROM binance.price_filters WHERE symbol_id = $1;"
 
-	err := ts.db.QueryRow(q, id).Scan(&pf.BaseFilter, &pf.MaxPrice, &pf.MaxPrice, &pf.TickSize)
+	err := ts.db.QueryRow(q, id).Scan(&pf.MaxPrice, &pf.MinPrice, &pf.TickSize)
 	if err != nil {
 		return nil, err
 	}
@@ -812,9 +812,9 @@ func (ts *TimescaleDB) GetPriceFilter(id int64) (*models.PriceFilter, error) {
 
 func (ts *TimescaleDB) GetLotSizeFilter(id int64) (*models.LotSizeFilter, error) {
 	lf := &models.LotSizeFilter{}
-	q := "SELECT * FROM binance.lot_size_filters WHERE symbol_id = $1;"
+	q := "SELECT max_qty, min_qty, step_size FROM binance.lot_size_filters WHERE symbol_id = $1;"
 
-	err := ts.db.QueryRow(q, id).Scan(&lf.BaseFilter, &lf.MaxQty, &lf.MinQty, &lf.StepSize)
+	err := ts.db.QueryRow(q, id).Scan(&lf.MaxQty, &lf.MinQty, &lf.StepSize)
 	if err != nil {
 		return nil, err
 	}
@@ -824,10 +824,10 @@ func (ts *TimescaleDB) GetLotSizeFilter(id int64) (*models.LotSizeFilter, error)
 
 func (ts *TimescaleDB) GetNotionalFilter(id int64) (*models.NotionalFilter, error) {
 	nf := &models.NotionalFilter{}
-	q := "SELECT * FROM binance.notional_filters WHERE symbol_id = $1;"
+	q := "SELECT apply_max_to_market, apply_min_to_market, max_notional, min_notional FROM binance.notional_filters WHERE symbol_id = $1;"
 
 	err := ts.db.QueryRow(q, id).
-		Scan(&nf.BaseFilter, &nf.ApplyMaxToMarket, &nf.ApplyMinToMarket, &nf.MaxNotional, &nf.MinNotional)
+		Scan(&nf.ApplyMaxToMarket, &nf.ApplyMinToMarket, &nf.MaxNotional, &nf.MinNotional)
 	if err != nil {
 		return nil, err
 	}
