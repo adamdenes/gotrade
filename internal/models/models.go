@@ -708,6 +708,12 @@ func (sf *SymbolFilter) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type TradeFilters struct {
+    PriceFilter
+    LotSizeFilter
+    NotionalFilter
+}
+
 type MaterializedViewConfig struct {
 	Name             string
 	Interval         string

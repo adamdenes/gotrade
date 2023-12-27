@@ -89,6 +89,11 @@ func PollHistoricalData(storage storage.Storage) {
 				endDate = time.Now()
 
 				update(storage, true, startDate, endDate)
+
+        // Create and Update timescale policies
+        if err := refreshAggregates(storage); err != nil {
+          logger.Error.Panicln("Failed to refresh aggregates:", err)
+        }
 			} else {
 				logger.Error.Panicf("error getting last close_time: %v\n", err)
 			}
@@ -115,11 +120,6 @@ func PollHistoricalData(storage storage.Storage) {
 			month,
 			firstDay,
 		)
-
-		// Create and Update timescale policies
-		if err := refreshAggregates(storage); err != nil {
-			logger.Error.Panicln("Failed to refresh aggregates:", err)
-		}
 
 		if eYear <= year && eMonth < month {
 			if printCount == 1 {

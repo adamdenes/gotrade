@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,9 +90,6 @@ func (s *SMAStrategy) Execute() {
 		} else {
 			s.positionSize = s.balance * s.riskPercentage / s.stopLossPercentage
 		}
-		// Calculate the quantity based on position size
-		// PRICE_FILTER -> price % tickSize == 0 | tickSize: 0.00001
-		quantity := math.Round(s.positionSize/currentPrice*100000) / 100000
 
 		ema200 := s.ema200[len(s.ema200)-1]
 		var order models.TypeOfOrder
@@ -99,13 +97,12 @@ func (s *SMAStrategy) Execute() {
 		// Flipping buy/sell orders
 		if currentPrice > ema200 && talib.Crossover(s.shortSMA, s.longSMA) {
 			// Generate sell signal based on SMA crossunder or EMA 200 condition
-			order = s.Sell(s.asset, quantity, currentPrice)
-			s.PlaceOrder(order)
+			order = s.Sell(s.asset, currentPrice)
 		} else if currentPrice < ema200 && talib.Crossunder(s.shortSMA, s.longSMA) {
 			// Generate buy signal based on SMA crossover and EMA 200 condition
-			order = s.Buy(s.asset, quantity, currentPrice)
-			s.PlaceOrder(order)
+			order = s.Buy(s.asset, currentPrice)
 		}
+        s.PlaceOrder(order)
 	}
 }
 
@@ -159,16 +156,17 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 	}
 }
 
-func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.TypeOfOrder {
+func (s *SMAStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	// takeProfit := price * 0.95
 	// stopPrice := takeProfit + takeProfit*s.stopLossPercentage
 	// stopLimitPrice := stopPrice * 1.02
 
 	// BUY: Limit Price < Last Price < Stop Price
-	stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams("BUY", price, 1.5)
+	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams("BUY", price, 1.2)
 
 	logger.Debug.Println(
 		"price =", price,
+		"quantity =", quantity,
 		"tp =", takeProfit,
 		"sp =", stopPrice,
 		"slp =", stopLimitPrice,
@@ -176,31 +174,31 @@ func (s *SMAStrategy) Buy(asset string, quantity float64, price float64) models.
 		"swingh =", s.swingHigh,
 		"swingl =", s.swingLow,
 	)
+
 	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.BUY,
 		Quantity:  quantity,
-		Price:     math.Round(takeProfit*100) / 100, // Price to buy (Take Profit)
-		StopPrice: math.Round(stopPrice*100) / 100,  // Where to start stop loss
-		StopLimitPrice: math.Round(
-			stopLimitPrice*100,
-		) / 100, // Highest price you want to sell coins
+		Price:     takeProfit, // Price to buy (Take Profit)
+		StopPrice: stopPrice,  // Where to start stop loss
+		StopLimitPrice:	stopLimitPrice, // Highest price you want to sell coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
 	}
 }
 
-func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models.TypeOfOrder {
+func (s *SMAStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 	// takeProfit := price * 1.05
 	// stopPrice := takeProfit - takeProfit*s.stopLossPercentage
 	// stopLimitPrice := stopPrice * 0.98
 
 	// SELL: Limit Price > Last Price > Stop Price
-	stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams("SELL", price, 1.5)
+	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams("SELL", price, 1.2)
 
 	logger.Debug.Println(
 		"price =", price,
+		"quantity =", quantity,
 		"tp =", takeProfit,
 		"sp =", stopPrice,
 		"slp =", stopLimitPrice,
@@ -208,15 +206,14 @@ func (s *SMAStrategy) Sell(asset string, quantity float64, price float64) models
 		"swingh =", s.swingHigh,
 		"swingl =", s.swingLow,
 	)
+
 	return &models.PostOrderOCO{
 		Symbol:    asset,
 		Side:      models.SELL,
 		Quantity:  quantity,
-		Price:     math.Round(takeProfit*100) / 100, // Price to sell (Take Profit)
-		StopPrice: math.Round(stopPrice*100) / 100,  // Where to start stop loss
-		StopLimitPrice: math.Round(
-			stopLimitPrice*100,
-		) / 100, // Lowest price you want to buy coins
+		Price:     takeProfit, // Price to sell (Take Profit)
+		StopPrice: stopPrice,  // Where to start stop loss
+		StopLimitPrice:	stopLimitPrice, // Lowest price you want to buy coins
 		StopLimitTimeInForce: models.StopLimitTimeInForce(models.GTC),
 		RecvWindow:           5000,
 		Timestamp:            time.Now().UnixMilli(),
@@ -343,13 +340,23 @@ func (s *SMAStrategy) GetRecentLow() {
 func (s *SMAStrategy) calculateParams(
 	side string,
 	currentPrice, riskRewardRatio float64,
-) (float64, float64, float64, float64) {
-	var stopPrice, takeProfit, stopLimitPrice, riskAmount float64
+) (float64, float64, float64, float64, float64) {
+	var quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount float64
+
+    filters, err := s.db.GetTradeFitlers(s.asset)
+    if err != nil {
+        logger.Error.Printf("Error fetching trade filters: %v", err)
+        return 0,0,0,0,0 
+    }
+
+    stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
+    quantity = s.positionSize / currentPrice
+    quantity = s.RoundToStepSize(quantity, stepSize)
 
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
 		// Calculate parameters for sell orders
-		stopPrice = s.swingLow // * (1 + s.stopLossPercentage)
+		stopPrice = s.swingLow // * (1 + m.stopLossPercentage)
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - s.stopLossPercentage)
 		}
@@ -360,10 +367,9 @@ func (s *SMAStrategy) calculateParams(
 		}
 		stopLimitPrice = stopPrice * 0.995
 	} else if side == "BUY" {
-
 		// BUY: Limit Price < Last Price < Stop Price
 		// Calculate parameters for buy orders
-		stopPrice = s.swingHigh // * (1 - s.stopLossPercentage)
+		stopPrice = s.swingHigh // * (1 - m.stopLossPercentage)
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + s.stopLossPercentage)
 		}
@@ -375,5 +381,25 @@ func (s *SMAStrategy) calculateParams(
 		stopLimitPrice = stopPrice * 1.005
 	}
 
-	return stopPrice, takeProfit, stopLimitPrice, riskAmount
+    tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
+    // Adjust stopPrice, takeProfit, and stopLimitPrice to comply with tick size
+    stopPrice = s.RoundToTickSize(stopPrice, tickSize)
+    takeProfit = s.RoundToTickSize(takeProfit, tickSize)
+    stopLimitPrice = s.RoundToTickSize(stopLimitPrice, tickSize)
+
+    minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+    if quantity*currentPrice < minNotional {
+        logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+    }
+
+	return quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount
 }
+
+func (s *SMAStrategy) RoundToStepSize(value, stepSize float64) float64 {
+    return math.Round(value/stepSize) * stepSize
+}
+
+func (s *SMAStrategy) RoundToTickSize(value, tickSize float64) float64 {
+    return math.Round(value/tickSize) * tickSize
+}
+

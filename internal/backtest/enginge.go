@@ -21,9 +21,12 @@ type Strategy[S any] interface {
 	GetPositionSize() float64
 	SetData([]*models.KlineSimple)
 	SetAsset(string)
-	Buy(asset string, quantity float64, price float64) models.TypeOfOrder
-	Sell(asset string, quantity float64, price float64) models.TypeOfOrder
+	Buy(asset string, price float64) models.TypeOfOrder
+	Sell(asset string, price float64) models.TypeOfOrder
 	PlaceOrder(o models.TypeOfOrder)
 	GetClosePrices()
 	GetName() string
+    RoundToStepSize(value, stepSize float64) float64
+    RoundToTickSize(value, tickSize float64) float64
+
 }

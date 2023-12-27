@@ -2,7 +2,7 @@
 
 ### TODOs 0.9.0
 * [x] store symbol filters from exchangeInfo
-* [] update strategies with the new trade filters
+* [x] update strategies with the new trade filters
 * [x] during Stream base and quote assests are missing
      Processed symbol in binance.symbols -> (BTCUSDT, , ), returning symbol_id: 168
 * [x] revisit `RefreshContinuousAggregate` -> not updatging
