@@ -420,7 +420,12 @@ func (m *MACDStrategy) RoundToTickSize(value, tickSize float64) float64 {
 	return math.Round(value/tickSize) * tickSize
 }
 
+// For leverage trading
 // Position size = (account size x maximum risk percentage / (entry price – stop loss price)) x entry price
+//
+// For SPOT trading
+// Invalidation point (distance to stop-loss)
+// position size = account size x account risk / invalidation point
 func (m *MACDStrategy) CalculatePositionSize(
 	asset string,
 	riskPercentage, entryPrice, stopLossPrice float64,
@@ -434,22 +439,20 @@ func (m *MACDStrategy) CalculatePositionSize(
 		}
 	}
 
-	// (account size * maximum risk percentage)
-	dollarRiskPerTrade := m.balance * riskPercentage
-	// (entryPrice - stop loss price)
-	priceDifference := math.Abs(entryPrice - stopLossPrice)
-	if priceDifference == 0 {
-		return 0.0, errors.New("invalid price difference")
+	invalidationPoint := math.Abs(entryPrice-stopLossPrice) / entryPrice
+	if invalidationPoint == 0 {
+		return 0.0, errors.New("invalid invalidation point")
 	}
 
-	positionSize := (dollarRiskPerTrade / priceDifference) * entryPrice
+	positionSize := m.balance * riskPercentage / invalidationPoint
 	logger.Debug.Printf(
-		"Position size: %.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
+		"Position size: %.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f, invalidation Point: %.8f",
 		positionSize,
 		m.balance,
 		riskPercentage*100,
 		entryPrice,
 		stopLossPrice,
+		invalidationPoint,
 	)
 	return positionSize, nil
 }
