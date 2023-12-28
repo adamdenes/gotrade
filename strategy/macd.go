@@ -115,7 +115,7 @@ func (m *MACDStrategy) Execute() {
 func (m *MACDStrategy) MACD() {
 	// Wait till slow period + signal period
 	if len(m.closePrices) >= 34 {
-		macd, macdsignal, macdhist := talib.Macd(m.closePrices, 12, 26, 9)
+		macd, macdsignal, macdhist := talib.Macd(m.closePrices, 8, 13, 5)
 		m.macd = append(m.macd, macd[len(macd)-1])
 		m.macdsignal = append(m.macdsignal, macdsignal[len(macdsignal)-1])
 		m.macdhist = append(m.macdhist, macdhist[len(macdhist)-1])

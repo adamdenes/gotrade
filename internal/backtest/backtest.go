@@ -16,6 +16,7 @@ type Trade struct {
 
 type BacktestEngine[S any] struct {
 	cash          float64
+	symbol        string
 	assetAmount   float64
 	positionSize  float64
 	positionValue []float64
@@ -28,11 +29,13 @@ type BacktestEngine[S any] struct {
 func NewBacktestEngine(
 	initialCash float64,
 	OHLCData []*models.KlineSimple,
+	symbol string,
 	strategy Strategy[any],
 ) *BacktestEngine[any] {
 	return &BacktestEngine[any]{
 		cash:        initialCash,
 		data:        OHLCData,
+		symbol:      symbol,
 		strategy:    strategy,
 		DataChannel: make(chan models.TypeOfOrder, 1),
 		trades:      []Trade{},
@@ -43,6 +46,7 @@ func (b *BacktestEngine[S]) Init() {
 	b.strategy.SetPositionSize(1.0)
 	b.strategy.SetBalance(b.cash)
 	b.strategy.IsBacktest(true)
+	b.strategy.SetAsset(b.symbol)
 }
 
 func (b *BacktestEngine[S]) Run() {
