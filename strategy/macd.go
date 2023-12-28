@@ -1,7 +1,6 @@
 package strategy
 
 import (
-	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -439,20 +438,15 @@ func (m *MACDStrategy) CalculatePositionSize(
 		}
 	}
 
-	invalidationPoint := math.Abs(entryPrice-stopLossPrice) / entryPrice
-	if invalidationPoint == 0 {
-		return 0.0, errors.New("invalid invalidation point")
-	}
-
-	positionSize := m.balance * riskPercentage / invalidationPoint
+	positionSize := m.balance * riskPercentage / m.stopLossPercentage
 	logger.Debug.Printf(
-		"Position size: %.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f, invalidation Point: %.8f",
+		"Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f, Invalidation Point: %.2f%%",
 		positionSize,
 		m.balance,
 		riskPercentage*100,
 		entryPrice,
 		stopLossPrice,
-		invalidationPoint,
+		m.stopLossPercentage*100,
 	)
 	return positionSize, nil
 }

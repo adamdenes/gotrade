@@ -1,7 +1,6 @@
 package strategy
 
 import (
-	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -430,20 +429,15 @@ func (s *SMAStrategy) CalculatePositionSize(
 		}
 	}
 
-	invalidationPoint := math.Abs(entryPrice-stopLossPrice) / entryPrice
-	if invalidationPoint == 0 {
-		return 0.0, errors.New("invalid invalidation point")
-	}
-
-	positionSize := s.balance * riskPercentage / invalidationPoint
+	positionSize := s.balance * riskPercentage / s.stopLossPercentage
 	logger.Debug.Printf(
-		"Position size: %.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f, invalidation Point: %.8f",
+		"Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f, Invalidation Point: %.2f%%",
 		positionSize,
 		s.balance,
 		riskPercentage*100,
 		entryPrice,
 		stopLossPrice,
-		invalidationPoint,
+		s.stopLossPercentage*100,
 	)
 
 	return positionSize, nil
