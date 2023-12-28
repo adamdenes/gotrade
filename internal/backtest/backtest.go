@@ -62,16 +62,16 @@ func (b *BacktestEngine[S]) FillOrders() {
 	}
 
 	currBar := b.data[len(b.data)-1]
-	logger.Info.Println(
-		"Order len:",
-		len(orders),
-		"Current balance:",
-		b.cash,
-		"Current Bar:",
-		currBar,
-		"Base amount:",
-		b.assetAmount,
-	)
+	// logger.Info.Println(
+	// 	"Order len:",
+	// 	len(orders),
+	// 	"Current balance:",
+	// 	b.cash,
+	// 	"Current Bar:",
+	// 	currBar,
+	// 	"Base amount:",
+	// 	b.assetAmount,
+	// )
 
 	// Calculate and update the position value
 	b.calculatePositionValue()
@@ -181,6 +181,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 					}
 				} else if order.Price >= currBar.Low {
 					cost = currBar.Open * order.Quantity
+					logger.Debug.Printf("TakeProfit: %v, Cost: %v\n", order.Price, cost)
 
 					if b.cash >= cost {
 						b.assetAmount += order.Quantity
@@ -219,8 +220,9 @@ func (b *BacktestEngine[S]) FillOrders() {
 			} else if order.Side == "SELL" && b.assetAmount >= order.Quantity {
 				if order.StopPrice >= currBar.High {
 					cost = order.StopLimitPrice * order.Quantity
+					logger.Debug.Printf("StopPrice: %v, StopLimitPrice: %v, Cost: %v\n", order.StopPrice, order.StopLimitPrice, cost)
 
-					if b.strategy.GetPositionSize() >= order.Quantity && b.cash >= cost {
+					if b.strategy.GetPositionSize() >= order.Quantity {
 						b.assetAmount -= order.Quantity
 						logger.Debug.Println("AMOUNT:", b.assetAmount)
 						// b.fillStopLimit(currBar.High, order.StopLimitPrice)
@@ -251,9 +253,10 @@ func (b *BacktestEngine[S]) FillOrders() {
 						b.DataChannel <- order
 					}
 				} else if order.Price <= currBar.High {
-					cost = currBar.Open * order.Quantity
+					cost = currBar.Low * order.Quantity
+					logger.Debug.Printf("TakeProfit: %v, Cost: %v\n", currBar.Low, cost)
 
-					if b.strategy.GetPositionSize() >= order.Quantity && b.cash >= cost {
+					if b.strategy.GetPositionSize() >= order.Quantity {
 						b.assetAmount -= order.Quantity
 						logger.Debug.Println("AMOUNT:", b.assetAmount)
 						// b.fillTakeProfit(currBar.High)

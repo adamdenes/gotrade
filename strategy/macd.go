@@ -43,7 +43,7 @@ func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDS
 		name:               "macd",
 		db:                 db,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.05,
+		stopLossPercentage: 0.1,
 		orderLimit:         orderLimit,
 	}
 }
