@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -73,24 +74,6 @@ func (s *SMAStrategy) Execute() {
 
 	// Generate buy/sell signals based on crossover
 	if len(s.longSMA) > 2 && len(s.ema200) > 0 {
-		if !s.backtest {
-			// Calculate the position size based on asset and risk
-			var err error
-			s.positionSize, err = rest.CalculatePositionSize(
-				s.asset,
-				s.riskPercentage,
-				s.stopLossPercentage,
-			)
-			if err != nil {
-				logger.Error.Printf("Error calculating position size: %v\n", err)
-				return
-			}
-			// account size = position size x invalidation point / account risk
-			s.balance = s.positionSize * s.stopLossPercentage / s.riskPercentage
-		} else {
-			s.positionSize = s.balance * s.riskPercentage / s.stopLossPercentage
-		}
-
 		ema200 := s.ema200[len(s.ema200)-1]
 		var order models.TypeOfOrder
 
@@ -157,14 +140,26 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 }
 
 func (s *SMAStrategy) Buy(asset string, price float64) models.TypeOfOrder {
-	// takeProfit := price * 0.95
-	// stopPrice := takeProfit + takeProfit*s.stopLossPercentage
-	// stopLimitPrice := stopPrice * 1.02
+	// Determine entry and stop loss prices
+	entryPrice, stopLossPrice := s.DetermineEntryAndStopLoss("BUY", price)
 
-	// BUY: Limit Price < Last Price < Stop Price
+	// Calculate position size
+	var err error
+	s.positionSize, err = s.CalculatePositionSize(
+		s.asset,
+		s.riskPercentage,
+		entryPrice,
+		stopLossPrice,
+	)
+	if err != nil {
+		logger.Error.Println("Error calculating position size:", err)
+		return nil
+	}
+
 	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams(
 		"BUY",
-		price,
+		entryPrice,
+		stopLossPrice,
 		1.2,
 	)
 
@@ -193,14 +188,26 @@ func (s *SMAStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 }
 
 func (s *SMAStrategy) Sell(asset string, price float64) models.TypeOfOrder {
-	// takeProfit := price * 1.05
-	// stopPrice := takeProfit - takeProfit*s.stopLossPercentage
-	// stopLimitPrice := stopPrice * 0.98
+	// Determine entry and stop loss prices
+	entryPrice, stopLossPrice := s.DetermineEntryAndStopLoss("SELL", price)
 
-	// SELL: Limit Price > Last Price > Stop Price
+	// Calculate position size
+	var err error
+	s.positionSize, err = s.CalculatePositionSize(
+		s.asset,
+		s.riskPercentage,
+		entryPrice,
+		stopLossPrice,
+	)
+	if err != nil {
+		logger.Error.Println("Error calculating position size:", err)
+		return nil
+	}
+
 	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := s.calculateParams(
 		"SELL",
-		price,
+		entryPrice,
+		stopLossPrice,
 		1.2,
 	)
 
@@ -347,28 +354,27 @@ func (s *SMAStrategy) GetRecentLow() {
 
 func (s *SMAStrategy) calculateParams(
 	side string,
-	currentPrice, riskRewardRatio float64,
+	currentPrice, stopPrice, riskRewardRatio float64,
 ) (float64, float64, float64, float64, float64) {
-	var quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount float64
+	var quantity, takeProfit, stopLimitPrice, riskAmount float64
 
+	// Get trade filters
 	filters, err := s.db.GetTradeFilters(s.asset)
 	if err != nil {
 		logger.Error.Printf("Error fetching trade filters: %v", err)
 		return 0, 0, 0, 0, 0
 	}
 
+	// Calculate quantity based on position size
 	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
-	quantity = s.positionSize / currentPrice
+	quantity = s.GetPositionSize() / currentPrice
 	quantity = s.RoundToStepSize(quantity, stepSize)
+
+	// Calculate risk amount, takeProfit, and stopLimitPrice based on strategy
+	riskAmount = math.Abs(currentPrice - stopPrice)
 
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
-		// Calculate parameters for sell orders
-		stopPrice = s.swingLow // * (1 + m.stopLossPercentage)
-		if stopPrice >= currentPrice {
-			stopPrice = currentPrice * (1 - s.stopLossPercentage)
-		}
-		riskAmount = math.Abs(currentPrice - stopPrice)
 		takeProfit = currentPrice + (riskAmount * riskRewardRatio)
 		if takeProfit <= currentPrice {
 			takeProfit = currentPrice * (1 + s.stopLossPercentage)
@@ -376,12 +382,6 @@ func (s *SMAStrategy) calculateParams(
 		stopLimitPrice = stopPrice * 0.995
 	} else if side == "BUY" {
 		// BUY: Limit Price < Last Price < Stop Price
-		// Calculate parameters for buy orders
-		stopPrice = s.swingHigh // * (1 - m.stopLossPercentage)
-		if stopPrice <= currentPrice {
-			stopPrice = currentPrice * (1 + s.stopLossPercentage)
-		}
-		riskAmount = math.Abs(stopPrice - currentPrice)
 		takeProfit = currentPrice - (riskAmount * riskRewardRatio)
 		if takeProfit >= currentPrice {
 			takeProfit = currentPrice * (1 - s.stopLossPercentage)
@@ -409,4 +409,59 @@ func (s *SMAStrategy) RoundToStepSize(value, stepSize float64) float64 {
 
 func (s *SMAStrategy) RoundToTickSize(value, tickSize float64) float64 {
 	return math.Round(value/tickSize) * tickSize
+}
+
+// Position size = (account size x maximum risk percentage / (entry price – stop loss price)) x entry price
+func (s *SMAStrategy) CalculatePositionSize(
+	asset string,
+	riskPercentage, entryPrice, stopLossPrice float64,
+) (float64, error) {
+	// During backtest the balance adjusted by the engine
+	if !s.backtest {
+		var err error
+		s.balance, err = rest.GetBalance(asset)
+		if err != nil {
+			return 0.0, err
+		}
+	}
+
+	// (account size * maximum risk percentage)
+	dollarRiskPerTrade := s.balance * riskPercentage
+	// (entryPrice - stop loss price)
+	priceDifference := math.Abs(entryPrice - stopLossPrice)
+	if priceDifference == 0 {
+		return 0.0, errors.New("invalid price difference")
+	}
+
+	positionSize := (dollarRiskPerTrade / priceDifference) * entryPrice
+	logger.Debug.Printf(
+		"Position size: %.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
+		positionSize,
+		s.balance,
+		riskPercentage*100,
+		entryPrice,
+		stopLossPrice,
+	)
+	return positionSize, nil
+}
+
+func (s *SMAStrategy) DetermineEntryAndStopLoss(
+	side string,
+	currentPrice float64,
+) (float64, float64) {
+	var stopPrice float64
+
+	if side == "SELL" {
+		stopPrice = s.swingLow
+		if stopPrice >= currentPrice {
+			stopPrice = currentPrice * (1 - s.stopLossPercentage)
+		}
+	} else if side == "BUY" {
+		stopPrice = s.swingHigh
+		if stopPrice <= currentPrice {
+			stopPrice = currentPrice * (1 + s.stopLossPercentage)
+		}
+	}
+
+	return currentPrice, stopPrice
 }

@@ -63,33 +63,7 @@ func Sign(secret []byte, query string) (string, error) {
 	return signature, nil
 }
 
-func CalculatePositionSize(asset string, risk float64, invalidation float64) (float64, error) {
-	// Account size – $5000
-	// Account risk – 1%
-	// Invalidation point (distance to stop-loss) – 5%
-	// position size = account size x account risk / invalidation point
-
-	// The bigger the invalidation point the less the position size going to be
-	// $1000 = $5000 x 0.01 / 0.05
-	// $500 = $5000 x 0.01 / 0.1
-
-	freeBalance, err := getBalance(asset)
-	if err != nil {
-		return 0.0, err
-	}
-	// 4. Calculate the position size
-	posSize := freeBalance * risk / invalidation
-	logger.Debug.Printf(
-		"posSize = %f, freeBalance = %f, risk = %.2f%%, invalidation = %.2f%%",
-		posSize,
-		freeBalance,
-		risk*100,
-		invalidation*100,
-	)
-	return posSize, nil
-}
-
-func getBalance(asset string) (float64, error) {
+func GetBalance(asset string) (float64, error) {
 	// 1. Get balances from account endpoint
 	acc, err := GetAccount()
 	if err != nil {

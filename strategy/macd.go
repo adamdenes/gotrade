@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"errors"
 	"math"
 	"strconv"
 	"strings"
@@ -64,23 +65,6 @@ func (m *MACDStrategy) Execute() {
 	m.MACD()
 
 	if len(m.ema200) > 0 {
-		if !m.backtest {
-			// Calculate the position size based on asset and risk
-			var err error
-			m.positionSize, err = rest.CalculatePositionSize(
-				m.asset,
-				m.riskPercentage,
-				m.stopLossPercentage,
-			)
-			if err != nil {
-				logger.Error.Printf("Error calculating position size: %v\n", err)
-				return
-			}
-			m.balance = m.positionSize * m.stopLossPercentage / m.riskPercentage
-		} else {
-			m.positionSize = m.balance * m.riskPercentage / m.stopLossPercentage
-		}
-
 		ema200 := m.ema200[len(m.ema200)-1]
 		var order models.TypeOfOrder
 
@@ -188,14 +172,34 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", m.orderLimit)
 		}
+	default:
+		// Some error occured during order creation
+		return
 	}
 }
 
+// BUY: Limit Price < Last Price < Stop Price
 func (m *MACDStrategy) Buy(asset string, price float64) models.TypeOfOrder {
-	// BUY: Limit Price < Last Price < Stop Price
+	// Determine entry and stop loss prices
+	entryPrice, stopLossPrice := m.DetermineEntryAndStopLoss("BUY", price)
+
+	// Calculate position size
+	var err error
+	m.positionSize, err = m.CalculatePositionSize(
+		m.asset,
+		m.riskPercentage,
+		entryPrice,
+		stopLossPrice,
+	)
+	if err != nil {
+		logger.Error.Println("Error calculating position size:", err)
+		return nil
+	}
+
 	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams(
 		"BUY",
-		price,
+		entryPrice,
+		stopLossPrice,
 		1.2,
 	)
 
@@ -223,11 +227,28 @@ func (m *MACDStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	}
 }
 
+// SELL: Limit Price > Last Price > Stop Price
 func (m *MACDStrategy) Sell(asset string, price float64) models.TypeOfOrder {
-	// SELL: Limit Price > Last Price > Stop Price
+	// Determine entry and stop loss prices
+	entryPrice, stopLossPrice := m.DetermineEntryAndStopLoss("SELL", price)
+
+	// Calculate position size
+	var err error
+	m.positionSize, err = m.CalculatePositionSize(
+		m.asset,
+		m.riskPercentage,
+		entryPrice,
+		stopLossPrice,
+	)
+	if err != nil {
+		logger.Error.Println("Error calculating position size:", err)
+		return nil
+	}
+
 	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := m.calculateParams(
 		"SELL",
-		price,
+		entryPrice,
+		stopLossPrice,
 		1.2,
 	)
 
@@ -342,28 +363,27 @@ func (m *MACDStrategy) GetRecentLow() {
 
 func (m *MACDStrategy) calculateParams(
 	side string,
-	currentPrice, riskRewardRatio float64,
+	currentPrice, stopPrice, riskRewardRatio float64,
 ) (float64, float64, float64, float64, float64) {
-	var quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount float64
+	var quantity, takeProfit, stopLimitPrice, riskAmount float64
 
+	// Get trade filters
 	filters, err := m.db.GetTradeFilters(m.asset)
 	if err != nil {
 		logger.Error.Printf("Error fetching trade filters: %v", err)
 		return 0, 0, 0, 0, 0
 	}
 
+	// Calculate quantity based on position size
 	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
-	quantity = m.positionSize / currentPrice
+	quantity = m.GetPositionSize() / currentPrice
 	quantity = m.RoundToStepSize(quantity, stepSize)
+
+	// Calculate risk amount, takeProfit, and stopLimitPrice based on strategy
+	riskAmount = math.Abs(currentPrice - stopPrice)
 
 	if side == "SELL" {
 		// SELL: Limit Price > Last Price > Stop Price
-		// Calculate parameters for sell orders
-		stopPrice = m.swingLow // * (1 + m.stopLossPercentage)
-		if stopPrice >= currentPrice {
-			stopPrice = currentPrice * (1 - m.stopLossPercentage)
-		}
-		riskAmount = math.Abs(currentPrice - stopPrice)
 		takeProfit = currentPrice + (riskAmount * riskRewardRatio)
 		if takeProfit <= currentPrice {
 			takeProfit = currentPrice * (1 + m.stopLossPercentage)
@@ -371,12 +391,6 @@ func (m *MACDStrategy) calculateParams(
 		stopLimitPrice = stopPrice * 0.995
 	} else if side == "BUY" {
 		// BUY: Limit Price < Last Price < Stop Price
-		// Calculate parameters for buy orders
-		stopPrice = m.swingHigh // * (1 - m.stopLossPercentage)
-		if stopPrice <= currentPrice {
-			stopPrice = currentPrice * (1 + m.stopLossPercentage)
-		}
-		riskAmount = math.Abs(stopPrice - currentPrice)
 		takeProfit = currentPrice - (riskAmount * riskRewardRatio)
 		if takeProfit >= currentPrice {
 			takeProfit = currentPrice * (1 - m.stopLossPercentage)
@@ -404,4 +418,59 @@ func (m *MACDStrategy) RoundToStepSize(value, stepSize float64) float64 {
 
 func (m *MACDStrategy) RoundToTickSize(value, tickSize float64) float64 {
 	return math.Round(value/tickSize) * tickSize
+}
+
+// Position size = (account size x maximum risk percentage / (entry price – stop loss price)) x entry price
+func (m *MACDStrategy) CalculatePositionSize(
+	asset string,
+	riskPercentage, entryPrice, stopLossPrice float64,
+) (float64, error) {
+	// During backtest the balance adjusted by the engine
+	if !m.backtest {
+		var err error
+		m.balance, err = rest.GetBalance(asset)
+		if err != nil {
+			return 0.0, err
+		}
+	}
+
+	// (account size * maximum risk percentage)
+	dollarRiskPerTrade := m.balance * riskPercentage
+	// (entryPrice - stop loss price)
+	priceDifference := math.Abs(entryPrice - stopLossPrice)
+	if priceDifference == 0 {
+		return 0.0, errors.New("invalid price difference")
+	}
+
+	positionSize := (dollarRiskPerTrade / priceDifference) * entryPrice
+	logger.Debug.Printf(
+		"Position size: %.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
+		positionSize,
+		m.balance,
+		riskPercentage*100,
+		entryPrice,
+		stopLossPrice,
+	)
+	return positionSize, nil
+}
+
+func (m *MACDStrategy) DetermineEntryAndStopLoss(
+	side string,
+	currentPrice float64,
+) (float64, float64) {
+	var stopPrice float64
+
+	if side == "SELL" {
+		stopPrice = m.swingLow
+		if stopPrice >= currentPrice {
+			stopPrice = currentPrice * (1 - m.stopLossPercentage)
+		}
+	} else if side == "BUY" {
+		stopPrice = m.swingHigh
+		if stopPrice <= currentPrice {
+			stopPrice = currentPrice * (1 + m.stopLossPercentage)
+		}
+	}
+
+	return currentPrice, stopPrice
 }
