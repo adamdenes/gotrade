@@ -248,6 +248,10 @@ func (s *Server) websocketClientHandler(w http.ResponseWriter, r *http.Request) 
 					continue
 				}
 			case err := <-errChan:
+				// Not an error, just leaving site
+				if strings.Contains(err.Error(), websocket.StatusGoingAway.String()) {
+					break
+				}
 				s.errorLog.Println(err)
 				s.serverError(w, err)
 				break
