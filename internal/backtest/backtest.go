@@ -163,7 +163,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 							b.strategy.GetPositionSize(),
 							b.assetAmount*order.StopLimitPrice,
 						)
-						logger.Debug.Printf("Buy filled: LIMIT: %f / LOW: %f", order.Price, currBar.Low)
+						logger.Debug.Printf("Buy filled: STOP LIMIT: %f / LOW: %f", order.StopLimitPrice, currBar.Low)
 
 						// Record the trade details with exit price and profit/loss
 						b.trades = append(b.trades, Trade{
@@ -204,7 +204,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 							EntryPrice: currBar.Open,
 							ExitPrice:  currBar.Close,
 							Quantity:   order.Quantity,
-							Side:       "SELL",
+							Side:       "BUY",
 							Timestamp:  currBar.OpenTime.UnixMilli(),
 						})
 
@@ -235,7 +235,7 @@ func (b *BacktestEngine[S]) FillOrders() {
 							b.strategy.GetPositionSize(),
 							b.assetAmount*order.StopLimitPrice,
 						)
-						logger.Debug.Printf("Sell filled: LIMIT: %f / HIGH: %f", order.Price, currBar.High)
+						logger.Debug.Printf("Sell filled: STOP LIMIT: %f / HIGH: %f", order.StopLimitPrice, currBar.High)
 
 						b.trades = append(b.trades, Trade{
 							EntryPrice: order.StopPrice,
@@ -297,6 +297,7 @@ func (b *BacktestEngine[S]) Reset() {
 	b.data = nil
 	b.strategy.SetData(nil)
 	b.strategy = nil
+	b.strategy.SetAsset("")
 }
 
 func (b *BacktestEngine[S]) GetCash() float64 {
