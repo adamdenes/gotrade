@@ -42,7 +42,7 @@ func NewMACDStrategy(orderLimit int, db storage.Storage) backtest.Strategy[MACDS
 		name:               "macd",
 		db:                 db,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.1,
+		stopLossPercentage: 0.06,
 		orderLimit:         orderLimit,
 	}
 }
@@ -458,12 +458,12 @@ func (m *MACDStrategy) DetermineEntryAndStopLoss(
 	var stopPrice float64
 
 	if side == "SELL" {
-		stopPrice = m.swingLow
+		stopPrice = m.swingLow * 1.005
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - m.stopLossPercentage)
 		}
 	} else if side == "BUY" {
-		stopPrice = m.swingHigh
+		stopPrice = m.swingHigh * 0.995
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + m.stopLossPercentage)
 		}

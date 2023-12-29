@@ -50,7 +50,7 @@ func NewSMAStrategy(
 		shortPeriod:        shortPeriod,
 		longPeriod:         longPeriod,
 		riskPercentage:     0.01,
-		stopLossPercentage: 0.1,
+		stopLossPercentage: 0.06,
 		orderLimit:         orderLimit,
 	}
 }
@@ -450,12 +450,12 @@ func (s *SMAStrategy) DetermineEntryAndStopLoss(
 	var stopPrice float64
 
 	if side == "SELL" {
-		stopPrice = s.swingLow
+		stopPrice = s.swingLow * 1.005
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - s.stopLossPercentage)
 		}
 	} else if side == "BUY" {
-		stopPrice = s.swingHigh
+		stopPrice = s.swingHigh * 0.995
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + s.stopLossPercentage)
 		}
