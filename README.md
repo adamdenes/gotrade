@@ -1,12 +1,8 @@
 # Trade Server
 
-### TODOs 0.9.0
-* [x] store symbol filters from exchangeInfo
-* [x] update strategies with the new trade filters
-* [x] during Stream base and quote assests are missing
-     Processed symbol in binance.symbols -> (BTCUSDT, , ), returning symbol_id: 168
-* [x] revisit `RefreshContinuousAggregate` -> not updatging
-* [x] if database is empty (no orders) -> query all orderds with `GetAllOrders`
+### TODOs 1.0.0
+* [] model Account response - mostly to get `commissionRates` too
+* [] create a GRID strategy
 
 ## Improvement ideas
 * [] rework `CalculateStopLoss` - incorporate ATR
