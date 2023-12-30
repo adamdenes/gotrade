@@ -450,12 +450,12 @@ func (s *SMAStrategy) DetermineEntryAndStopLoss(
 	var stopPrice float64
 
 	if side == "SELL" {
-		stopPrice = s.swingLow * 1.005
+		stopPrice = s.swingLow //* 1.005
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - s.stopLossPercentage)
 		}
 	} else if side == "BUY" {
-		stopPrice = s.swingHigh * 0.995
+		stopPrice = s.swingHigh //* 0.995
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + s.stopLossPercentage)
 		}

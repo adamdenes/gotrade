@@ -458,12 +458,12 @@ func (m *MACDStrategy) DetermineEntryAndStopLoss(
 	var stopPrice float64
 
 	if side == "SELL" {
-		stopPrice = m.swingLow * 1.005
+		stopPrice = m.swingLow //* 1.005
 		if stopPrice >= currentPrice {
 			stopPrice = currentPrice * (1 - m.stopLossPercentage)
 		}
 	} else if side == "BUY" {
-		stopPrice = m.swingHigh * 0.995
+		stopPrice = m.swingHigh //* 0.995
 		if stopPrice <= currentPrice {
 			stopPrice = currentPrice * (1 + m.stopLossPercentage)
 		}
