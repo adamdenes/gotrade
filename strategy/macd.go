@@ -407,6 +407,11 @@ func (m *MACDStrategy) calculateParams(
 	if quantity*currentPrice < minNotional {
 		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
 		quantity = quantity + (minNotional - quantity)
+		logger.Info.Printf(
+			"increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
+			quantity,
+			minNotional,
+		)
 	}
 
 	return quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount
