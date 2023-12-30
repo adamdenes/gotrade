@@ -397,6 +397,7 @@ func (s *SMAStrategy) calculateParams(
 	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
 	if quantity*currentPrice < minNotional {
 		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+		quantity = quantity + (minNotional - quantity)
 	}
 
 	return quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount
