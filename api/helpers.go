@@ -548,6 +548,7 @@ func getStrategy(strat string, db storage.Storage) (backtest.Strategy[any], erro
 	strategies := map[string]backtest.Strategy[any]{
 		"sma":  strategy.NewSMAStrategy(12, 24, 5, db),
 		"macd": strategy.NewMACDStrategy(5, db),
+		"grid": strategy.NewGridStrategy(db),
 	}
 	strategy, found := strategies[strat]
 	if !found {
