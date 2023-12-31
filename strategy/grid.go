@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/adamdenes/gotrade/cmd/rest"
@@ -14,26 +15,32 @@ import (
 	"github.com/markcheno/go-talib"
 )
 
+const MAX_GRID_LEVEL int8 = 4
+
 type GridStrategy struct {
-	name               string                // Name of strategy
-	db                 storage.Storage       // Database interface
-	balance            float64               // Current balance
-	positionSize       float64               // Position size
-	riskPercentage     float64               // Risk %
-	stopLossPercentage float64               // Invalidation point
-	asset              string                // Trading pair
-	backtest           bool                  // Are we backtesting?
-	orders             []models.TypeOfOrder  // Pending orders
-	data               []*models.KlineSimple // Price data
-	closes             []float64             // Close prices
-	highs              []float64             // Highs
-	lows               []float64             // Lows
-	swingHigh          float64               // Swing High
-	swingLow           float64               // Swing Low
-	gridGap            float64               // Grid Gap/Size
-	gridLevelCount     int8                  // Number of grid levels reached
-	gridNextBuyLevel   float64
-	gridNextSellLevel  float64
+	name                  string                // Name of strategy
+	db                    storage.Storage       // Database interface
+	balance               float64               // Current balance
+	positionSize          float64               // Position size
+	riskPercentage        float64               // Risk %
+	stopLossPercentage    float64               // Invalidation point
+	asset                 string                // Trading pair
+	backtest              bool                  // Are we backtesting?
+	orders                []models.TypeOfOrder  // Pending orders
+	data                  []*models.KlineSimple // Price data
+	closes                []float64             // Close prices
+	highs                 []float64             // Highs
+	lows                  []float64             // Lows
+	swingHigh             float64               // Swing High
+	swingLow              float64               // Swing Low
+	gridGap               float64               // Grid Gap/Size
+	gridLevelCount        int8                  // Number of grid levels reached
+	orderMap              map[int64]struct{}    // Map of order IDs
+	mu                    sync.Mutex            // Mutex for thread-safe access to the orderMap
+	gridNextBuyLevel      float64
+	gridNextSellLevel     float64
+	gridPreviousBuyLevel  float64
+	gridPreviousSellLevel float64
 }
 
 func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
@@ -56,52 +63,38 @@ func (g *GridStrategy) ATR() float64 {
 func (g *GridStrategy) Execute() {
 	g.GetClosePrices()
 	g.ManageOrders()
-
-	// From start send (level 0) 1 BUY & 1 SELL order - when grid gap is reached
-	// If 1st BUY reaches next grid
-	//  - Close Buy - essentially it is the TakeProfit
-	//  - Open 1 New BUY & 1 New SELL order again <----------
-	//  - If prices comes back down:                        |
-	//      * Close All open orders -> Profit: 1+1-1+0 = 1  |
-	//  - If prices goes upwards instead:                   |
-	//      * Close (level 1) BUY and -----------------------
-	//
-	// Essentially, close next level BUYs if prices goes up, and open new set of orders.
-	// If prices retraces, Close all orders at that level.
-	// If price continues to go up from level 0 to level 4 - 4th grid line/gap/level - close all orders.
-	// Same goes for SELLs, just backwards. So, at level 0 if prices goes down, close SELL and open 1 new BUY and 1 new SELL etc.
 }
 
 func (g *GridStrategy) ManageOrders() {
 	// Check if the price has reached the next buy or sell level
 	currentPrice := g.GetClosePrice()
-	g.gridGap = g.ATR()
-	g.gridNextBuyLevel = currentPrice + math.Abs(currentPrice-g.gridGap)
-	g.gridNextSellLevel = currentPrice - math.Abs(currentPrice-g.gridGap)
-	fmt.Printf("g.gridGap: %v\n", g.gridGap)
-	fmt.Printf("g.gridLevel: %v\n", g.gridLevelCount)
-	fmt.Printf("g.gridNextBuyLevel: %v\n", g.gridNextBuyLevel)
-	fmt.Printf("g.gridNextSellLevel: %v\n", g.gridNextSellLevel)
+	g.UpdateGridLevels(currentPrice)
 
 	if currentPrice >= g.gridNextBuyLevel {
 		// Handle buy order logic
 
-		// g.CloseBuyOrder() // Close existing buy order
+		// Close existing buy order (filled by exchange)
 		g.OpenNewOrders() // Open new buy and sell orders
+
+		logger.Info.Printf("incrementing grid level from: %v", g.gridLevelCount)
+		g.gridLevelCount++
+		logger.Info.Printf("new grid level: %v", g.gridLevelCount)
 	} else if currentPrice <= g.gridNextSellLevel {
 		// Handle sell order logic
 
-		// g.CloseSellOrder() // Close existing sell order
+		// Close existing sell order (filled by exchange)
 		g.OpenNewOrders() // Open new buy and sell orders
-	}
 
-	g.UpdateGridLevels(currentPrice)
+		logger.Info.Printf("decrementing grid level from: %v", g.gridLevelCount)
+		g.gridLevelCount--
+		logger.Info.Printf("new grid level: %v", g.gridLevelCount)
+	}
 }
 
 // Logic to place new buy and sell orders at the current grid level
 func (g *GridStrategy) OpenNewOrders() {
-	nextBuy := g.Buy(g.asset, g.GetClosePrice())
-	nextSell := g.Sell(g.asset, g.GetClosePrice())
+	nextBuy := g.Buy(g.asset, g.gridNextBuyLevel)
+	nextSell := g.Sell(g.asset, g.gridNextSellLevel)
 
 	g.orders = append(g.orders, nextBuy, nextSell)
 
@@ -115,27 +108,60 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 	g.gridGap = g.ATR()
 	g.gridNextBuyLevel = currentPrice + math.Abs(currentPrice-g.gridGap)
 	g.gridNextSellLevel = currentPrice - math.Abs(currentPrice-g.gridGap)
-	fmt.Printf("g.gridGap: %v\n", g.gridGap)
-	fmt.Printf("g.gridLevel: %v\n", g.gridLevelCount)
-	fmt.Printf("g.gridNextBuyLevel: %v\n", g.gridNextBuyLevel)
-	fmt.Printf("g.gridNextSellLevel: %v\n", g.gridNextSellLevel)
+	logger.Info.Printf(
+		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v\n",
+		g.gridGap,
+		g.gridLevelCount,
+		g.gridNextBuyLevel,
+		g.gridNextSellLevel,
+	)
 
-	switch g.gridLevelCount {
-	case 4:
-		orders, err := g.db.FetchOrders()
-		if err != nil {
-			logger.Error.Println("failed to get orders:", err)
-			return
-		}
+	if math.Abs(float64(g.gridLevelCount)) == float64(MAX_GRID_LEVEL) {
+		logger.Debug.Printf("MAX_GRID_LEVEL [%d] reached!", MAX_GRID_LEVEL)
+		g.CancelAllOpenOrders()
+	} else {
+		g.SetNewGridLevel(g.gridNextBuyLevel, g.gridNextSellLevel)
+	}
+}
 
-		for _, o := range orders {
-			if _, err := rest.CancelOrder(o.Symbol, o.OrderID); err != nil {
-				logger.Error.Println("failed to close order:", err)
-				return
-			}
-		}
-	default:
-		g.gridLevelCount++
+func (g *GridStrategy) SetNewGridLevel(newBuyLevel, newSellLevel float64) {
+	// Close all open orders if the price retraces to the previous level
+	if newBuyLevel == g.gridPreviousBuyLevel || newSellLevel == g.gridPreviousSellLevel {
+		logger.Info.Printf(
+			"%.8f==%.8f || %.8f==%.8f\n",
+			newBuyLevel,
+			g.gridPreviousBuyLevel,
+			newSellLevel,
+			g.gridPreviousSellLevel,
+		)
+		g.gridPreviousBuyLevel = newBuyLevel
+		g.gridPreviousSellLevel = newSellLevel
+		g.CancelAllOpenOrders()
+	}
+}
+
+func (g *GridStrategy) AddOpenOrder(orderID int64) {
+	g.mu.Lock()
+	g.orderMap[orderID] = struct{}{}
+	g.mu.Unlock()
+}
+
+func (g *GridStrategy) CancelOrder(orderID int64) {
+	g.mu.Lock()
+	delete(g.orderMap, orderID)
+	g.mu.Unlock()
+
+	if _, err := rest.CancelOrder(g.asset, orderID); err != nil {
+		logger.Error.Println("failed to close order:", err)
+		return
+	}
+	logger.Info.Printf("OrderID=%v cancelled...", orderID)
+}
+
+func (g *GridStrategy) CancelAllOpenOrders() {
+	logger.Info.Println("Cancelling all open orders.")
+	for orderID := range g.orderMap {
+		g.CancelOrder(orderID)
 	}
 }
 
@@ -156,26 +182,13 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 			logger.Error.Printf("Failed to send order: %v", err)
 			return
 		}
+
+		// After successfully placing an order
+		g.AddOpenOrder(orderResponse.OrderID)
+
+		// Saving to DB
 		if err := g.db.SaveOrder(g.name, orderResponse); err != nil {
 			logger.Error.Printf("Error saving order: %v", err)
-		}
-	case *models.PostOrderOCO:
-		logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
-		if g.backtest {
-			order.Timestamp = currBar.OpenTime.UnixMilli()
-			return
-		}
-
-		ocoResponse, err := rest.PostOrderOCO(order)
-		if err != nil {
-			logger.Error.Printf("Failed to send OCO order: %v", err)
-			return
-		}
-
-		for _, resp := range ocoResponse.OrderReports {
-			if err := g.db.SaveOrder(g.name, &resp); err != nil {
-				logger.Error.Printf("Error saving OCO order: %v", err)
-			}
 		}
 	default:
 		// Some error occured during order creation
