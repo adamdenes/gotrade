@@ -26,7 +26,7 @@ type MACDStrategy struct {
 	backtest           bool                  // Are we backtesting?
 	orders             []models.TypeOfOrder  // Pending orders
 	data               []*models.KlineSimple // Price data
-	closePrices        []float64
+	closes             []float64
 	macd               []float64
 	macdsignal         []float64
 	macdhist           []float64
@@ -53,8 +53,8 @@ func (m *MACDStrategy) Execute() {
 	currBar := m.data[len(m.data)-1]
 	m.highs = append(m.highs, currBar.High)
 	m.lows = append(m.lows, currBar.Low)
-	m.closePrices = append(m.closePrices, currBar.Close)
-	currentPrice := m.closePrices[len(m.closePrices)-1]
+	m.closes = append(m.closes, currBar.Close)
+	currentPrice := m.closes[len(m.closes)-1]
 
 	// Get swing high and low from the nearest 10 bar highs and lows
 	m.GetRecentHigh()
@@ -97,8 +97,8 @@ func (m *MACDStrategy) Execute() {
 // Wrapper over talib.Macd
 func (m *MACDStrategy) MACD() {
 	// Wait till slow period + signal period
-	if len(m.closePrices) >= 34 {
-		macd, macdsignal, macdhist := talib.Macd(m.closePrices, 8, 13, 5)
+	if len(m.closes) >= 34 {
+		macd, macdsignal, macdhist := talib.Macd(m.closes, 8, 13, 5)
 		m.macd = append(m.macd, macd[len(macd)-1])
 		m.macdsignal = append(m.macdsignal, macdsignal[len(macdsignal)-1])
 		m.macdhist = append(m.macdhist, macdhist[len(macdhist)-1])
@@ -113,9 +113,9 @@ func (m *MACDStrategy) MACD() {
 // Wrapper over talib.EMA for 200 ema
 func (m *MACDStrategy) EMA() {
 	// Calculate EMA 200
-	if len(m.closePrices) >= 200 {
+	if len(m.closes) >= 200 {
 		// Calculate EMA 200 and truncate to have exactly 200 elements
-		ema200 := talib.Ema(m.closePrices, 200)[len(m.closePrices)-1:]
+		ema200 := talib.Ema(m.closes, 200)[len(m.closes)-1:]
 		m.ema200 = append(m.ema200, ema200...)
 	}
 	if len(m.ema200) > 2 {
@@ -316,11 +316,11 @@ func (m *MACDStrategy) GetName() string {
 }
 
 func (m *MACDStrategy) GetClosePrices() {
-	if len(m.closePrices) > 0 {
+	if len(m.closes) > 0 {
 		return
 	}
 	for _, bar := range m.data {
-		m.closePrices = append(m.closePrices, bar.Close)
+		m.closes = append(m.closes, bar.Close)
 		m.highs = append(m.highs, bar.High)
 		m.lows = append(m.lows, bar.Low)
 	}

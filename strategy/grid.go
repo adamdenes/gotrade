@@ -332,14 +332,16 @@ func (g *GridStrategy) GetName() string {
 
 func (g *GridStrategy) GetClosePrices() {
 	if len(g.closes) > 0 {
-		fmt.Println("len(g.closes) > 0!!! ->", len(g.closes))
-
 		currentBar := g.data[len(g.data)-1]
 		g.closes = append(g.closes, currentBar.Close)
 		g.highs = append(g.highs, currentBar.High)
 		g.lows = append(g.lows, currentBar.Low)
 
-		fmt.Println("last closePrice:", g.closes[len(g.closes)-1])
+		if len(g.closes) > 365 {
+			g.closes = g.closes[len(g.closes)-365:]
+			g.highs = g.highs[len(g.highs)-365:]
+			g.lows = g.lows[len(g.lows)-365:]
+		}
 		return
 	}
 	for _, bar := range g.data {

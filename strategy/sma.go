@@ -31,7 +31,7 @@ type SMAStrategy struct {
 	shortSMA           []float64             // Calculated short SMA values
 	longSMA            []float64             // Calculated long SMA values
 	ema200             []float64             // EMA 200 values
-	closePrices        []float64             // Close prices
+	closes             []float64             // Close prices
 	highs              []float64             // High prices
 	lows               []float64             // Low prices
 	swingHigh          float64
@@ -62,8 +62,8 @@ func (s *SMAStrategy) Execute() {
 	currBar := s.data[len(s.data)-1]
 	s.highs = append(s.highs, currBar.High)
 	s.lows = append(s.lows, currBar.Low)
-	s.closePrices = append(s.closePrices, currBar.Close)
-	currentPrice := s.closePrices[len(s.closePrices)-1]
+	s.closes = append(s.closes, currBar.Close)
+	currentPrice := s.closes[len(s.closes)-1]
 
 	// Get swing high and low from the nearest 10 bar highs and lows
 	s.GetRecentHigh()
@@ -278,19 +278,19 @@ func (s *SMAStrategy) GetName() string {
 func (s *SMAStrategy) calculateSMAs() {
 	// Calculate short SMA
 	if len(s.data) >= s.shortPeriod {
-		shortSMA := talib.Sma(s.closePrices, s.shortPeriod)[len(s.closePrices)-1:]
+		shortSMA := talib.Sma(s.closes, s.shortPeriod)[len(s.closes)-1:]
 		s.shortSMA = append(s.shortSMA, shortSMA...)
 	}
 
 	// Calculate long SMA
 	if len(s.data) >= s.longPeriod {
-		longSMA := talib.Sma(s.closePrices, s.longPeriod)[len(s.closePrices)-1:]
+		longSMA := talib.Sma(s.closes, s.longPeriod)[len(s.closes)-1:]
 		s.longSMA = append(s.longSMA, longSMA...)
 	}
 
 	// Calculate EMA 200
 	if len(s.data) >= 200 {
-		ema200 := talib.Ema(s.closePrices, 200)[len(s.closePrices)-1:]
+		ema200 := talib.Ema(s.closes, 200)[len(s.closes)-1:]
 		s.ema200 = append(s.ema200, ema200...)
 	}
 
@@ -307,11 +307,11 @@ func (s *SMAStrategy) calculateSMAs() {
 }
 
 func (s *SMAStrategy) GetClosePrices() {
-	if len(s.closePrices) > 0 {
+	if len(s.closes) > 0 {
 		return
 	}
 	for _, bar := range s.data {
-		s.closePrices = append(s.closePrices, bar.Close)
+		s.closes = append(s.closes, bar.Close)
 		s.highs = append(s.highs, bar.High)
 		s.lows = append(s.lows, bar.Low)
 	}
