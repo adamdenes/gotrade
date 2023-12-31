@@ -16,6 +16,8 @@ import (
 	"github.com/markcheno/go-talib"
 )
 
+// Maximum reachable grid level ranging from 0 (base) to 4 (5 levels total).
+// Acts as sort of a stop stop-loss.
 const MAX_GRID_LEVEL int8 = 4
 
 type GridStrategy struct {
@@ -34,14 +36,14 @@ type GridStrategy struct {
 	lows                  []float64             // Lows
 	swingHigh             float64               // Swing High
 	swingLow              float64               // Swing Low
-	gridGap               float64               // Grid Gap/Size
-	gridLevelCount        int8                  // Number of grid levels reached
 	orderMap              map[int64]struct{}    // Map of order IDs
 	mu                    sync.Mutex            // Mutex for thread-safe access to the orderMap
-	gridNextBuyLevel      float64
-	gridNextSellLevel     float64
-	gridPreviousBuyLevel  float64
-	gridPreviousSellLevel float64
+	gridGap               float64               // Grid Gap/Size
+	gridLevelCount        int8                  // Number of grid levels reached
+	gridNextBuyLevel      float64               // Next grid line above
+	gridNextSellLevel     float64               // Next grid line below
+	gridPreviousBuyLevel  float64               // Previous grid line above
+	gridPreviousSellLevel float64               // Previous grid line below
 }
 
 func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
@@ -108,7 +110,7 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 	g.gridNextBuyLevel = currentPrice + g.gridGap
 	g.gridNextSellLevel = currentPrice - g.gridGap
 	logger.Info.Printf(
-		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v\n",
+		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
 		g.gridGap,
 		g.gridLevelCount,
 		g.gridNextBuyLevel,
@@ -127,7 +129,7 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 func (g *GridStrategy) SetNewGridLevel(newBuyLevel, newSellLevel float64) {
 	// Check for retracement to previous levels
 	if newBuyLevel == g.gridPreviousBuyLevel || newSellLevel == g.gridPreviousSellLevel {
-		logger.Info.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f\n",
+		logger.Info.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f",
 			newBuyLevel, g.gridPreviousBuyLevel, newSellLevel, g.gridPreviousSellLevel)
 		g.CancelAllOpenOrders()
 		g.ResetGrid()
@@ -163,7 +165,7 @@ func (g *GridStrategy) CancelOrder(orderID int64) {
 		logger.Error.Println("failed to close order:", err)
 		return
 	}
-	logger.Info.Printf("OrderID=%v cancelled...", orderID)
+	logger.Debug.Printf("OrderID=%v cancelled...", orderID)
 }
 
 func (g *GridStrategy) CancelAllOpenOrders() {
@@ -178,7 +180,7 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 	switch order := o.(type) {
 	case *models.PostOrder:
-		logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
+		logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Quantity, order.Price, order.StopPrice)
 		if g.backtest {
 			order.Timestamp = currBar.OpenTime.UnixMilli()
 			return

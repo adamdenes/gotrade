@@ -94,7 +94,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 	switch order := o.(type) {
 	case *models.PostOrder:
 		if s.orderLimit >= len(s.orders) {
-			logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice)
+			logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Quantity, order.Price, order.StopPrice)
 			if s.backtest {
 				order.Timestamp = currBar.OpenTime.UnixMilli()
 				s.orders = append(s.orders, order)
@@ -115,7 +115,7 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) {
 		}
 	case *models.PostOrderOCO:
 		if s.orderLimit >= len(s.orders) {
-			logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f, StopLimitPrice: %f\n", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
+			logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f, StopLimitPrice: %f", order.Side, order.Quantity, order.Price, order.StopPrice, order.StopLimitPrice)
 			if s.backtest {
 				order.Timestamp = currBar.OpenTime.UnixMilli()
 				s.orders = append(s.orders, order)
