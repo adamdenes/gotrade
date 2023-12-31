@@ -18,7 +18,10 @@ import (
 
 // Maximum reachable grid level ranging from 0 (base) to 4 (5 levels total).
 // Acts as sort of a stop stop-loss.
-const MAX_GRID_LEVEL int8 = 4
+const (
+	maxGridLevel       = 4
+	atrChangeThreshold = 0.05 // 5% change
+)
 
 type GridStrategy struct {
 	name                  string                // Name of strategy
@@ -106,9 +109,16 @@ func (g *GridStrategy) OpenNewOrders() {
 
 // Update grid levels and count based on current price and strategy logic
 func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
-	g.gridGap = g.ATR()
-	g.gridNextBuyLevel = currentPrice + g.gridGap
-	g.gridNextSellLevel = currentPrice - g.gridGap
+	newATR := g.ATR()
+	atrChange := math.Abs(newATR-g.gridGap) / g.gridGap
+
+	if atrChange > atrChangeThreshold {
+		g.gridGap = newATR
+		// Recalculate grid levels only if ATR change is significant
+		g.gridNextBuyLevel = currentPrice + g.gridGap
+		g.gridNextSellLevel = currentPrice - g.gridGap
+	}
+
 	logger.Info.Printf(
 		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
 		g.gridGap,
@@ -117,8 +127,8 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 		g.gridNextSellLevel,
 	)
 
-	if math.Abs(float64(g.gridLevelCount)) == float64(MAX_GRID_LEVEL) {
-		logger.Debug.Printf("MAX_GRID_LEVEL [%d] reached!", MAX_GRID_LEVEL)
+	if math.Abs(float64(g.gridLevelCount)) == maxGridLevel {
+		logger.Debug.Printf("MAX_GRID_LEVEL [%d] reached!", maxGridLevel)
 		g.CancelAllOpenOrders()
 		g.ResetGrid()
 	} else {
