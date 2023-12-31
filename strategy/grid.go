@@ -3,6 +3,7 @@ package strategy
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -196,10 +197,9 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 	}
 }
 
-// BUY: Limit Price < Last Price < Stop Price
 func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	// Determine entry and stop loss prices
-	entryPrice, stopLossPrice := g.DetermineEntryAndStopLoss("BUY", price)
+	entryPrice, stopLossPrice := g.gridNextBuyLevel, g.gridNextSellLevel
 
 	// Calculate position size
 	var err error
@@ -210,32 +210,28 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 		stopLossPrice,
 	)
 	if err != nil {
-		logger.Error.Println("Error calculating position size:", err)
+		logger.Error.Println("error calculating position size:", err)
 		return nil
 	}
 
-	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := g.calculateParams(
-		"BUY",
-		entryPrice,
-		stopLossPrice,
-		1.2,
-	)
+	quantity, entryPrice, err := g.calculateParams("BUY", entryPrice)
+	if err != nil {
+		logger.Error.Println("error calculating order parameters:", err)
+		return nil
+	}
 
 	logger.Debug.Println(
 		"price =", price,
 		"quantity =", quantity,
-		"tp =", takeProfit,
-		"sp =", stopPrice,
-		"slp =", stopLimitPrice,
-		"riska =", riskAmount,
-		"swingh =", g.swingHigh,
-		"swingl =", g.swingLow,
+		"tp =", entryPrice,
+		"sp =", stopLossPrice,
+		"riska =", math.Abs(entryPrice-stopLossPrice),
 	)
 
 	return &models.PostOrder{
 		Symbol:      asset,
 		Side:        models.BUY,
-		Type:        models.MARKET,
+		Type:        models.LIMIT,
 		Quantity:    quantity,
 		Price:       entryPrice,
 		TimeInForce: models.GTC,
@@ -244,10 +240,9 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	}
 }
 
-// SELL: Limit Price > Last Price > Stop Price
 func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 	// Determine entry and stop loss prices
-	entryPrice, stopLossPrice := g.DetermineEntryAndStopLoss("SELL", price)
+	entryPrice, stopLossPrice := g.gridNextSellLevel, g.gridNextBuyLevel
 
 	// Calculate position size
 	var err error
@@ -262,28 +257,24 @@ func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
-	quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount := g.calculateParams(
-		"SELL",
-		entryPrice,
-		stopLossPrice,
-		1.2,
-	)
+	quantity, entryPrice, err := g.calculateParams("SELL", entryPrice)
+	if err != nil {
+		logger.Error.Println("error calculating order parameters:", err)
+		return nil
+	}
 
 	logger.Debug.Println(
 		"price =", price,
 		"quantity =", quantity,
-		"tp =", takeProfit,
-		"sp =", stopPrice,
-		"slp =", stopLimitPrice,
-		"riska =", riskAmount,
-		"swingh =", g.swingHigh,
-		"swingl =", g.swingLow,
+		"tp =", entryPrice,
+		"sp =", stopLossPrice,
+		"riska =", math.Abs(entryPrice-stopLossPrice),
 	)
 
 	return &models.PostOrder{
 		Symbol:      asset,
 		Side:        models.SELL,
-		Type:        models.MARKET,
+		Type:        models.LIMIT,
 		Quantity:    quantity,
 		Price:       entryPrice,
 		TimeInForce: models.GTC,
@@ -386,10 +377,29 @@ func (g *GridStrategy) GetRecentLow() {
 }
 
 func (g *GridStrategy) calculateParams(
-	side string,
-	currentPrice, stopPrice, riskRewardRatio float64,
-) (float64, float64, float64, float64, float64) {
-	panic("unimplemented")
+	asset string,
+	entryPrice float64,
+) (float64, float64, error) {
+	filters, err := g.db.GetTradeFilters(asset)
+	if err != nil {
+		logger.Error.Printf("Error fetching trade filters: %v", err)
+		return 0, 0, err
+	}
+
+	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
+	quantity := g.GetPositionSize() / entryPrice
+	quantity = g.RoundToStepSize(quantity, stepSize)
+
+	tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
+	entryPrice = g.RoundToTickSize(entryPrice, tickSize)
+
+	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+	if quantity*entryPrice < minNotional {
+		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+		return 0, 0, fmt.Errorf("order value below minimum notional")
+	}
+
+	return quantity, entryPrice, nil
 }
 
 func (m *GridStrategy) RoundToStepSize(value, stepSize float64) float64 {
@@ -410,7 +420,24 @@ func (m *GridStrategy) CalculatePositionSize(
 	asset string,
 	riskPercentage, entryPrice, stopLossPrice float64,
 ) (float64, error) {
-	panic("unimplemented")
+	if !m.backtest {
+		var err error
+		m.balance, err = rest.GetBalance(asset)
+		if err != nil {
+			return 0.0, err
+		}
+	}
+
+	positionSize := m.balance * riskPercentage
+	logger.Debug.Printf(
+		"Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
+		positionSize,
+		m.balance,
+		riskPercentage*100,
+		entryPrice,
+		stopLossPrice,
+	)
+	return positionSize, nil
 }
 
 func (g *GridStrategy) DetermineEntryAndStopLoss(
