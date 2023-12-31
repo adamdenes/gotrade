@@ -423,11 +423,11 @@ func (g *GridStrategy) calculateParams(
 	return quantity, entryPrice, nil
 }
 
-func (m *GridStrategy) RoundToStepSize(value, stepSize float64) float64 {
+func (g *GridStrategy) RoundToStepSize(value, stepSize float64) float64 {
 	return math.Round(value/stepSize) * stepSize
 }
 
-func (m *GridStrategy) RoundToTickSize(value, tickSize float64) float64 {
+func (g *GridStrategy) RoundToTickSize(value, tickSize float64) float64 {
 	return math.Round(value/tickSize) * tickSize
 }
 
@@ -437,23 +437,23 @@ func (m *GridStrategy) RoundToTickSize(value, tickSize float64) float64 {
 // For SPOT trading
 // Invalidation point (distance to stop-loss)
 // position size = account size x account risk / invalidation point
-func (m *GridStrategy) CalculatePositionSize(
+func (g *GridStrategy) CalculatePositionSize(
 	asset string,
 	riskPercentage, entryPrice, stopLossPrice float64,
 ) (float64, error) {
-	if !m.backtest {
+	if !g.backtest {
 		var err error
-		m.balance, err = rest.GetBalance(asset)
+		g.balance, err = rest.GetBalance(asset)
 		if err != nil {
 			return 0.0, err
 		}
 	}
 
-	positionSize := m.balance * riskPercentage
+	positionSize := g.balance * riskPercentage
 	logger.Debug.Printf(
 		"Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
 		positionSize,
-		m.balance,
+		g.balance,
 		riskPercentage*100,
 		entryPrice,
 		stopLossPrice,
