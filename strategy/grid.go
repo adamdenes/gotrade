@@ -56,9 +56,7 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 
 func (g *GridStrategy) ATR() float64 {
 	atr := talib.Atr(g.highs, g.lows, g.closes, 14)
-	lastAtr := atr[len(atr)-1]
-	fmt.Printf("len(atr): %v, atr: %v\n", len(atr), atr[len(atr)-1])
-	return lastAtr
+	return atr[len(atr)-1]
 }
 
 func (g *GridStrategy) Execute() {
@@ -107,8 +105,8 @@ func (g *GridStrategy) OpenNewOrders() {
 // Update grid levels and count based on current price and strategy logic
 func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 	g.gridGap = g.ATR()
-	g.gridNextBuyLevel = currentPrice + math.Abs(currentPrice-g.gridGap)
-	g.gridNextSellLevel = currentPrice - math.Abs(currentPrice-g.gridGap)
+	g.gridNextBuyLevel = currentPrice + g.gridGap
+	g.gridNextSellLevel = currentPrice - g.gridGap
 	logger.Info.Printf(
 		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v\n",
 		g.gridGap,
@@ -120,25 +118,34 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 	if math.Abs(float64(g.gridLevelCount)) == float64(MAX_GRID_LEVEL) {
 		logger.Debug.Printf("MAX_GRID_LEVEL [%d] reached!", MAX_GRID_LEVEL)
 		g.CancelAllOpenOrders()
+		g.ResetGrid()
 	} else {
 		g.SetNewGridLevel(g.gridNextBuyLevel, g.gridNextSellLevel)
 	}
 }
 
 func (g *GridStrategy) SetNewGridLevel(newBuyLevel, newSellLevel float64) {
-	// Close all open orders if the price retraces to the previous level
+	// Check for retracement to previous levels
 	if newBuyLevel == g.gridPreviousBuyLevel || newSellLevel == g.gridPreviousSellLevel {
-		logger.Info.Printf(
-			"%.8f==%.8f || %.8f==%.8f\n",
-			newBuyLevel,
-			g.gridPreviousBuyLevel,
-			newSellLevel,
-			g.gridPreviousSellLevel,
-		)
+		logger.Info.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f\n",
+			newBuyLevel, g.gridPreviousBuyLevel, newSellLevel, g.gridPreviousSellLevel)
+		g.CancelAllOpenOrders()
+		g.ResetGrid()
+	} else {
+		// Update previous levels
 		g.gridPreviousBuyLevel = newBuyLevel
 		g.gridPreviousSellLevel = newSellLevel
-		g.CancelAllOpenOrders()
 	}
+}
+
+func (g *GridStrategy) ResetGrid() {
+	g.gridPreviousBuyLevel = 0.0
+	g.gridPreviousSellLevel = 0.0
+	g.gridLevelCount = 0
+	g.gridNextBuyLevel = 0.0
+	g.gridNextSellLevel = 0.0
+	g.orderMap = make(map[int64]struct{})
+	logger.Info.Println("Grid has been reset")
 }
 
 func (g *GridStrategy) AddOpenOrder(orderID int64) {
