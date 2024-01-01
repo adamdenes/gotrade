@@ -372,9 +372,12 @@ Additional mandatory parameters based on type:
 	LIMIT_MAKER 	        quantity, price
 */
 func PostOrder(order *models.PostOrder) (*models.PostOrderResponse, error) {
-	if err := validateOrder(order); err != nil {
+	st, err := GetServerTime()
+	if err != nil {
 		return nil, err
 	}
+
+	order.Timestamp = st
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), order.String())
 	if err != nil {
 		return nil, err
