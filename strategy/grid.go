@@ -18,10 +18,34 @@ import (
 
 // Maximum reachable grid level ranging from 0 (base) to 4 (5 levels total).
 // Acts as sort of a stop stop-loss.
+type level int
+
 const (
-	maxGridLevel       = 4
-	atrChangeThreshold = 0.05 // 5% change
+	baseLevel level = iota
+	fullRetracementLevel
+	halfRetracementLevel
+	breakEvenLevel
+	maxGridLevel
 )
+
+func (l level) String() string {
+	switch l {
+	case baseLevel:
+		return "BASE_LEVEL"
+	case fullRetracementLevel:
+		return "FULL_RETRACEMENT_LEVEL"
+	case halfRetracementLevel:
+		return "HALF_RETRACEMENT_LEVEL"
+	case breakEvenLevel:
+		return "BREAK_EVEN_LEVEL"
+	case maxGridLevel:
+		return "MAX_GRID_LEVEL"
+	default:
+		return fmt.Sprintf("Unknown Level (%d)", l)
+	}
+}
+
+const atrChangeThreshold = 0.05 // % change
 
 type GridStrategy struct {
 	name                  string                // Name of strategy
@@ -42,7 +66,7 @@ type GridStrategy struct {
 	orderMap              map[int64]struct{}    // Map of order IDs
 	mu                    sync.Mutex            // Mutex for thread-safe access to the orderMap
 	gridGap               float64               // Grid Gap/Size
-	gridLevelCount        int8                  // Number of grid levels reached
+	gridLevelCount        int                   // Number of grid levels reached
 	gridNextBuyLevel      float64               // Next grid line above
 	gridNextSellLevel     float64               // Next grid line below
 	gridPreviousBuyLevel  float64               // Previous grid line above
@@ -51,11 +75,14 @@ type GridStrategy struct {
 
 func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 	return &GridStrategy{
-		name:               "grid",
-		db:                 db,
-		riskPercentage:     0.01,
-		stopLossPercentage: 0.06,
-		gridGap:            0,
+		name:                  "grid",
+		db:                    db,
+		riskPercentage:        0.02,
+		stopLossPercentage:    0.06,
+		gridGap:               0,
+		gridPreviousBuyLevel:  -1,
+		gridPreviousSellLevel: -1,
+		orderMap:              make(map[int64]struct{}),
 	}
 }
 
@@ -72,26 +99,25 @@ func (g *GridStrategy) Execute() {
 func (g *GridStrategy) ManageOrders() {
 	// Check if the price has reached the next buy or sell level
 	currentPrice := g.GetClosePrice()
+	logger.Debug.Printf("Current Price=%.8f", currentPrice)
 	g.UpdateGridLevels(currentPrice)
 
 	if currentPrice >= g.gridNextBuyLevel {
 		// Handle buy order logic
-
 		// Close existing buy order (filled by exchange)
-		g.OpenNewOrders() // Open new buy and sell orders
+		g.OpenNewOrders()
 
-		logger.Info.Printf("incrementing grid level from: %v", g.gridLevelCount)
+		logger.Debug.Printf("incrementing grid level from: %v", g.gridLevelCount)
 		g.gridLevelCount++
-		logger.Info.Printf("new grid level: %v", g.gridLevelCount)
+		logger.Debug.Printf("new grid level: %v", g.gridLevelCount)
 	} else if currentPrice <= g.gridNextSellLevel {
 		// Handle sell order logic
-
 		// Close existing sell order (filled by exchange)
-		g.OpenNewOrders() // Open new buy and sell orders
+		g.OpenNewOrders()
 
-		logger.Info.Printf("decrementing grid level from: %v", g.gridLevelCount)
+		logger.Debug.Printf("decrementing grid level from: %v", g.gridLevelCount)
 		g.gridLevelCount--
-		logger.Info.Printf("new grid level: %v", g.gridLevelCount)
+		logger.Debug.Printf("new grid level: %v", g.gridLevelCount)
 	}
 }
 
@@ -109,6 +135,14 @@ func (g *GridStrategy) OpenNewOrders() {
 
 // Update grid levels and count based on current price and strategy logic
 func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
+	logger.Debug.Printf(
+		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+		g.gridGap,
+		g.gridLevelCount,
+		g.gridNextBuyLevel,
+		g.gridNextSellLevel,
+	)
+
 	newATR := g.ATR()
 	atrChange := math.Abs(newATR-g.gridGap) / g.gridGap
 
@@ -117,21 +151,27 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 		// Recalculate grid levels only if ATR change is significant
 		g.gridNextBuyLevel = currentPrice + g.gridGap
 		g.gridNextSellLevel = currentPrice - g.gridGap
+
+		logger.Debug.Printf(
+			"ATR change -> gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+			g.gridGap,
+			g.gridLevelCount,
+			g.gridNextBuyLevel,
+			g.gridNextSellLevel,
+		)
 	}
 
-	logger.Info.Printf(
-		"gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
-		g.gridGap,
-		g.gridLevelCount,
-		g.gridNextBuyLevel,
-		g.gridNextSellLevel,
-	)
+	g.ProcessLevels()
+}
 
-	if math.Abs(float64(g.gridLevelCount)) == maxGridLevel {
-		logger.Debug.Printf("MAX_GRID_LEVEL [%d] reached!", maxGridLevel)
-		g.CancelAllOpenOrders()
+func (g *GridStrategy) ProcessLevels() {
+	lvl := level(math.Abs(float64(g.gridLevelCount)))
+	switch lvl {
+	case maxGridLevel:
+		logger.Warning.Printf("%s [%d] reached!", maxGridLevel.String(), maxGridLevel)
 		g.ResetGrid()
-	} else {
+	default:
+		logger.Debug.Printf("%s [%d] reached!", lvl.String(), lvl)
 		g.SetNewGridLevel(g.gridNextBuyLevel, g.gridNextSellLevel)
 	}
 }
@@ -139,25 +179,28 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 func (g *GridStrategy) SetNewGridLevel(newBuyLevel, newSellLevel float64) {
 	// Check for retracement to previous levels
 	if newBuyLevel == g.gridPreviousBuyLevel || newSellLevel == g.gridPreviousSellLevel {
-		logger.Info.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f",
-			newBuyLevel, g.gridPreviousBuyLevel, newSellLevel, g.gridPreviousSellLevel)
-		g.CancelAllOpenOrders()
-		g.ResetGrid()
+		if len(g.orderMap) > 0 {
+			logger.Debug.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f",
+				newBuyLevel, g.gridPreviousBuyLevel, newSellLevel, g.gridPreviousSellLevel)
+			g.ResetGrid()
+		}
 	} else {
 		// Update previous levels
+		logger.Debug.Printf("Setting grid levels buy=[%.8f], sell=[%.8f]", newBuyLevel, newSellLevel)
 		g.gridPreviousBuyLevel = newBuyLevel
 		g.gridPreviousSellLevel = newSellLevel
 	}
 }
 
 func (g *GridStrategy) ResetGrid() {
+	g.CancelAllOpenOrders()
 	g.gridPreviousBuyLevel = 0.0
 	g.gridPreviousSellLevel = 0.0
 	g.gridLevelCount = 0
 	g.gridNextBuyLevel = 0.0
 	g.gridNextSellLevel = 0.0
 	g.orderMap = make(map[int64]struct{})
-	logger.Info.Println("Grid has been reset")
+	logger.Debug.Println("Grid has been reset")
 }
 
 func (g *GridStrategy) AddOpenOrder(orderID int64) {
@@ -171,15 +214,22 @@ func (g *GridStrategy) CancelOrder(orderID int64) {
 	delete(g.orderMap, orderID)
 	g.mu.Unlock()
 
-	if _, err := rest.CancelOrder(g.asset, orderID); err != nil {
+	// TODO: Handle error here!
+	co, err := rest.CancelOrder(g.asset, orderID)
+	if err != nil {
 		logger.Error.Println("failed to close order:", err)
 		return
 	}
-	logger.Debug.Printf("OrderID=%v cancelled...", orderID)
+	logger.Debug.Printf(
+		"OrderID=%v Symbol=%v Status=%v cancelled...",
+		co.OrderID,
+		co.Symbol,
+		co.Status,
+	)
 }
 
 func (g *GridStrategy) CancelAllOpenOrders() {
-	logger.Info.Println("Cancelling all open orders.")
+	logger.Debug.Println("Cancelling all open orders.")
 	for orderID := range g.orderMap {
 		g.CancelOrder(orderID)
 	}
@@ -190,7 +240,7 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 	switch order := o.(type) {
 	case *models.PostOrder:
-		logger.Info.Printf("Side: %s, Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Quantity, order.Price, order.StopPrice)
+		logger.Debug.Printf("Side: %s, Symbol: %s Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice)
 		if g.backtest {
 			order.Timestamp = currBar.OpenTime.UnixMilli()
 			return
@@ -212,13 +262,14 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 		}
 	default:
 		// Some error occured during order creation
+		logger.Error.Println("Error, not placing order!")
 		return
 	}
 }
 
 func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	// Determine entry and stop loss prices
-	entryPrice, stopLossPrice := g.gridNextBuyLevel, g.gridNextSellLevel
+	entryPrice, stopLossPrice := g.DetermineEntryAndStopLoss("BUY", price)
 
 	// Calculate position size
 	var err error
@@ -233,7 +284,7 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
-	quantity, entryPrice, err := g.calculateParams("BUY", entryPrice)
+	quantity, entryPrice, err := g.calculateParams(asset, entryPrice)
 	if err != nil {
 		logger.Error.Println("error calculating order parameters:", err)
 		return nil
@@ -255,13 +306,13 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 		Price:       entryPrice,
 		TimeInForce: models.GTC,
 		RecvWindow:  5000,
-		Timestamp:   time.Now().UnixMilli(),
+		Timestamp:   time.Now().UnixMilli(), // will be overwritten by GetServerTime
 	}
 }
 
 func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 	// Determine entry and stop loss prices
-	entryPrice, stopLossPrice := g.gridNextSellLevel, g.gridNextBuyLevel
+	entryPrice, stopLossPrice := g.DetermineEntryAndStopLoss("SELL", price)
 
 	// Calculate position size
 	var err error
@@ -276,7 +327,7 @@ func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
-	quantity, entryPrice, err := g.calculateParams("SELL", entryPrice)
+	quantity, entryPrice, err := g.calculateParams(asset, entryPrice)
 	if err != nil {
 		logger.Error.Println("error calculating order parameters:", err)
 		return nil
@@ -298,7 +349,7 @@ func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 		Price:       entryPrice,
 		TimeInForce: models.GTC,
 		RecvWindow:  5000,
-		Timestamp:   time.Now().UnixMilli(),
+		Timestamp:   time.Now().UnixMilli(), // will be overwritten by GetServerTime
 	}
 }
 
@@ -397,10 +448,7 @@ func (g *GridStrategy) GetRecentLow() {
 	}
 }
 
-func (g *GridStrategy) calculateParams(
-	asset string,
-	entryPrice float64,
-) (float64, float64, error) {
+func (g *GridStrategy) calculateParams(asset string, entryPrice float64) (float64, float64, error) {
 	filters, err := g.db.GetTradeFilters(asset)
 	if err != nil {
 		logger.Error.Printf("Error fetching trade filters: %v", err)
@@ -408,16 +456,22 @@ func (g *GridStrategy) calculateParams(
 	}
 
 	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
+	tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
+	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+
 	quantity := g.GetPositionSize() / entryPrice
 	quantity = g.RoundToStepSize(quantity, stepSize)
-
-	tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
 	entryPrice = g.RoundToTickSize(entryPrice, tickSize)
 
-	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
 	if quantity*entryPrice < minNotional {
 		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-		return 0, 0, fmt.Errorf("order value below minimum notional")
+		quantity = minNotional / entryPrice
+		quantity = g.RoundToStepSize(quantity, stepSize)
+		logger.Warning.Printf(
+			"Adjusting Quantity to [%.8f] based on minNotional of [%0.8f]",
+			quantity,
+			minNotional,
+		)
 	}
 
 	return quantity, entryPrice, nil
@@ -465,7 +519,15 @@ func (g *GridStrategy) DetermineEntryAndStopLoss(
 	side string,
 	currentPrice float64,
 ) (float64, float64) {
-	panic("unimplemented")
+	var stopPrice float64
+
+	if side == "SELL" {
+		stopPrice = g.gridNextBuyLevel
+	} else if side == "BUY" {
+		stopPrice = g.gridNextSellLevel
+	}
+
+	return currentPrice, stopPrice
 }
 
 func (g *GridStrategy) GetClosePrice() float64 {
