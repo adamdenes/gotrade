@@ -634,6 +634,16 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 			}
 		}
 
+		// if o.Status == "NEW" {
+		//
+		// 	co, err := rest.CancelOrder(o.Symbol, o.OrderID)
+		// 	if err != nil {
+		// 		fmt.Println(err)
+		// 	}
+		// 	_ = s.store.UpdateOrder(co.DeleteToGet())
+		// 	return
+		// }
+
 		if o.Status != "NEW" {
 			s.infoLog.Printf(
 				"[Type=%15s] Order ID=%v Status=%v CummulativeQuoteQty=%v! Updating Database...",
