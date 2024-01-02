@@ -579,6 +579,7 @@ func processBars(
 			return
 		}
 
+        // TODO: rework this, maybe a flag to trun it on/off?
 		// Only evaluate closed bars
 		if kws.Data.Kline.IsKlineClosed {
 			// logger.Info.Println(kws)
