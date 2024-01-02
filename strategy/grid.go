@@ -160,16 +160,18 @@ func (g *GridStrategy) ManageOrders() {
 	logger.Debug.Printf("Current Price=%.8f", currentPrice)
 	g.UpdateGridLevels(currentPrice)
 
-	if currentPrice >= g.gridNextBuyLevel {
-		// Handle sell order logic
+	if currentPrice <= g.gridNextBuyLevel {
+        logger.Debug.Printf("**** current price [%v] <= [%v] lower level", currentPrice, g.gridNextBuyLevel)
+		// Handle buy order logic
 		// Close existing buy order (filled by exchange)
 		g.OpenNewOrders()
 
 		logger.Debug.Printf("incrementing grid level from: %v", g.gridLevelCount)
         g.gridLevelCount.increaseLevel()		
 		logger.Debug.Printf("new grid level: %v", g.gridLevelCount)
-	} else if currentPrice <= g.gridNextSellLevel {
-		// Handle buy order logic
+	} else if currentPrice >= g.gridNextSellLevel {
+        logger.Debug.Printf("**** current price [%v] >= [%v] upper level", currentPrice, g.gridNextBuyLevel)
+		// Handle sell order logic
 		// Close existing sell order (filled by exchange)
 		g.OpenNewOrders()
 
@@ -220,11 +222,10 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice float64) {
 		}
 	}
 
-	g.SetNewGridLevel(g.gridNextBuyLevel, g.gridNextSellLevel)
+	g.CheckRetracement(g.gridNextBuyLevel, g.gridNextSellLevel)
 }
 
-
-func (g *GridStrategy) SetNewGridLevel(newBuyLevel, newSellLevel float64) {
+func (g *GridStrategy) CheckRetracement(newBuyLevel, newSellLevel float64) {
 	// 2 orders are created at each level
 	if len(g.orderInfos) >= 2 {
 		// Last orders
@@ -234,15 +235,25 @@ func (g *GridStrategy) SetNewGridLevel(newBuyLevel, newSellLevel float64) {
 		logger.Debug.Println("Last Sell (sell high):", prevSellOrder)
 
 		// Check for retracement to previous levels
-		if (prevSellOrder.Side == "SELL" && newSellLevel == prevSellOrder.EntryPrice) ||
-			(prevBuyOrder.Side == "BUY" && newBuyLevel == prevBuyOrder.EntryPrice) {
-			logger.Debug.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f",
-				newBuyLevel, prevSellOrder.EntryPrice, newSellLevel, prevBuyOrder.EntryPrice)
-			g.ResetGrid()
-		}
-		return
+		// if (prevSellOrder.Side == "SELL" && newSellLevel == prevSellOrder.EntryPrice) ||
+		// 	(prevBuyOrder.Side == "BUY" && newBuyLevel == prevBuyOrder.EntryPrice) {
+		// 	logger.Debug.Printf("Retracement detected: %.8f==%.8f || %.8f==%.8f",
+		// 		newBuyLevel, prevSellOrder.EntryPrice, newSellLevel, prevBuyOrder.EntryPrice)
+		// 	g.ResetGrid()
+		// }
+
+        // Last close prices
+        currentPrice := g.GetClosePrice()
+        previousPrice := g.closes[len(g.closes)-1]
+
+        buyCrossover := previousPrice >= prevBuyOrder.EntryPrice && currentPrice < prevBuyOrder.EntryPrice
+        sellCrossover := previousPrice <= prevSellOrder.EntryPrice && currentPrice > prevSellOrder.EntryPrice
+
+        if (prevSellOrder.Side == "SELL" && sellCrossover) || (prevBuyOrder.Side == "BUY" && buyCrossover) {
+            logger.Debug.Printf("Retracement detected near: %.8f or %.8f", prevBuyOrder.EntryPrice, prevSellOrder.EntryPrice)
+            g.ResetGrid()
+        }
 	} 
-    logger.Debug.Printf("Setting grid levels buy=[%.8f], sell=[%.8f]", newBuyLevel, newSellLevel)
 }
 
 func (g *GridStrategy) CreateGrid(currentPrice float64) {
