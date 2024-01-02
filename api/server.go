@@ -635,7 +635,6 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 		}
 
 		// if o.Status == "NEW" {
-		//
 		// 	co, err := rest.CancelOrder(o.Symbol, o.OrderID)
 		// 	if err != nil {
 		// 		fmt.Println(err)
