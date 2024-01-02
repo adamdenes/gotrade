@@ -166,8 +166,8 @@ func (g *GridStrategy) ManageOrders() {
 		// Close existing buy order (filled by exchange)
 		g.OpenNewOrders()
 
-		logger.Debug.Printf("incrementing grid level from: %v", g.gridLevelCount)
-        g.gridLevelCount.increaseLevel()		
+		logger.Debug.Printf("decrementing grid level from: %v", g.gridLevelCount)
+        g.gridLevelCount.decreaseLevel()
 		logger.Debug.Printf("new grid level: %v", g.gridLevelCount)
 	} else if currentPrice >= g.gridNextSellLevel {
         logger.Debug.Printf("**** current price [%v] >= [%v] upper level", currentPrice, g.gridNextBuyLevel)
@@ -175,8 +175,8 @@ func (g *GridStrategy) ManageOrders() {
 		// Close existing sell order (filled by exchange)
 		g.OpenNewOrders()
 
-		logger.Debug.Printf("decrementing grid level from: %v", g.gridLevelCount)
-        g.gridLevelCount.decreaseLevel()
+		logger.Debug.Printf("incrementing grid level from: %v", g.gridLevelCount)
+        g.gridLevelCount.increaseLevel()		
 		logger.Debug.Printf("new grid level: %v", g.gridLevelCount)
 	}
 }
