@@ -715,14 +715,28 @@ Parameters:
 	origClientOrderId 	STRING 	NO
 	recvWindow 	        LONG 	NO 	The value cannot be greater than 60000
 	timestamp 	        LONG 	YES
+
+Either orderId or origClientOrderId must be sent.
 */
-func GetOrder(symbol string, id int64) (*models.GetOrderResponse, error) {
+func GetOrder(symbol, origClientOrderId string, id int64) (*models.GetOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
 	}
 
-	q := fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
+	var q string
+	if origClientOrderId != "" {
+		q = fmt.Sprintf(
+			"symbol=%s&origClientOrderId=%s&recvWindow=%d&timestamp=%d",
+			symbol,
+			origClientOrderId,
+			5000,
+			st,
+		)
+	} else {
+		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
+	}
+
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
 	if err != nil {
 		return nil, err
@@ -779,14 +793,28 @@ DELETE /api/v3/order
 Cancel an active order.
 
 Weight(IP): 1
+
+Either orderId or origClientOrderId must be sent. If both orderId and origClientOrderId are provided, orderId takes precedence.
 */
-func CancelOrder(symbol string, id int64) (*models.DeleteOrderResponse, error) {
+func CancelOrder(symbol, origClientOrderId string, id int64) (*models.DeleteOrderResponse, error) {
 	st, err := GetServerTime()
 	if err != nil {
 		return nil, err
 	}
 
-	q := fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
+	var q string
+	if origClientOrderId != "" {
+		q = fmt.Sprintf(
+			"symbol=%s&origClientOrderId=%s&recvWindow=%d&timestamp=%d",
+			symbol,
+			origClientOrderId,
+			5000,
+			st,
+		)
+	} else {
+		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
+	}
+
 	signedQuery, err := Sign([]byte(os.Getenv(apiSecret)), q)
 	if err != nil {
 		return nil, err

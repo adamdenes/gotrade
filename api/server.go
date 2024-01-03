@@ -605,7 +605,7 @@ func (s *Server) monitorOrders() {
 
 func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 	for {
-		o, err := rest.GetOrder(ord.Symbol, ord.OrderID)
+		o, err := rest.GetOrder(ord.Symbol, "", ord.OrderID)
 		if err != nil {
 			if re, ok := err.(*models.RequestError); ok && err != nil {
 				s.errorLog.Printf("error in order: %v", err)
@@ -635,7 +635,7 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 		}
 
 		// if o.Status == "NEW" {
-		// 	co, err := rest.CancelOrder(o.Symbol, o.OrderID)
+		// 	co, err := rest.CancelOrder(o.Symbol, o.ClientOrderID, o.OrderID)
 		// 	if err != nil {
 		// 		fmt.Println(err)
 		// 	}
@@ -645,7 +645,7 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 
 		if o.Status != "NEW" {
 			s.infoLog.Printf(
-				"[Type=%15s] Order ID=%v Status=%v CummulativeQuoteQty=%v! Updating Database...",
+				"[Type=%s] OrderID=%v Status=%v CummulativeQuoteQty=%v! Updating Database...",
 				o.Type,
 				o.OrderID,
 				o.Status,
