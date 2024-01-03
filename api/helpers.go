@@ -124,7 +124,6 @@ func PollHistoricalData(storage storage.Storage) {
 
         lastEntryDate := time.Date(eYear, eMonth, eDay, 0, 0, 0, 0, time.Local)
 
-		// if eYear <= year && eMonth < month {
 		if lastEntryDate.Before(currentDate) {
 			if printCount == 1 {
 				logger.Info.Println("PARTIAL database update needed")
