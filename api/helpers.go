@@ -106,7 +106,7 @@ func PollHistoricalData(storage storage.Storage) {
             currentDate time.Time = time.Now()
 			year     int        = currentDate.Year()
 			month    time.Month = currentDate.Month()
-			firstDay int        = time.Date(year, month, 1, 0, 0, 0, 0, time.Local).Day()
+			day      int        = currentDate.Day()
 		)
 		// Monthly-generated data will be updated on the first day of the following month.
 		// For streaming ZIP files, we could simply wait for the next month's release. However,
@@ -119,7 +119,7 @@ func PollHistoricalData(storage storage.Storage) {
 			eDay,
 			year,
 			month,
-			firstDay,
+			day,
 		)
 
         lastEntryDate := time.Date(eYear, eMonth, eDay, 0, 0, 0, 0, time.Local)
