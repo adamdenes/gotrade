@@ -103,8 +103,9 @@ func PollHistoricalData(storage storage.Storage) {
 			eYear    int        = epoch.Year()
 			eMonth   time.Month = epoch.Month()
 			eDay     int        = epoch.Day()
-			year     int        = time.Now().Year()
-			month    time.Month = time.Now().Month()
+            currentDate time.Time = time.Now()
+			year     int        = currentDate.Year()
+			month    time.Month = currentDate.Month()
 			firstDay int        = time.Date(year, month, 1, 0, 0, 0, 0, time.Local).Day()
 		)
 		// Monthly-generated data will be updated on the first day of the following month.
@@ -121,7 +122,10 @@ func PollHistoricalData(storage storage.Storage) {
 			firstDay,
 		)
 
-		if eYear <= year && eMonth < month {
+        lastEntryDate := time.Date(eYear, eMonth, eDay, 0, 0, 0, 0, time.Local)
+
+		// if eYear <= year && eMonth < month {
+		if lastEntryDate.Before(currentDate) {
 			if printCount == 1 {
 				logger.Info.Println("PARTIAL database update needed")
 			}
