@@ -1101,6 +1101,54 @@ func (ts *TimescaleDB) SaveOrder(strategy string, order *models.PostOrderRespons
 	return nil
 }
 
+func (ts *TimescaleDB) GetOrder(id int64) (*models.GetOrderResponse, error) {
+	query := `SELECT symbol, order_id, order_list_id, client_order_id, price, orig_qty, executed_qty, cummulative_quote_qty, status, time_in_force, type, side, stop_price, iceberg_qty, time, update_time, is_working, working_time, orig_quote_order_qty, self_trade_prevention_mode FROM binance.orders WHERE order_id = $1;`
+
+	var (
+		order            models.GetOrderResponse
+		timeMilli        time.Time
+		updateTimeMilli  time.Time
+		workingTimeMilli time.Time
+	)
+
+	row := ts.db.QueryRow(query, id)
+	err := row.Scan(
+		&order.Symbol,
+		&order.OrderID,
+		&order.OrderListID,
+		&order.ClientOrderID,
+		&order.Price,
+		&order.OrigQty,
+		&order.ExecutedQty,
+		&order.CummulativeQuoteQty,
+		&order.Status,
+		&order.TimeInForce,
+		&order.Type,
+		&order.Side,
+		&order.StopPrice,
+		&order.IcebergQty,
+		&timeMilli,
+		&updateTimeMilli,
+		&order.IsWorking,
+		&workingTimeMilli,
+		&order.OrigQuoteOrderQty,
+		&order.SelfTradePreventionMode,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No result found
+			return nil, fmt.Errorf("order not found in DB: %w", err)
+		}
+		// Some other error occurred
+		return nil, err
+	}
+	order.Time = timeMilli.UnixMilli()
+	order.UpdateTime = updateTimeMilli.UnixMilli()
+	order.WorkingTime = workingTimeMilli.UnixMilli()
+
+	return &order, nil
+}
+
 func (ts *TimescaleDB) FetchOrders() ([]*models.GetOrderResponse, error) {
 	var orders []*models.GetOrderResponse
 
