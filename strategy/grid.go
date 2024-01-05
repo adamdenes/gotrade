@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -125,6 +126,7 @@ type GridStrategy struct {
 	gridLevelCount     level                 // Number of grid levels reached
 	gridNextLowerLevel float64               // Next grid line below
 	gridNextUpperLevel float64               // Next grid line above
+	cancelFuncs        map[int64]context.CancelFunc
 }
 
 func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
@@ -138,6 +140,7 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 		gridNextLowerLevel: -1,
 		gridNextUpperLevel: -1,
 		orderInfos:         make([]*OrderInfo, 0, 2),
+		cancelFuncs:        make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -155,10 +158,14 @@ func (g *GridStrategy) ProcessLevels() {
 	lvl := g.gridLevelCount
 	switch lvl {
 	case maxGridLevel, -maxGridLevel:
-		logger.Warning.Printf("%s [%d] reached!", level(maxGridLevel).String(), maxGridLevel)
+		logger.Warning.Printf(
+			"[ProcessLevels] -> %s [%d] reached!",
+			level(maxGridLevel).String(),
+			maxGridLevel,
+		)
 		g.ResetGrid()
 	default:
-		logger.Debug.Printf("%s [%d] reached!", lvl.String(), lvl)
+		logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
 		g.ManageOrders()
 	}
 }
@@ -167,8 +174,14 @@ func (g *GridStrategy) ManageOrders() {
 	// Check if the price has reached the next buy or sell level
 	currentPrice := g.GetClosePrice()
 	previousPrice := g.closes[len(g.closes)-2]
-	logger.Debug.Printf("Current Price=%.8f, Previous Price=%.8f", currentPrice, previousPrice)
+	logger.Debug.Printf(
+		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f",
+		currentPrice,
+		previousPrice,
+	)
 
+	g.MonitorOrders()
+	g.CheckPreviousOrders(currentPrice, previousPrice)
 	g.UpdateGridLevels(currentPrice, previousPrice)
 
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
@@ -177,16 +190,16 @@ func (g *GridStrategy) ManageOrders() {
 			currentPrice,
 			g.gridNextLowerLevel,
 		)
-		g.gridLevelCount.decreaseLevel()
 		g.OpenNewOrders()
+		g.gridLevelCount.decreaseLevel()
 	} else if g.CrossOver(currentPrice, previousPrice, g.gridNextUpperLevel) {
 		logger.Debug.Printf(
 			"**** [CrossOver] current price [%v] >= [%v] upper level",
 			currentPrice,
 			g.gridNextUpperLevel,
 		)
-		g.gridLevelCount.increaseLevel()
 		g.OpenNewOrders()
+		g.gridLevelCount.increaseLevel()
 	}
 }
 
@@ -223,7 +236,7 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice, previousPrice float64) {
 			g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
 			logger.Debug.Printf(
-				"ATR change -> gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+				"[UpdateGridLevels] -> ATR change -> gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
 				g.gridGap,
 				g.gridLevelCount,
 				g.gridNextLowerLevel,
@@ -231,38 +244,33 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice, previousPrice float64) {
 			)
 		}
 	}
-
-	g.CheckPreviousOrders(currentPrice, previousPrice)
 }
 
 func (g *GridStrategy) CheckRetracement(
-	prevBuyOrder, prevSellOrder *OrderInfo,
 	currentPrice, previousPrice float64,
+	prevBuyOrder, prevSellOrder *OrderInfo,
 ) {
-	// CHECK CROSSOVER ONLY WITH LEVELS?
-	// if prevSellOrder.GridLevelCount > g.gridLevelCount {
-	//
-	// } else if prevBuyOrder.GridLevelCount < g.gridLevelCount {
-	//
-	// }
+	fromLowerToUpper := g.CrossOver(currentPrice, previousPrice, prevSellOrder.EntryPrice)
+	fromUpperToLower := g.CrossUnder(currentPrice, previousPrice, prevBuyOrder.EntryPrice)
 
-	buyCrossover := g.CrossOver(currentPrice, previousPrice, prevBuyOrder.EntryPrice)
-	sellCrossunder := g.CrossUnder(currentPrice, previousPrice, prevSellOrder.EntryPrice)
-
-	if sellCrossunder {
+	if prevSellOrder != nil && fromUpperToLower {
+		// The market has retraced to a lower level from a previous sell order
 		logger.Debug.Printf(
-			"[%s] -> retracement detected at UPPER: %.8f",
+			"[CheckRetracement] -> [%s] -> retracement detected at UPPER: %v crossed under %v",
 			prevSellOrder.Side,
-			prevSellOrder.EntryPrice,
+			currentPrice,
+			prevBuyOrder.EntryPrice,
 		)
 		g.ResetGrid()
 	}
 
-	if buyCrossover {
+	if prevBuyOrder != nil && fromLowerToUpper {
+		// The market has retraced to a higher level from a previous buy order
 		logger.Debug.Printf(
-			"[%s] -> retracement detected at LOWER: %.8f",
+			"[CheckRetracement] -> [%s] -> retracement detected at LOWER: %v crossed over %v",
 			prevBuyOrder.Side,
-			prevBuyOrder.EntryPrice,
+			currentPrice,
+			prevSellOrder.EntryPrice,
 		)
 		g.ResetGrid()
 	}
@@ -272,7 +280,7 @@ func (g *GridStrategy) SetNewGridLevels(newUpper, newLower float64) {
 	g.gridNextUpperLevel = newUpper
 	g.gridNextLowerLevel = newLower
 	logger.Debug.Printf(
-		"Setting upper/lower -> u: %v, l: %v",
+		"[SetNewGridLevels] -> Setting upper/lower -> u: %v, l: %v",
 		g.gridNextUpperLevel,
 		g.gridNextLowerLevel,
 	)
@@ -288,52 +296,69 @@ func (g *GridStrategy) CheckPreviousOrders(currentPrice, previousPrice float64) 
 
 		g.SetNewGridLevels(prevSellOrder.EntryPrice, prevBuyOrder.EntryPrice)
 
-		if g.gridLevelCount != baseLevel {
-			g.CheckRetracement(prevBuyOrder, prevSellOrder, currentPrice, previousPrice)
+		if prevBuyOrder.GridLevelCount != invalidLevel &&
+			prevSellOrder.GridLevelCount != invalidLevel {
+			g.CheckRetracement(currentPrice, previousPrice, prevBuyOrder, prevSellOrder)
 			return
 		}
+	} else {
+		logger.Info.Println("No orders yet.")
 	}
-
-	logger.Info.Println("No orders yet.")
 }
 
-// func (g *GridStrategy) CheckPreviousOrders(currentPrice, previousPrice float64) {
-// 	// 2 orders are created at each level
-// 	if len(g.orderInfos) >= 2 && g.gridLevelCount != baseLevel {
-// 		// Last orders
-// 		prevBuyOrder := g.orderInfos[len(g.orderInfos)-2]
-// 		prevSellOrder := g.orderInfos[len(g.orderInfos)-1]
-// 		logger.Debug.Println("Last Buy    (buy low):", prevBuyOrder)
-// 		logger.Debug.Println("Last Sell (sell high):", prevSellOrder)
-//
-// 		buyCrossunder := g.CrossUnder(currentPrice, previousPrice, prevBuyOrder.EntryPrice)
-// 		sellCrossover := g.CrossOver(currentPrice, previousPrice, prevSellOrder.EntryPrice)
-//
-// 		if prevSellOrder.Side == "SELL" && sellCrossover {
-// 			logger.Debug.Printf(
-// 				"[%s] -> retracement detected at UPPER: %.8f",
-// 				prevSellOrder.Side,
-// 				prevSellOrder.EntryPrice,
-// 			)
-// 			g.OpenNewOrders()
-// 			g.gridLevelCount.increaseLevel()
-// 		} else if buyCrossunder{
-//
-//         }
-//
-// 		if prevBuyOrder.Side == "BUY" && buyCrossunder {
-// 			logger.Debug.Printf(
-// 				"[%s] -> retracement detected at LOWER: %.8f",
-// 				prevBuyOrder.Side,
-// 				prevBuyOrder.EntryPrice,
-// 			)
-// 			g.OpenNewOrders()
-// 			g.gridLevelCount.decreaseLevel()
-// 		}
-// 	}
-//
-// 	logger.Info.Println("No orders yet.")
-// }
+func (g *GridStrategy) MonitorOrders() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, oi := range g.orderInfos {
+		if oi.Status == "FILLED" {
+			continue // Skip already filled orders
+		}
+		if cancel, exists := g.cancelFuncs[oi.ID]; exists {
+			cancel() // Cancel existing monitoring goroutine
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		g.cancelFuncs[oi.ID] = cancel
+		go g.MonitorOrder(ctx, oi)
+	}
+}
+
+// MonitorOrder checks the database periodically for updates to the order.
+func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *OrderInfo) {
+	logger.Debug.Printf("[MonitorOrder] -> Starting to monitor OrderID: %v", oi.ID)
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Debug.Printf(
+				"Context cancelled for OrderID: %v",
+				oi.ID,
+			)
+			if err := g.RemoveOpenOrder(oi.ID); err != nil {
+				logger.Error.Println("failed to remove order from slice:", err)
+				return
+			}
+			return
+		default:
+			o, err := g.db.GetOrder(oi.ID)
+			if err != nil {
+				logger.Error.Println(err)
+				return
+			}
+
+			if o.Status == "FILLED" {
+				logger.Debug.Printf("Order %v FILLED", oi.ID)
+				g.mu.Lock()
+				oi.Status = o.Status
+				g.mu.Unlock()
+				return
+			}
+
+			// Check the order status periodically
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
 
 func (g *GridStrategy) CrossOver(currentPrice, previousPrice, threshold float64) bool {
 	return previousPrice <= threshold && currentPrice > threshold
@@ -349,7 +374,7 @@ func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	// g.gridNextLowerLevel = currentPrice - g.gridGap // buy low
 	// g.gridNextUpperLevel = currentPrice + g.gridGap // sell high
 	logger.Debug.Printf(
-		"price: %v gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+		"[CreateGrid] -> price: %v gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
 		currentPrice,
 		g.gridGap,
 		g.gridLevelCount,
@@ -367,7 +392,8 @@ func (g *GridStrategy) ResetGrid() {
 	g.gridLevelCount = invalidLevel
 	g.orderInfos = make([]*OrderInfo, 0, 2)
 	g.orders = make([]models.TypeOfOrder, 0)
-	logger.Debug.Println("Grid has been reset")
+	g.cancelFuncs = make(map[int64]context.CancelFunc)
+	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
 }
 
 func (g *GridStrategy) AddOpenOrder(oi *OrderInfo) {
@@ -376,13 +402,13 @@ func (g *GridStrategy) AddOpenOrder(oi *OrderInfo) {
 	g.mu.Unlock()
 }
 
-func (g *GridStrategy) RemoveOpenOrder(orderID string) error {
+func (g *GridStrategy) RemoveOpenOrder(orderID int64) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	for i, order := range g.orderInfos {
 		logger.Debug.Printf("ORDER: %v", order)
-		if order.OrigClientOrderID == orderID {
+		if order.ID == orderID {
 			logger.Debug.Printf("REMOVING order: %v", order)
 			// Remove the order at index i from g.orderInfos
 			g.orderInfos = append(g.orderInfos[:i], g.orderInfos[i+1:]...)
@@ -393,19 +419,28 @@ func (g *GridStrategy) RemoveOpenOrder(orderID string) error {
 	return fmt.Errorf("OrderID=%v not found!", orderID)
 }
 
-func (g *GridStrategy) CancelOrder(orderID string) {
-	if err := g.RemoveOpenOrder(orderID); err != nil {
-		logger.Error.Println("failed to remove order from slice:", err)
-		return
+func (g *GridStrategy) CancelOrder(orderID int64) {
+	if cancel, exists := g.cancelFuncs[orderID]; exists {
+		cancel()                       // This will signal the monitoring goroutine to stop
+		delete(g.cancelFuncs, orderID) // Clean up
 	}
 
-	co, err := rest.CancelOrder(g.asset, orderID, -1)
+	for _, order := range g.orderInfos {
+		if order.ID == orderID {
+			if order.Status == "FILLED" || order.Status == "CANCELED" {
+				logger.Debug.Println("[CancelOrder] -> Order already canceled.", orderID)
+				return
+			}
+		}
+	}
+
+	co, err := rest.CancelOrder(g.asset, "", orderID)
 	if err != nil {
 		logger.Error.Println("failed to close order:", err)
 		return
 	}
 	logger.Debug.Printf(
-		"OrderID=%v Symbol=%v Status=%v cancelled...",
+		"[CancelOrder] -> OrderID=%v Symbol=%v Status=%v cancelled...",
 		co.OrderID,
 		co.Symbol,
 		co.Status,
@@ -416,10 +451,10 @@ func (g *GridStrategy) CancelOrder(orderID string) {
 }
 
 func (g *GridStrategy) CancelAllOpenOrders() {
-	logger.Debug.Println("Cancelling all open orders.")
+	logger.Debug.Println("[CancelAllOpenOrders] -> Cancelling all open orders.")
 	for _, oi := range g.orderInfos {
 		logger.Debug.Printf("g.orderInfos: %v\n", oi)
-		g.CancelOrder(oi.OrigClientOrderID)
+		g.CancelOrder(oi.ID)
 	}
 }
 
@@ -428,7 +463,7 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 	switch order := o.(type) {
 	case *models.PostOrder:
-		logger.Debug.Printf("Side: %s, Symbol: %s Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice)
+		logger.Debug.Printf("[PlaceOrder] -> Side: %s, Symbol: %s Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice)
 		if g.backtest {
 			order.Timestamp = currBar.OpenTime.UnixMilli()
 			return
@@ -709,7 +744,7 @@ func (g *GridStrategy) CalculatePositionSize(
 
 	positionSize := g.balance * riskPercentage
 	logger.Debug.Printf(
-		"Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
+		"[CalculatePositionSize] -> Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
 		positionSize,
 		g.balance,
 		riskPercentage*100,
