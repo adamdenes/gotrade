@@ -31,18 +31,21 @@ stop:
 
 help:
 	@echo "Available targets:"
-	@echo "  build              - Build project"
-	@echo "  run                - Build and run project"
-	@echo "  test               - Test all go test files"
-	@echo "  help               - Print this message"
-	@echo "  start_db           - Start the PostgreSQL Docker container"
-	@echo "  stop_db            - Stop the PostgreSQL Docker container"
-	@echo "  connect_db         - Connect to the PostgreSQL database using psql"
-	@echo "  migrate-up         - Run the hypertable migration"
-	@echo "  migrate-cagg       - Run the aggregate migration (USE ONLY AFTER DATA IS PRE-LOADED)"
-	@echo "  migrate-down       - Revert the hypertable migration"
-	@echo "  migrate-fix        - Fix migration errors"
+	@echo "  build              	- Build project"
+	@echo "  run                	- Build and run project"
+	@echo "  test               	- Test all go test files"
+	@echo "  help               	- Print this message"
+	@echo "  start_db           	- Start the PostgreSQL Docker container"
+	@echo "  stop_db            	- Stop the PostgreSQL Docker container"
+	@echo "  connect_db         	- Connect to the PostgreSQL database using psql"
+	@echo "  migrate-up         	- Run the hypertable migration"
+	@echo "  migrate-cagg       	- Run the aggregate migration (USE ONLY AFTER DATA IS PRE-LOADED)"
+	@echo "  migrate-down       	- Revert the hypertable migration"
+	@echo "  migrate-fix        	- Fix migration errors"
+	@echo "  clean-dangling-images  - Remove dangling docker images"
 
+clean-dangling-images:
+	docker image prune -f
 
 start_db:
 	docker volume create $(DB_VOLUME)
@@ -79,4 +82,4 @@ migrate-fix:
 	migrate -path ./migrations -database $(DSN) force $(VERSION)
 
 
-.PHONY: build test run stop start_db stop_db connect_db migrate-up migrate-cagg migrate-down migrate-fix
+.PHONY: build test run stop start_db stop_db connect_db migrate-up migrate-cagg migrate-down migrate-fix clean-dangling-images
