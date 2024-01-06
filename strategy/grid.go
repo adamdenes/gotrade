@@ -24,7 +24,7 @@ type level int
 
 const (
 	invalidLevel         level = 100
-	negativeMaxGridLevel       = iota - 5
+	negativeMaxGridLevel level = iota - 5
 	negativeBreakEvenLevel
 	negativeHalfRetracementLevel
 	negativeFullRetracementLevel
@@ -127,6 +127,7 @@ type GridStrategy struct {
 	gridNextLowerLevel float64               // Next grid line below
 	gridNextUpperLevel float64               // Next grid line above
 	cancelFuncs        map[int64]context.CancelFunc
+	orderChannels      map[int64]chan struct{}
 }
 
 func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
@@ -141,6 +142,7 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 		gridNextUpperLevel: -1,
 		orderInfos:         make([]*OrderInfo, 0, 2),
 		cancelFuncs:        make(map[int64]context.CancelFunc),
+		orderChannels:      make(map[int64]chan struct{}),
 	}
 }
 
@@ -157,11 +159,11 @@ func (g *GridStrategy) Execute() {
 func (g *GridStrategy) ProcessLevels() {
 	lvl := g.gridLevelCount
 	switch lvl {
-	case maxGridLevel, -maxGridLevel:
+	case maxGridLevel, negativeMaxGridLevel:
 		logger.Warning.Printf(
 			"[ProcessLevels] -> %s [%d] reached!",
-			level(maxGridLevel).String(),
-			maxGridLevel,
+			lvl.String(),
+			lvl,
 		)
 		g.ResetGrid()
 	default:
@@ -181,25 +183,82 @@ func (g *GridStrategy) ManageOrders() {
 	)
 
 	g.MonitorOrders()
+	g.HandleOrderChannels()
 	g.CheckPreviousOrders(currentPrice, previousPrice)
 	g.UpdateGridLevels(currentPrice, previousPrice)
+	g.HandleGridLevelCross(currentPrice, previousPrice)
+}
 
+func (g *GridStrategy) HandleGridLevelCross(currentPrice, previousPrice float64) {
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
 		logger.Debug.Printf(
 			"**** [CrossUnder] current price [%v] <= [%v] lower level",
 			currentPrice,
 			g.gridNextLowerLevel,
 		)
-		g.OpenNewOrders()
 		g.gridLevelCount.decreaseLevel()
+		g.OpenNewOrders()
 	} else if g.CrossOver(currentPrice, previousPrice, g.gridNextUpperLevel) {
 		logger.Debug.Printf(
 			"**** [CrossOver] current price [%v] >= [%v] upper level",
 			currentPrice,
 			g.gridNextUpperLevel,
 		)
-		g.OpenNewOrders()
 		g.gridLevelCount.increaseLevel()
+		g.OpenNewOrders()
+	}
+}
+
+func (g *GridStrategy) HandleOrderChannels() {
+	logger.Debug.Println("[HandleOrderChannels] called")
+	if len(g.orderChannels) == 0 {
+		return
+	}
+
+	for orderID, ch := range g.orderChannels {
+		select {
+		case <-ch:
+			logger.Debug.Printf("Order [%v] finished.", orderID)
+			// Handle the filled order
+			g.HandleFinishedOrder(orderID)
+		default:
+			// Non-blocking: Do nothing if the channel has no signal yet
+		}
+	}
+}
+
+func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
+	if err := g.RemoveOpenOrder(orderID); err != nil {
+		logger.Error.Println("failed to remove order from slice:", err)
+		return
+	}
+
+	g.mu.Lock()
+	if _, exists := g.orderChannels[orderID]; exists {
+		delete(g.orderChannels, orderID)
+	}
+	g.mu.Unlock()
+
+	currentPrice := g.GetClosePrice()
+	previousPrice := g.closes[len(g.closes)-2]
+
+	switch g.gridLevelCount {
+	case invalidLevel:
+		logger.Debug.Printf(
+			"Not checking retracement for %v!",
+			invalidLevel,
+		)
+		return
+	default:
+		// After fill, open new orders
+		g.OpenNewOrders()
+
+		if len(g.orderInfos) >= 2 {
+			prevBuyOrder := g.orderInfos[len(g.orderInfos)-2]
+			prevSellOrder := g.orderInfos[len(g.orderInfos)-1]
+			g.CheckRetracement(currentPrice, previousPrice, prevBuyOrder, prevSellOrder)
+		}
+		return
 	}
 }
 
@@ -213,9 +272,7 @@ func (g *GridStrategy) OpenNewOrders() {
 
 	for _, order := range g.orders {
 		g.PlaceOrder(order)
-		fmt.Println("removing ", g.orders[0].String())
 		g.orders = g.orders[1:]
-		fmt.Println("len(g.orders) =", len(g.orders))
 	}
 }
 
@@ -231,8 +288,6 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice, previousPrice float64) {
 		if atrChange > atrChangeThreshold {
 			g.gridGap = newATR
 			// Recalculate grid levels only if ATR change is significant
-			// g.gridNextLowerLevel = currentPrice - g.gridGap
-			// g.gridNextUpperLevel = currentPrice + g.gridGap
 			g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
 			logger.Debug.Printf(
@@ -287,6 +342,7 @@ func (g *GridStrategy) SetNewGridLevels(newUpper, newLower float64) {
 }
 
 func (g *GridStrategy) CheckPreviousOrders(currentPrice, previousPrice float64) {
+	logger.Debug.Println("[CheckPreviousOrders] checking previous two orders")
 	// 2 orders are created at each level
 	if len(g.orderInfos) >= 2 {
 		prevBuyOrder := g.orderInfos[len(g.orderInfos)-2]
@@ -295,69 +351,71 @@ func (g *GridStrategy) CheckPreviousOrders(currentPrice, previousPrice float64) 
 		logger.Debug.Println("Last Sell (sell high):", prevSellOrder)
 
 		g.SetNewGridLevels(prevSellOrder.EntryPrice, prevBuyOrder.EntryPrice)
-
-		if prevBuyOrder.GridLevelCount != invalidLevel &&
-			prevSellOrder.GridLevelCount != invalidLevel {
-			g.CheckRetracement(currentPrice, previousPrice, prevBuyOrder, prevSellOrder)
-			return
-		}
+		g.CheckRetracement(currentPrice, previousPrice, prevBuyOrder, prevSellOrder)
 	} else {
 		logger.Info.Println("No orders yet.")
 	}
 }
 
 func (g *GridStrategy) MonitorOrders() {
+	logger.Debug.Println("[MonitorOrders] called")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	for _, oi := range g.orderInfos {
-		if oi.Status == "FILLED" {
-			continue // Skip already filled orders
+		if _, exists := g.orderChannels[oi.ID]; !exists {
+			ctx, cancel := context.WithCancel(context.Background())
+			g.cancelFuncs[oi.ID] = cancel
+			g.orderChannels[oi.ID] = g.MonitorOrder(ctx, oi)
 		}
-		if cancel, exists := g.cancelFuncs[oi.ID]; exists {
-			cancel() // Cancel existing monitoring goroutine
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		g.cancelFuncs[oi.ID] = cancel
-		go g.MonitorOrder(ctx, oi)
 	}
 }
 
 // MonitorOrder checks the database periodically for updates to the order.
-func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *OrderInfo) {
+func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *OrderInfo) chan struct{} {
+	ch := make(chan struct{})
+
 	logger.Debug.Printf("[MonitorOrder] -> Starting to monitor OrderID: %v", oi.ID)
-	for {
-		select {
-		case <-ctx.Done():
-			logger.Debug.Printf(
-				"Context cancelled for OrderID: %v",
-				oi.ID,
-			)
-			if err := g.RemoveOpenOrder(oi.ID); err != nil {
-				logger.Error.Println("failed to remove order from slice:", err)
-				return
-			}
-			return
-		default:
-			o, err := g.db.GetOrder(oi.ID)
-			if err != nil {
-				logger.Error.Println(err)
-				return
-			}
+	go func(c context.Context) {
+		defer close(ch)
 
-			if o.Status == "FILLED" {
-				logger.Debug.Printf("Order %v FILLED", oi.ID)
-				g.mu.Lock()
-				oi.Status = o.Status
-				g.mu.Unlock()
+		for {
+			select {
+			case <-c.Done():
+				logger.Debug.Printf(
+					"Context cancelled for OrderID: %v",
+					oi.ID,
+				)
 				return
-			}
+			default:
+				o, err := g.db.GetOrder(oi.ID)
+				if err != nil {
+					logger.Error.Println(err)
+					return
+				}
 
-			// Check the order status periodically
-			time.Sleep(5 * time.Second)
+				if o.Status == "FILLED" || o.Status == "CANCELED" {
+					logger.Debug.Printf("Order %v %v", o.OrderID, o.Status)
+					g.mu.Lock()
+					oi.Status = o.Status
+
+					// Pre-modify the level, since we already know the outcome?
+					if o.Side == "BUY" {
+						g.gridLevelCount.decreaseLevel()
+					} else {
+						g.gridLevelCount.increaseLevel()
+					}
+					g.mu.Unlock()
+					return
+				}
+
+				// Check the order status periodically
+				time.Sleep(5 * time.Second)
+			}
 		}
-	}
+	}(ctx)
+
+	return ch
 }
 
 func (g *GridStrategy) CrossOver(currentPrice, previousPrice, threshold float64) bool {
@@ -393,6 +451,7 @@ func (g *GridStrategy) ResetGrid() {
 	g.orderInfos = make([]*OrderInfo, 0, 2)
 	g.orders = make([]models.TypeOfOrder, 0)
 	g.cancelFuncs = make(map[int64]context.CancelFunc)
+	g.orderChannels = make(map[int64]chan struct{})
 	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
 }
 
@@ -453,7 +512,6 @@ func (g *GridStrategy) CancelOrder(orderID int64) {
 func (g *GridStrategy) CancelAllOpenOrders() {
 	logger.Debug.Println("[CancelAllOpenOrders] -> Cancelling all open orders.")
 	for _, oi := range g.orderInfos {
-		logger.Debug.Printf("g.orderInfos: %v\n", oi)
 		g.CancelOrder(oi.ID)
 	}
 }
@@ -772,6 +830,12 @@ func (g *GridStrategy) DetermineEntryAndStopLoss(
 		stopPrice = g.gridNextUpperLevel  // Stop-loss for buy order
 	}
 
+	logger.Debug.Printf(
+		"[DetermineEntryAndStopLoss] -> side: %v upper: %v lower: %v",
+		side,
+		entryPrice,
+		stopPrice,
+	)
 	return entryPrice, stopPrice
 }
 
