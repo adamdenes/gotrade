@@ -660,7 +660,7 @@ func (s *Server) monitorOrder(ord *models.GetOrderResponse) {
 			return
 		}
 
-		time.Sleep(30 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
 
