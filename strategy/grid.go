@@ -392,7 +392,7 @@ func (g *GridStrategy) CheckRetracement() bool {
 
 	logger.Debug.Println(prevOrder)
 
-	if prevOrder.Side == "SELL" && prevLvl < currLvl {
+	if prevOrder.Side == "SELL" && prevLvl > currLvl {
 		// The market has retraced to an upper level from a previous buy
 		logger.Debug.Printf(
 			"[CheckRetracement] -> [BUY] retracement detected, previous: %v <-> %v :current",
@@ -402,7 +402,7 @@ func (g *GridStrategy) CheckRetracement() bool {
 		return true
 	}
 
-	if prevOrder.Side == "BUY" && prevLvl > currLvl {
+	if prevOrder.Side == "BUY" && prevLvl < currLvl {
 		// The market has retraced to a lower level from a previous sell
 		logger.Debug.Printf(
 			"[CheckRetracement] -> [SELL] retracement detected, previous: %v <-> %v :current",
@@ -481,6 +481,9 @@ func (g *GridStrategy) CrossUnder(currentPrice, previousPrice, threshold float64
 func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	g.gridGap = g.ATR()
 
+	// TODO: revisit this.
+	// doubling gridGap might not be good, instead we should use the fill price
+	// as the base
 	if g.rapidFill {
 		g.gridGap += g.gridGap
 		logger.Debug.Println("[CreateGrid] -> Rapid fill detected, grid gap doubled")
