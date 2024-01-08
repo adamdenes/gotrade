@@ -25,8 +25,8 @@ func TestGridStrategy_CheckRetracement_RetracementToLower(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{
 		orderInfos:        []*OrderInfo{{Side: "SELL"}, {Side: "SELL"}},
-		previousGridLevel: 2,
-		gridLevel:         1,
+		previousGridLevel: 1,
+		gridLevel:         2,
 	}
 	result := g.CheckRetracement()
 
@@ -43,8 +43,8 @@ func TestGridStrategy_CheckRetracement_RetracementToUpper(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{
 		orderInfos:        []*OrderInfo{{Side: "BUY"}, {Side: "BUY"}},
-		previousGridLevel: 2,
-		gridLevel:         3,
+		previousGridLevel: 3,
+		gridLevel:         2,
 	}
 	result := g.CheckRetracement()
 
@@ -61,8 +61,8 @@ func TestGridStrategy_CheckRetracement_ProgressingLinearly(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{
 		orderInfos:        []*OrderInfo{{Side: "SELL"}, {Side: "BUY"}},
-		previousGridLevel: 1,
-		gridLevel:         0,
+		previousGridLevel: 0,
+		gridLevel:         1,
 	}
 	result := g.CheckRetracement()
 
@@ -79,7 +79,7 @@ func TestGridStrategy_CheckRetracement_AbsValues(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{
 		orderInfos:        []*OrderInfo{{Side: "BUY"}, {Side: "SELL"}},
-		previousGridLevel: -1,
+		previousGridLevel: -3,
 		gridLevel:         -2,
 	}
 	result := g.CheckRetracement()

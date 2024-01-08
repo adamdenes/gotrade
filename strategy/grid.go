@@ -291,7 +291,6 @@ func (g *GridStrategy) HandleOrderChannels() {
 		g.monitoring = false
 		g.mu.Unlock()
 	}()
-	logger.Debug.Println("[HandleOrderChannels] called")
 
 	for {
 		g.mu.Lock()
@@ -306,7 +305,6 @@ func (g *GridStrategy) HandleOrderChannels() {
 		for orderID, ch := range g.orderChannels {
 			select {
 			case <-ch:
-				logger.Debug.Printf("Order [%v] finished.", orderID)
 				// Handle the filled order
 				g.HandleFinishedOrder(orderID)
 			default:
@@ -328,7 +326,6 @@ func (g *GridStrategy) GetOrderInfo(orderID int64) *OrderInfo {
 }
 
 func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
-	logger.Debug.Println("[HandleFinishedOrder] called")
 	oi := g.GetOrderInfo(orderID)
 	if oi == nil {
 		logger.Error.Println("Order not found.", orderID)
@@ -347,11 +344,6 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 		logger.Error.Println("failed to remove order from slice:", err)
 		return
 	}
-
-	logger.Debug.Printf(
-		"[HandleFinishedOrder] NUMBER OF ORDERS after REMOVE: %v",
-		len(g.orderInfos),
-	)
 
 	g.mu.Lock()
 	if _, exists := g.orderChannels[orderID]; exists {
@@ -397,7 +389,7 @@ func (g *GridStrategy) CheckRetracement() bool {
 
 	logger.Debug.Println(prevOrder)
 
-	if prevOrder.Side == "SELL" && prevLvl > currLvl {
+	if prevOrder.Side == "SELL" && prevLvl < currLvl {
 		// The market has retraced to an upper level from a previous buy
 		logger.Debug.Printf(
 			"[CheckRetracement] -> [BUY] retracement detected, previous: %v <-> %v :current",
@@ -407,7 +399,7 @@ func (g *GridStrategy) CheckRetracement() bool {
 		return true
 	}
 
-	if prevOrder.Side == "BUY" && prevLvl < currLvl {
+	if prevOrder.Side == "BUY" && prevLvl > currLvl {
 		// The market has retraced to a lower level from a previous sell
 		logger.Debug.Printf(
 			"[CheckRetracement] -> [SELL] retracement detected, previous: %v <-> %v :current",
@@ -543,7 +535,7 @@ func (g *GridStrategy) RemoveOpenOrder(orderID int64) error {
 
 	for i, order := range g.orderInfos {
 		if order.ID == orderID {
-			logger.Debug.Printf("REMOVING order: %v", order)
+			// logger.Debug.Printf("REMOVING order: %v", order)
 			// Remove the order at index i from g.orderInfos
 			g.orderInfos = append(g.orderInfos[:i], g.orderInfos[i+1:]...)
 			return nil
