@@ -95,44 +95,45 @@ func (l *level) decreaseLevel() {
 const atrChangeThreshold = 0.15 // % change
 
 type OrderInfo struct {
-	ID                int64
-	OrigClientOrderID string
-	Symbol            string
-	Side              models.OrderSide // "BUY" or "SELL"
-	Type              models.OrderType // "LIMIT", "MARKET", etc.
-	Status            models.OrderStatus
-	EntryPrice        float64
-	SellLevel         float64
-	GridLevelCount    level
+	ID           int64
+	Symbol       string
+	Side         models.OrderSide // "BUY" or "SELL"
+	Type         models.OrderType // "LIMIT", "MARKET", etc.
+	Status       models.OrderStatus
+	CurrentPrice float64
+	EntryPrice   float64
+	SellLevel    float64
+	GridLevel    level
 }
 
 type GridStrategy struct {
-	name               string                // Name of strategy
-	db                 storage.Storage       // Database interface
-	balance            float64               // Current balance
-	positionSize       float64               // Position size
-	riskPercentage     float64               // Risk %
-	stopLossPercentage float64               // Invalidation point
-	asset              string                // Trading pair
-	backtest           bool                  // Are we backtesting?
-	orders             []models.TypeOfOrder  // Pending orders
-	data               []*models.KlineSimple // Price data
-	closes             []float64             // Close prices
-	highs              []float64             // Highs
-	lows               []float64             // Lows
-	swingHigh          float64               // Swing High
-	swingLow           float64               // Swing Low
-	orderInfos         []*OrderInfo          // Slice of orders
-	mu                 sync.Mutex            // Mutex for thread-safe access to the orderMap
-	monitoring         bool
-	gridGap            float64 // Grid Gap/Size
-	gridLevel          level   // Number of grid levels reached
-	gridNextLowerLevel float64 // Next grid line below
-	gridNextUpperLevel float64 // Next grid line above
-	cancelFuncs        map[int64]context.CancelFunc
-	orderChannels      map[int64]chan struct{}
-	previousGridLevel  level
-	levelChange        chan level
+	name               string                       // Name of strategy
+	db                 storage.Storage              // Database interface
+	balance            float64                      // Current balance
+	positionSize       float64                      // Position size
+	riskPercentage     float64                      // Risk %
+	stopLossPercentage float64                      // Invalidation point
+	asset              string                       // Trading pair
+	backtest           bool                         // Are we backtesting?
+	orders             []models.TypeOfOrder         // Pending orders
+	data               []*models.KlineSimple        // Price data
+	closes             []float64                    // Close prices
+	highs              []float64                    // Highs
+	lows               []float64                    // Lows
+	swingHigh          float64                      // Swing High
+	swingLow           float64                      // Swing Low
+	orderInfos         []*OrderInfo                 // Slice of orders
+	mu                 sync.Mutex                   // Mutex for thread-safe access to the orderMap
+	monitoring         bool                         // Monitoring started or not?
+	rapidFill          bool                         // Rapid fill detection
+	gridLevel          level                        // Number of grid levels reached
+	previousGridLevel  level                        // Previous grid level
+	levelChange        chan level                   // Notification channel
+	gridGap            float64                      // Grid Gap/Size
+	gridNextLowerLevel float64                      // Next grid line below
+	gridNextUpperLevel float64                      // Next grid line above
+	cancelFuncs        map[int64]context.CancelFunc // Cancels for monitoring go routines
+	orderChannels      map[int64]chan struct{}      // Event listener for order fills
 }
 
 func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
@@ -161,7 +162,11 @@ func (g *GridStrategy) NotifyLevelChange(newLevel level) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.previousGridLevel = g.gridLevel
+	logger.Debug.Printf(
+		"[NotifyLevelChange] -> previousGridLevel: %v, currentGridLevel: %v",
+		g.previousGridLevel,
+		g.gridLevel,
+	)
 	if g.previousGridLevel != newLevel {
 		g.levelChange <- newLevel
 	}
@@ -174,7 +179,6 @@ func (g *GridStrategy) ATR() float64 {
 
 func (g *GridStrategy) Execute() {
 	g.GetClosePrices()
-	// g.ProcessLevels()
 	g.ManageOrders()
 }
 
@@ -183,22 +187,16 @@ func (g *GridStrategy) ProcessLevels() {
 		currentPrice := g.GetClosePrice()
 		previousPrice := g.closes[len(g.closes)-2]
 
+		logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
 		switch lvl {
 		case invalidLevel, baseLevel:
-			logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
-			logger.Debug.Printf("There is no retracement check for this level [%v]!", lvl.String())
 			g.HandleGridLevelCross(currentPrice, previousPrice)
-		case maxGridLevel, negativeMaxGridLevel:
-			logger.Warning.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
-			g.ResetGrid()
-		default:
-			logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
 
-			// TODO:
-			// - If order fills fast, without a new "close price" we can't
-			//   calculate a new grid level!!!
-			// - Need to process level changes during retracement, not only price changes
-			// g.CheckRetracement(currentPrice, previousPrice)
+		case maxGridLevel, negativeMaxGridLevel:
+			g.ResetGrid()
+
+		default:
+			g.CheckRetracement(currentPrice, previousPrice)
 			g.HandleGridLevelCross(currentPrice, previousPrice)
 		}
 	}
@@ -235,7 +233,7 @@ func (g *GridStrategy) StartOrderMonitoring() {
 func (g *GridStrategy) HandleGridLevelCross(
 	currentPrice, previousPrice float64,
 ) {
-	g.CheckRetracement(currentPrice, previousPrice)
+	g.previousGridLevel = g.gridLevel
 
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
 		// BUY low move
@@ -274,13 +272,13 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice, previousPrice float64) {
 			// Recalculate grid levels only if ATR change is significant
 			g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
-			// logger.Debug.Printf(
-			// 	"[UpdateGridLevels] -> ATR change -> gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
-			// 	g.gridGap,
-			// 	g.gridLevelCount,
-			// 	g.gridNextLowerLevel,
-			// 	g.gridNextUpperLevel,
-			// )
+			logger.Debug.Printf(
+				"[UpdateGridLevels] -> ATR change -> gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+				g.gridGap,
+				g.gridLevel,
+				g.gridNextLowerLevel,
+				g.gridNextUpperLevel,
+			)
 		}
 	}
 }
@@ -335,16 +333,11 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 	}
 
 	// Open new orders after an order fill is detected
+	g.previousGridLevel = g.gridLevel
 	if oi.Side == "BUY" {
 		g.gridLevel.decreaseLevel()
-		// if g.gridLevelCount == negativeMaxGridLevel {
-		// 	g.ResetGrid()
-		// }
 	} else {
 		g.gridLevel.increaseLevel()
-		// if g.gridLevelCount == maxGridLevel {
-		// 	g.ResetGrid()
-		// }
 	}
 
 	if err := g.RemoveOpenOrder(orderID); err != nil {
@@ -358,13 +351,11 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 	}
 	g.mu.Unlock()
 
-	// if len(g.orderInfos) >= 2 {
-	// 	currentPrice := g.GetClosePrice()
-	// 	previousPrice := g.closes[len(g.closes)-2]
-	// 	previousOrder := g.orderInfos[len(g.orderInfos)-2]
-	// 	currentOrder := g.orderInfos[len(g.orderInfos)-1]
-	// 	g.CheckRetracement(currentPrice, previousPrice, currentOrder, previousOrder)
-	// }
+	// The order was filled in the same interval as it was placed,
+	// the grid calcualtion needs to be adjusted.
+	if g.GetClosePrice() == oi.CurrentPrice {
+		g.rapidFill = true
+	}
 
 	g.NotifyLevelChange(g.gridLevel)
 	g.OpenNewOrders()
@@ -387,9 +378,8 @@ func (g *GridStrategy) OpenNewOrders() {
 func (g *GridStrategy) CheckRetracement(
 	currentPrice, previousPrice float64,
 ) {
-	logger.Debug.Println("[CheckRetracement] called")
 	if len(g.orderInfos) < 2 {
-		logger.Info.Println("Not enough orders to process retracement logic.")
+		logger.Info.Println("[CheckRetracement] -> Not enough orders to process retracement logic.")
 		return
 	}
 
@@ -397,10 +387,11 @@ func (g *GridStrategy) CheckRetracement(
 	currentOrder := g.orderInfos[len(g.orderInfos)-1]
 	logger.Debug.Printf("Prev Order: %v", previousOrder)
 	logger.Debug.Printf("Last Order: %v", currentOrder)
+
 	fromLowerToUpper := g.CrossOver(currentPrice, previousPrice, currentOrder.EntryPrice)
 	fromUpperToLower := g.CrossUnder(currentPrice, previousPrice, previousOrder.EntryPrice)
 
-	if currentOrder != nil && fromUpperToLower || g.previousGridLevel < g.gridLevel {
+	if fromUpperToLower || g.previousGridLevel < g.gridLevel {
 		// The market has retraced to a lower level from a previous sell order
 		logger.Debug.Printf(
 			"[CheckRetracement] -> [%s] -> retracement detected from UPPER to LOWER: %v crossed under %v | %v <-> %v",
@@ -413,7 +404,7 @@ func (g *GridStrategy) CheckRetracement(
 		g.ResetGrid()
 	}
 
-	if previousOrder != nil && fromLowerToUpper || g.previousGridLevel > g.gridLevel {
+	if fromLowerToUpper || g.previousGridLevel > g.gridLevel {
 		// The market has retraced to a higher level from a previous buy order
 		logger.Debug.Printf(
 			"[CheckRetracement] -> [%s] -> retracement detected from LOWER to UPPER: %v crossed over %v | %v <-> %v",
@@ -493,16 +484,25 @@ func (g *GridStrategy) CrossUnder(currentPrice, previousPrice, threshold float64
 
 func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	g.gridGap = g.ATR() * 2
+
+	if g.rapidFill {
+		g.gridGap += g.gridGap
+		logger.Debug.Println("[CreateGrid] -> Rapid fill detected, grid gap doubled")
+	}
+
 	g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
 	logger.Debug.Printf(
-		"[CreateGrid] -> price: %v gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+		"[CreateGrid] -> price: %v, gridGap: %v, gridLevel: %v, gridNextLowerLevel: %v, gridNextUpperLevel: %v",
 		currentPrice,
 		g.gridGap,
 		g.gridLevel,
 		g.gridNextLowerLevel,
 		g.gridNextUpperLevel,
 	)
+
+	// Reset the rapidFill flag after grid creation
+	g.rapidFill = false
 }
 
 func (g *GridStrategy) ResetGrid() {
@@ -512,10 +512,14 @@ func (g *GridStrategy) ResetGrid() {
 	g.gridNextLowerLevel = -1
 	g.gridNextUpperLevel = -1
 	g.gridLevel = invalidLevel
+	g.previousGridLevel = invalidLevel
+	g.monitoring = false
+	g.rapidFill = false
 	g.orderInfos = make([]*OrderInfo, 0, 2)
 	g.orders = make([]models.TypeOfOrder, 0)
 	g.cancelFuncs = make(map[int64]context.CancelFunc)
 	g.orderChannels = make(map[int64]chan struct{})
+	g.levelChange = make(chan level, 10)
 	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
 }
 
@@ -610,15 +614,15 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 		// After successfully placing an order
 		orderInfo := &OrderInfo{
-			ID:                orderResponse.OrderID,
-			OrigClientOrderID: orderResponse.ClientOrderID,
-			Symbol:            orderResponse.Symbol,
-			Side:              orderResponse.Side,
-			Status:            orderResponse.Status,
-			Type:              orderResponse.Type,
-			EntryPrice:        order.Price,
-			SellLevel:         stop,
-			GridLevelCount:    g.gridLevel,
+			ID:           orderResponse.OrderID,
+			Symbol:       orderResponse.Symbol,
+			Side:         orderResponse.Side,
+			Status:       orderResponse.Status,
+			Type:         orderResponse.Type,
+			CurrentPrice: g.GetClosePrice(),
+			EntryPrice:   order.Price,
+			SellLevel:    stop,
+			GridLevel:    g.gridLevel,
 		}
 		g.AddOpenOrder(orderInfo)
 
@@ -889,7 +893,10 @@ func (g *GridStrategy) DetermineEntryAndStopLoss(
 	// StopPrice is only for debugging, not used due to the nature of grid strategy
 	var entryPrice, stopPrice float64
 
-	// Recalculate the grid based on the current price
+	// Recalculate the grid based on the current price.
+	// If order fills too fast, the currentPrice is not updated yet,
+	// hence the same grid will be created. To avoid this, increase the
+	// levels with the gap size again.
 	g.CreateGrid(currentPrice)
 
 	if side == "SELL" {
