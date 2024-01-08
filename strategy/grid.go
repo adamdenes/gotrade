@@ -218,7 +218,7 @@ func (g *GridStrategy) ManageOrders() {
 	g.UpdateGridLevels(currentPrice, previousPrice)
 
 	// Only check for entries here if there are no open orders
-	if len(g.orderInfos) != 0 {
+	if len(g.orderInfos) == 0 {
 		g.HandleGridLevelCross(currentPrice, previousPrice)
 	}
 }
@@ -495,14 +495,14 @@ func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	g.gridGap = g.ATR() * 2
 	g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
-	// logger.Debug.Printf(
-	// 	"[CreateGrid] -> price: %v gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
-	// 	currentPrice,
-	// 	g.gridGap,
-	// 	g.gridLevelCount,
-	// 	g.gridNextLowerLevel,
-	// 	g.gridNextUpperLevel,
-	// )
+	logger.Debug.Printf(
+		"[CreateGrid] -> price: %v gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
+		currentPrice,
+		g.gridGap,
+		g.gridLevel,
+		g.gridNextLowerLevel,
+		g.gridNextUpperLevel,
+	)
 }
 
 func (g *GridStrategy) ResetGrid() {
