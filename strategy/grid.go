@@ -214,6 +214,9 @@ func (g *GridStrategy) ManageOrders() {
 		previousPrice,
 	)
 
+	// Reset the rapidFill flag after new close price arrives
+	g.rapidFill = false
+
 	g.StartOrderMonitoring()
 	g.UpdateGridLevels(currentPrice, previousPrice)
 
@@ -266,7 +269,7 @@ func (g *GridStrategy) UpdateGridLevels(currentPrice, previousPrice float64) {
 		// This is for the first run / after reset
 		g.CreateGrid(currentPrice)
 	} else {
-		newATR := g.ATR() * 2
+		newATR := g.ATR()
 		atrChange := math.Abs(newATR-g.gridGap) / g.gridGap
 
 		if atrChange > atrChangeThreshold {
@@ -476,7 +479,7 @@ func (g *GridStrategy) CrossUnder(currentPrice, previousPrice, threshold float64
 }
 
 func (g *GridStrategy) CreateGrid(currentPrice float64) {
-	g.gridGap = g.ATR() * 2
+	g.gridGap = g.ATR()
 
 	if g.rapidFill {
 		g.gridGap += g.gridGap
@@ -493,9 +496,6 @@ func (g *GridStrategy) CreateGrid(currentPrice float64) {
 		g.gridNextLowerLevel,
 		g.gridNextUpperLevel,
 	)
-
-	// Reset the rapidFill flag after grid creation
-	g.rapidFill = false
 }
 
 func (g *GridStrategy) ResetGrid() {
