@@ -189,14 +189,16 @@ func (g *GridStrategy) ProcessLevels() {
 
 		logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
 		switch lvl {
-		case invalidLevel, baseLevel:
+		case invalidLevel:
 			g.HandleGridLevelCross(currentPrice, previousPrice)
 
 		case maxGridLevel, negativeMaxGridLevel:
 			g.ResetGrid()
 
 		default:
-			g.CheckRetracement(currentPrice, previousPrice)
+			if g.CheckRetracement() {
+				g.ResetGrid()
+			}
 			g.HandleGridLevelCross(currentPrice, previousPrice)
 		}
 	}
@@ -326,6 +328,7 @@ func (g *GridStrategy) GetOrderInfo(orderID int64) *OrderInfo {
 }
 
 func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
+	logger.Debug.Println("[HandleFinishedOrder] called")
 	oi := g.GetOrderInfo(orderID)
 	if oi == nil {
 		logger.Error.Println("Order not found.", orderID)
@@ -344,6 +347,11 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 		logger.Error.Println("failed to remove order from slice:", err)
 		return
 	}
+
+	logger.Debug.Printf(
+		"[HandleFinishedOrder] NUMBER OF ORDERS after REMOVE: %v",
+		len(g.orderInfos),
+	)
 
 	g.mu.Lock()
 	if _, exists := g.orderChannels[orderID]; exists {
@@ -371,51 +379,44 @@ func (g *GridStrategy) OpenNewOrders() {
 
 	for _, order := range g.orders {
 		g.PlaceOrder(order)
+		g.mu.Lock()
 		g.orders = g.orders[1:]
+		g.mu.Unlock()
 	}
 }
 
-func (g *GridStrategy) CheckRetracement(
-	currentPrice, previousPrice float64,
-) {
+func (g *GridStrategy) CheckRetracement() bool {
 	if len(g.orderInfos) < 2 {
 		logger.Info.Println("[CheckRetracement] -> Not enough orders to process retracement logic.")
-		return
+		return false
 	}
 
-	previousOrder := g.orderInfos[len(g.orderInfos)-2]
-	currentOrder := g.orderInfos[len(g.orderInfos)-1]
-	logger.Debug.Printf("Prev Order: %v", previousOrder)
-	logger.Debug.Printf("Last Order: %v", currentOrder)
+	prevOrder := g.orderInfos[len(g.orderInfos)-1]
+	prevLvl := math.Abs(float64(g.previousGridLevel))
+	currLvl := math.Abs(float64(g.gridLevel))
 
-	fromLowerToUpper := g.CrossOver(currentPrice, previousPrice, currentOrder.EntryPrice)
-	fromUpperToLower := g.CrossUnder(currentPrice, previousPrice, previousOrder.EntryPrice)
+	logger.Debug.Println(prevOrder)
 
-	if fromUpperToLower || g.previousGridLevel < g.gridLevel {
-		// The market has retraced to a lower level from a previous sell order
+	if prevOrder.Side == "SELL" && prevLvl > currLvl {
+		// The market has retraced to an upper level from a previous buy
 		logger.Debug.Printf(
-			"[CheckRetracement] -> [%s] -> retracement detected from UPPER to LOWER: %v crossed under %v | %v <-> %v",
-			currentOrder.Side,
-			currentPrice,
-			previousOrder.EntryPrice,
+			"[CheckRetracement] -> [BUY] retracement detected, previous: %v <-> %v :current",
 			g.previousGridLevel,
 			g.gridLevel,
 		)
-		g.ResetGrid()
+		return true
 	}
 
-	if fromLowerToUpper || g.previousGridLevel > g.gridLevel {
-		// The market has retraced to a higher level from a previous buy order
+	if prevOrder.Side == "BUY" && prevLvl < currLvl {
+		// The market has retraced to a lower level from a previous sell
 		logger.Debug.Printf(
-			"[CheckRetracement] -> [%s] -> retracement detected from LOWER to UPPER: %v crossed over %v | %v <-> %v",
-			previousOrder.Side,
-			currentPrice,
-			currentOrder.EntryPrice,
+			"[CheckRetracement] -> [SELL] retracement detected, previous: %v <-> %v :current",
 			g.previousGridLevel,
 			g.gridLevel,
 		)
-		g.ResetGrid()
+		return true
 	}
+	return false
 }
 
 func (g *GridStrategy) SetNewGridLevels(newUpper, newLower float64) {
