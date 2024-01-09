@@ -100,13 +100,13 @@ func PollHistoricalData(storage storage.Storage) {
 		}
 		epoch := row.CloseTime
 		var (
-			eYear    int        = epoch.Year()
-			eMonth   time.Month = epoch.Month()
-			eDay     int        = epoch.Day()
-            currentDate time.Time = time.Now()
-			year     int        = currentDate.Year()
-			month    time.Month = currentDate.Month()
-			day      int        = currentDate.Day()
+			eYear       int        = epoch.Year()
+			eMonth      time.Month = epoch.Month()
+			eDay        int        = epoch.Day()
+			currentDate time.Time  = time.Now()
+			year        int        = currentDate.Year()
+			month       time.Month = currentDate.Month()
+			day         int        = currentDate.Day()
 		)
 		// Monthly-generated data will be updated on the first day of the following month.
 		// For streaming ZIP files, we could simply wait for the next month's release. However,
@@ -122,7 +122,7 @@ func PollHistoricalData(storage storage.Storage) {
 			day,
 		)
 
-        lastEntryDate := time.Date(eYear, eMonth, eDay, 0, 0, 0, 0, time.Local)
+		lastEntryDate := time.Date(eYear, eMonth, eDay, 0, 0, 0, 0, time.Local)
 
 		if lastEntryDate.Before(currentDate) {
 			if printCount == 1 {
@@ -582,7 +582,7 @@ func processBars(
 			return
 		}
 
-        // TODO: rework this, maybe a flag to trun it on/off?
+		// TODO: rework this, maybe a flag to turn it on/off?
 		// Only evaluate closed bars
 		if kws.Data.Kline.IsKlineClosed {
 			// logger.Info.Println(kws)
