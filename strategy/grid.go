@@ -126,6 +126,7 @@ type GridStrategy struct {
 	mu                 sync.Mutex                   // Mutex for thread-safe access to the orderMap
 	monitoring         bool                         // Monitoring started or not?
 	rapidFill          bool                         // Rapid fill detection
+	lastFillPrice      float64                      // Last filled orders price
 	gridLevel          level                        // Number of grid levels reached
 	previousGridLevel  level                        // Previous grid level
 	levelChange        chan level                   // Notification channel
@@ -216,6 +217,7 @@ func (g *GridStrategy) ManageOrders() {
 
 	// Reset the rapidFill flag after new close price arrives
 	g.rapidFill = false
+	g.lastFillPrice = 0
 
 	g.StartOrderMonitoring()
 	g.UpdateGridLevels(currentPrice, previousPrice)
@@ -334,6 +336,8 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 		logger.Error.Println("Order not found.", orderID)
 		return
 	}
+
+	g.lastFillPrice = oi.EntryPrice
 
 	// Open new orders after an order fill is detected
 	g.previousGridLevel = g.gridLevel
@@ -485,11 +489,15 @@ func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	// doubling gridGap might not be good, instead we should use the fill price
 	// as the base
 	if g.rapidFill {
-		g.gridGap += g.gridGap
-		logger.Debug.Println("[CreateGrid] -> Rapid fill detected, grid gap doubled")
+		currentPrice = g.lastFillPrice
+		logger.Debug.Printf(
+			"[CreateGrid] -> Rapid fill detected, using last fill price: %v",
+			currentPrice,
+		)
+		g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
+	} else {
+		g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 	}
-
-	g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
 	logger.Debug.Printf(
 		"[CreateGrid] -> price: %v, gridGap: %v, gridLevel: %v, gridNextLowerLevel: %v, gridNextUpperLevel: %v",
@@ -505,6 +513,7 @@ func (g *GridStrategy) ResetGrid() {
 	g.CancelAllOpenOrders()
 	g.balance = 0.0
 	g.positionSize = 0.0
+	g.lastFillPrice = 0.0
 	g.gridNextLowerLevel = -1
 	g.gridNextUpperLevel = -1
 	g.gridLevel = invalidLevel
@@ -890,9 +899,6 @@ func (g *GridStrategy) DetermineEntryAndStopLoss(
 	var entryPrice, stopPrice float64
 
 	// Recalculate the grid based on the current price.
-	// If order fills too fast, the currentPrice is not updated yet,
-	// hence the same grid will be created. To avoid this, increase the
-	// levels with the gap size again.
 	g.CreateGrid(currentPrice)
 
 	if side == "SELL" {
