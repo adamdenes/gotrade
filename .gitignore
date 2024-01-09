@@ -28,3 +28,6 @@ bin/*
 
 # tmp dir
 */tmp
+
+# skip docker-compose due to security reasons
+docker-compose.yml
