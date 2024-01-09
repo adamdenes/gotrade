@@ -364,6 +364,7 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 		g.rapidFill = true
 	}
 
+	// TODO: make notificantions if OpenNewOrders can be executed!!
 	g.NotifyLevelChange(g.gridLevel)
 	g.OpenNewOrders()
 }
@@ -385,37 +386,72 @@ func (g *GridStrategy) OpenNewOrders() {
 }
 
 func (g *GridStrategy) CheckRetracement() bool {
+	isRetracing := false
+
 	if len(g.orderInfos) < 2 {
 		logger.Info.Println("[CheckRetracement] -> Not enough orders to process retracement logic.")
-		return false
+		return isRetracing
 	}
 
 	prevOrder := g.orderInfos[len(g.orderInfos)-1]
 	prevLvl := math.Abs(float64(g.previousGridLevel))
 	currLvl := math.Abs(float64(g.gridLevel))
 
-	logger.Debug.Println(prevOrder)
+	logger.Debug.Printf("[CheckRetracement] -> Previous Order: %v", prevOrder)
 
-	if prevOrder.Side == "SELL" && prevLvl > currLvl {
-		// The market has retraced to an upper level from a previous buy
-		logger.Debug.Printf(
-			"[CheckRetracement] -> [BUY] retracement detected, previous: %v <-> %v :current",
-			g.previousGridLevel,
-			g.gridLevel,
-		)
-		return true
-	}
+	switch prevOrder.Side {
+	case "SELL":
+		if prevLvl > currLvl {
+			// The market has retraced to a lower level from a previous sell
+			logger.Debug.Printf(
+				"[CheckRetracement] -> [BUY] retracement detected, previous: %v -> %v :current",
+				g.previousGridLevel,
+				g.gridLevel,
+			)
+			isRetracing = true
+		} else if prevLvl < currLvl {
+			logger.Debug.Printf(
+				"[CheckRetracement] -> [BUY] progressing downwards, previous: %v -> %v :current",
+				g.previousGridLevel,
+				g.gridLevel,
+			)
+			isRetracing = false
+		} else {
+			logger.Debug.Printf(
+				"[CheckRetracement] -> No level change, previous: %v -> %v :current",
+				g.previousGridLevel,
+				g.gridLevel,
+			)
+			isRetracing = false
 
-	if prevOrder.Side == "BUY" && prevLvl < currLvl {
-		// The market has retraced to a lower level from a previous sell
-		logger.Debug.Printf(
-			"[CheckRetracement] -> [SELL] retracement detected, previous: %v <-> %v :current",
-			g.previousGridLevel,
-			g.gridLevel,
-		)
-		return true
+		}
+	case "BUY":
+		if prevLvl > currLvl {
+			// The market has retraced to an upper level from a previous buy
+			logger.Debug.Printf(
+				"[CheckRetracement] -> [SELL] retracement detected, previous: %v -> %v :current",
+				g.previousGridLevel,
+				g.gridLevel,
+			)
+			isRetracing = true
+		} else if prevLvl < currLvl {
+			logger.Debug.Printf(
+				"[CheckRetracement] -> [SELL] progressing upwards, previous: %v -> %v :current",
+				g.previousGridLevel,
+				g.gridLevel,
+			)
+			isRetracing = false
+		} else {
+			logger.Debug.Printf(
+				"[CheckRetracement] -> No level change, previous: %v -> %v :current",
+				g.previousGridLevel,
+				g.gridLevel,
+			)
+			isRetracing = false
+
+		}
 	}
-	return false
+	return isRetracing
 }
 
 func (g *GridStrategy) SetNewGridLevels(newUpper, newLower float64) {
