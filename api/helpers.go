@@ -197,7 +197,6 @@ func update(s storage.Storage, isFull bool, startDate, endDate time.Time) {
 	}
 
 	wg.Wait() // Wait for all goroutines to finish
-	fmt.Println("All goroutines are finished")
 }
 
 func generateMatViewConfigs() []*models.MaterializedViewConfig {
