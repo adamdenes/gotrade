@@ -35,6 +35,16 @@ const (
 	ed25519apiKey  = "API_KEY_ED25519"
 )
 
+var privateKey ed25519.PrivateKey
+
+func init() {
+	pk, err := LoadEd25519PrivateKey(os.Getenv(privateKeyPath))
+	if err != nil {
+		logger.Error.Fatal(err)
+	}
+	privateKey = pk
+}
+
 func BuildURI(base string, query ...string) string {
 	var sb strings.Builder
 	sb.WriteString(base)
@@ -99,12 +109,7 @@ func LoadEd25519PrivateKey(filePath string) (ed25519.PrivateKey, error) {
 }
 
 // SignEd25519 signs the given query with the Ed25519 private key
-func SignEd25519(privateKeyPath, query string) (string, error) {
-	privateKey, err := LoadEd25519PrivateKey(privateKeyPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to load private key: %v", err)
-	}
-
+func SignEd25519(privateKey []byte, query string) (string, error) {
 	// Sign the query
 	signature := ed25519.Sign(privateKey, []byte(query))
 
@@ -394,7 +399,7 @@ func PostTestOrder(order *models.PostOrder) ([]byte, error) {
 	if err := validateOrder(order); err != nil {
 		return nil, err
 	}
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), order.String())
+	signedQuery, err := SignEd25519(privateKey, order.String())
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +437,7 @@ func PostOrder(order *models.PostOrder) (*models.PostOrderResponse, error) {
 	}
 
 	order.Timestamp = st
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), order.String())
+	signedQuery, err := SignEd25519(privateKey, order.String())
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +480,7 @@ Order Rate Limit
 	OCO counts as 2 orders against the order rate limit
 */
 func PostOrderOCO(oco *models.PostOrderOCO) (*models.PostOrderOCOResponse, error) {
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), oco.String())
+	signedQuery, err := SignEd25519(privateKey, oco.String())
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +550,7 @@ func GetAccount() ([]byte, error) {
 	}
 
 	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
@@ -580,7 +585,7 @@ func GetOrderCountUsage() ([]byte, error) {
 	}
 
 	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +636,7 @@ func GetAllOrders(symbol string) ([]*models.GetOrderResponse, error) {
 	}
 
 	q := fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
@@ -683,7 +688,7 @@ func GetOpenOrders(symbol string) ([]*models.GetOrderResponse, error) {
 		q = fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
@@ -728,7 +733,7 @@ func GetOCOOrder(id int64) (*models.PostOrderOCOResponse, error) {
 	}
 
 	q := fmt.Sprintf("orderListId=%d&recvWindow=%d&timestamp=%d", id, 5000, st)
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +796,7 @@ func GetOrder(symbol, origClientOrderId string, id int64) (*models.GetOrderRespo
 		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
@@ -869,7 +874,7 @@ func CancelOrder(symbol, origClientOrderId string, id int64) (*models.DeleteOrde
 		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
+	signedQuery, err := SignEd25519(privateKey, q)
 	if err != nil {
 		return nil, err
 	}
