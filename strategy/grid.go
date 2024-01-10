@@ -107,22 +107,23 @@ type OrderInfo struct {
 }
 
 type GridStrategy struct {
-	name               string                       // Name of strategy
-	db                 storage.Storage              // Database interface
-	balance            float64                      // Current balance
-	positionSize       float64                      // Position size
-	riskPercentage     float64                      // Risk %
-	stopLossPercentage float64                      // Invalidation point
-	asset              string                       // Trading pair
-	backtest           bool                         // Are we backtesting?
-	orders             []models.TypeOfOrder         // Pending orders
-	data               []*models.KlineSimple        // Price data
-	closes             []float64                    // Close prices
-	highs              []float64                    // Highs
-	lows               []float64                    // Lows
-	swingHigh          float64                      // Swing High
-	swingLow           float64                      // Swing Low
-	orderInfos         []*OrderInfo                 // Slice of orders
+	name               string                // Name of strategy
+	db                 storage.Storage       // Database interface
+	balance            float64               // Current balance
+	positionSize       float64               // Position size
+	riskPercentage     float64               // Risk %
+	stopLossPercentage float64               // Invalidation point
+	asset              string                // Trading pair
+	backtest           bool                  // Are we backtesting?
+	orders             []models.TypeOfOrder  // Pending orders
+	data               []*models.KlineSimple // Price data
+	closes             []float64             // Close prices
+	highs              []float64             // Highs
+	lows               []float64             // Lows
+	swingHigh          float64               // Swing High
+	swingLow           float64               // Swing Low
+	orderInfos         []*OrderInfo          // Slice of orders
+	wg                 sync.WaitGroup
 	mu                 sync.Mutex                   // Mutex for thread-safe access to the orderMap
 	monitoring         bool                         // Monitoring started or not?
 	rapidFill          bool                         // Rapid fill detection
@@ -168,6 +169,10 @@ func (g *GridStrategy) NotifyLevelChange(newLevel level) {
 		g.previousGridLevel,
 		g.gridLevel,
 	)
+	// Saveguard
+	// if newLevel == maxGridLevel || newLevel == negativeMaxGridLevel {
+	// 	g.ResetGrid()
+	// }
 	if g.previousGridLevel != newLevel {
 		g.levelChange <- newLevel
 	}
@@ -366,6 +371,9 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 
 	// TODO: make notificantions if OpenNewOrders can be executed!!
 	g.NotifyLevelChange(g.gridLevel)
+	// Block execution until a condition is met, e.g., a signal or a flag
+	g.wg.Add(1)
+	g.wg.Wait()
 	g.OpenNewOrders()
 }
 
@@ -451,6 +459,7 @@ func (g *GridStrategy) CheckRetracement() bool {
 
 		}
 	}
+	defer g.wg.Done()
 	return isRetracing
 }
 
