@@ -5,13 +5,16 @@ import (
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -28,9 +31,8 @@ const (
 	apiSecret = "APCA_API_SECRET_KEY"
 
 	// Ed25519
-	privateKeyPath    = "PRIVATE_KEY_PATH"
-	ed25519privateKey = "PRIVATE_KEY"
-	ed25519apiKey     = "API_KEY_ED25519"
+	privateKeyPath = "PRIVATE_KEY_PATH"
+	ed25519apiKey  = "API_KEY_ED25519"
 )
 
 func BuildURI(base string, query ...string) string {
@@ -71,17 +73,48 @@ func Sign(secret []byte, query string) (string, error) {
 	return signature, nil
 }
 
-// Sign uses the Ed25519 private key to sign the given query
-func SignEd25519(privateKey []byte, query string) (string, error) {
+// LoadEd25519PrivateKey loads an Ed25519 private key from a PEM file
+func LoadEd25519PrivateKey(filePath string) (ed25519.PrivateKey, error) {
+	pemData, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("failed to parse PEM block containing the private key")
+	}
+
+	priv, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	ed25519Priv, ok := priv.(ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("not an Ed25519 private key")
+	}
+
+	return ed25519Priv, nil
+}
+
+// SignEd25519 signs the given query with the Ed25519 private key
+func SignEd25519(privateKeyPath, query string) (string, error) {
+	privateKey, err := LoadEd25519PrivateKey(privateKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to load private key: %v", err)
+	}
+
 	// Sign the query
 	signature := ed25519.Sign(privateKey, []byte(query))
-	fmt.Println("signature:", signature)
 
 	// Encode the signature to Base64
 	signatureBase64 := base64.StdEncoding.EncodeToString(signature)
-	fmt.Println("signatureBase64:", signatureBase64)
 
-	return signatureBase64, nil
+	// URL-encode the Base64 signature
+	encodedSignature := url.QueryEscape(signatureBase64)
+
+	return encodedSignature, nil
 }
 
 func GetBalance(asset string) (float64, error) {
@@ -361,7 +394,7 @@ func PostTestOrder(order *models.PostOrder) ([]byte, error) {
 	if err := validateOrder(order); err != nil {
 		return nil, err
 	}
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), order.String())
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), order.String())
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +432,7 @@ func PostOrder(order *models.PostOrder) (*models.PostOrderResponse, error) {
 	}
 
 	order.Timestamp = st
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), order.String())
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), order.String())
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +475,7 @@ Order Rate Limit
 	OCO counts as 2 orders against the order rate limit
 */
 func PostOrderOCO(oco *models.PostOrderOCO) (*models.PostOrderOCOResponse, error) {
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), oco.String())
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), oco.String())
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +545,7 @@ func GetAccount() ([]byte, error) {
 	}
 
 	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +580,7 @@ func GetOrderCountUsage() ([]byte, error) {
 	}
 
 	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +631,7 @@ func GetAllOrders(symbol string) ([]*models.GetOrderResponse, error) {
 	}
 
 	q := fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +683,7 @@ func GetOpenOrders(symbol string) ([]*models.GetOrderResponse, error) {
 		q = fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
@@ -695,7 +728,7 @@ func GetOCOOrder(id int64) (*models.PostOrderOCOResponse, error) {
 	}
 
 	q := fmt.Sprintf("orderListId=%d&recvWindow=%d&timestamp=%d", id, 5000, st)
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +791,7 @@ func GetOrder(symbol, origClientOrderId string, id int64) (*models.GetOrderRespo
 		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
@@ -836,7 +869,7 @@ func CancelOrder(symbol, origClientOrderId string, id int64) (*models.DeleteOrde
 		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519([]byte(os.Getenv(privateKeyPath)), q)
+	signedQuery, err := SignEd25519(os.Getenv(privateKeyPath), q)
 	if err != nil {
 		return nil, err
 	}
