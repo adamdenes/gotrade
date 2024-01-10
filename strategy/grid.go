@@ -107,23 +107,22 @@ type OrderInfo struct {
 }
 
 type GridStrategy struct {
-	name               string                // Name of strategy
-	db                 storage.Storage       // Database interface
-	balance            float64               // Current balance
-	positionSize       float64               // Position size
-	riskPercentage     float64               // Risk %
-	stopLossPercentage float64               // Invalidation point
-	asset              string                // Trading pair
-	backtest           bool                  // Are we backtesting?
-	orders             []models.TypeOfOrder  // Pending orders
-	data               []*models.KlineSimple // Price data
-	closes             []float64             // Close prices
-	highs              []float64             // Highs
-	lows               []float64             // Lows
-	swingHigh          float64               // Swing High
-	swingLow           float64               // Swing Low
-	orderInfos         []*OrderInfo          // Slice of orders
-	wg                 sync.WaitGroup
+	name               string                       // Name of strategy
+	db                 storage.Storage              // Database interface
+	balance            float64                      // Current balance
+	positionSize       float64                      // Position size
+	riskPercentage     float64                      // Risk %
+	stopLossPercentage float64                      // Invalidation point
+	asset              string                       // Trading pair
+	backtest           bool                         // Are we backtesting?
+	orders             []models.TypeOfOrder         // Pending orders
+	data               []*models.KlineSimple        // Price data
+	closes             []float64                    // Close prices
+	highs              []float64                    // Highs
+	lows               []float64                    // Lows
+	swingHigh          float64                      // Swing High
+	swingLow           float64                      // Swing Low
+	orderInfos         []*OrderInfo                 // Slice of orders
 	mu                 sync.Mutex                   // Mutex for thread-safe access to the orderMap
 	monitoring         bool                         // Monitoring started or not?
 	rapidFill          bool                         // Rapid fill detection
@@ -164,16 +163,12 @@ func (g *GridStrategy) NotifyLevelChange(newLevel level) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	logger.Debug.Printf(
-		"[NotifyLevelChange] -> previousGridLevel: %v, currentGridLevel: %v",
-		g.previousGridLevel,
-		g.gridLevel,
-	)
-	// Saveguard
-	// if newLevel == maxGridLevel || newLevel == negativeMaxGridLevel {
-	// 	g.ResetGrid()
-	// }
 	if g.previousGridLevel != newLevel {
+		logger.Debug.Printf(
+			"[NotifyLevelChange] -> previousGridLevel: %v, currentGridLevel: %v",
+			g.previousGridLevel,
+			newLevel,
+		)
 		g.levelChange <- newLevel
 	}
 }
@@ -204,8 +199,9 @@ func (g *GridStrategy) ProcessLevels() {
 		default:
 			if g.CheckRetracement() {
 				g.ResetGrid()
+			} else {
+				g.OpenNewOrders()
 			}
-			g.HandleGridLevelCross(currentPrice, previousPrice)
 		}
 	}
 }
@@ -215,9 +211,10 @@ func (g *GridStrategy) ManageOrders() {
 	currentPrice := g.GetClosePrice()
 	previousPrice := g.closes[len(g.closes)-2]
 	logger.Debug.Printf(
-		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f",
+		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f, Balance=%.2f",
 		currentPrice,
 		previousPrice,
+		g.balance,
 	)
 
 	// Reset the rapidFill flag after new close price arrives
@@ -255,8 +252,6 @@ func (g *GridStrategy) HandleGridLevelCross(
 			g.gridNextLowerLevel,
 		)
 		g.gridLevel.decreaseLevel()
-		g.NotifyLevelChange(g.gridLevel)
-		g.OpenNewOrders()
 	} else if g.CrossOver(currentPrice, previousPrice, g.gridNextUpperLevel) {
 		// SELL high move
 		logger.Debug.Printf(
@@ -265,9 +260,8 @@ func (g *GridStrategy) HandleGridLevelCross(
 			g.gridNextUpperLevel,
 		)
 		g.gridLevel.increaseLevel()
-		g.NotifyLevelChange(g.gridLevel)
-		g.OpenNewOrders()
 	}
+	g.NotifyLevelChange(g.gridLevel)
 }
 
 // Update grid levels and count based on current price and strategy logic
@@ -369,12 +363,7 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 		g.rapidFill = true
 	}
 
-	// TODO: make notificantions if OpenNewOrders can be executed!!
 	g.NotifyLevelChange(g.gridLevel)
-	// Block execution until a condition is met, e.g., a signal or a flag
-	g.wg.Add(1)
-	g.wg.Wait()
-	g.OpenNewOrders()
 }
 
 // Logic to place new buy and sell orders at the current grid level
@@ -459,7 +448,6 @@ func (g *GridStrategy) CheckRetracement() bool {
 
 		}
 	}
-	defer g.wg.Done()
 	return isRetracing
 }
 
@@ -530,9 +518,6 @@ func (g *GridStrategy) CrossUnder(currentPrice, previousPrice, threshold float64
 func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	g.gridGap = g.ATR()
 
-	// TODO: revisit this.
-	// doubling gridGap might not be good, instead we should use the fill price
-	// as the base
 	if g.rapidFill {
 		currentPrice = g.lastFillPrice
 		logger.Debug.Printf(
@@ -917,11 +902,11 @@ func (g *GridStrategy) CalculatePositionSize(
 	riskPercentage, entryPrice, stopLossPrice float64,
 ) (float64, error) {
 	if !g.backtest {
-		var err error
-		g.balance, err = rest.GetBalance(asset)
+		balance, err := rest.GetBalance(asset)
 		if err != nil {
 			return 0.0, err
 		}
+		g.balance = balance
 	}
 
 	positionSize := g.balance * riskPercentage
