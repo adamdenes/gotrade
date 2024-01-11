@@ -452,7 +452,7 @@ func (ts *TimescaleDB) getChunk(htable string, timestamp time.Time) (*chunk, err
 
 func (ts *TimescaleDB) decompressChunk(ch *chunk) error {
 	if !ch.isCompressed {
-		logger.Debug.Printf("Chunk is not compressed (%t), return.", ch.isCompressed)
+		// logger.Debug.Printf("Chunk is not compressed (%t), return.", ch.isCompressed)
 		return nil
 	}
 	// true flag means "skip if not compressed"
@@ -525,8 +525,6 @@ func (ts *TimescaleDB) FetchData(
 	aggView, symbol string,
 	startTime, endTime int64,
 ) ([]*models.KlineSimple, error) {
-	start := time.Now()
-
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
@@ -572,13 +570,10 @@ func (ts *TimescaleDB) FetchData(
 		return nil, err
 	}
 
-	logger.Info.Printf("Finished streaming data to client, it took %v\n", time.Since(start))
 	return klines, nil
 }
 
 func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
-	startTime := time.Now()
-
 	ctx := context.Background()
 	conn, err := ts.db.Conn(ctx)
 	if err != nil {
@@ -670,7 +665,6 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 		if err != nil {
 			return err
 		}
-		logger.Debug.Println("Total rows:", len(rawData))
 
 		return nil
 	})
@@ -678,16 +672,10 @@ func (ts *TimescaleDB) Copy(r []byte, name *string, interval *string) error {
 		return err
 	}
 
-	logger.Info.Printf(
-		"Finished inserting batch data to Postgres, it took %v\n",
-		time.Since(startTime),
-	)
 	return nil
 }
 
 func (ts *TimescaleDB) Stream(r *zip.Reader) error {
-	startTime := time.Now()
-
 	ctx := context.Background()
 	conn, err := ts.db.Conn(ctx)
 	if err != nil {
@@ -748,7 +736,6 @@ func (ts *TimescaleDB) Stream(r *zip.Reader) error {
 		return err
 	}
 
-	logger.Info.Printf("Finished streaming data to Postgres, it took %v\n", time.Since(startTime))
 	return nil
 }
 
@@ -835,6 +822,19 @@ func (ts *TimescaleDB) GetNotionalFilter(id int64) (*models.NotionalFilter, erro
 	return nf, nil
 }
 
+func (ts *TimescaleDB) GetTralingDeltaFilter(id int64) (*models.TrailingDeltaFilter, error) {
+	tdf := &models.TrailingDeltaFilter{}
+	q := "SELECT max_trailing_above_delta, max_trailing_below_delta, min_trailing_above_delta, min_trailing_below_delta FROM binance.trailing_delta_filters WHERE symbol_id = $1;"
+
+	err := ts.db.QueryRow(q, id).
+		Scan(&tdf.MaxTrailingAboveDelta, &tdf.MaxTrailingBelowDelta, &tdf.MinTrailingAboveDelta, &tdf.MinTrailingBelowDelta)
+	if err != nil {
+		return nil, err
+	}
+
+	return tdf, nil
+}
+
 func (ts *TimescaleDB) GetTradeFilters(symbol string) (*models.TradeFilters, error) {
 	sid, _, err := ts.GetSymbol(symbol)
 	if err != nil {
@@ -853,11 +853,16 @@ func (ts *TimescaleDB) GetTradeFilters(symbol string) (*models.TradeFilters, err
 	if err != nil {
 		return nil, fmt.Errorf("error getting notinalFilter: %w", err)
 	}
+	trailingDeltaFilter, err := ts.GetTralingDeltaFilter(sid)
+	if err != nil {
+		return nil, fmt.Errorf("error getting trailingDeltaFilter: %w", err)
+	}
 
 	return &models.TradeFilters{
-		PriceFilter:    *priceFilter,
-		LotSizeFilter:  *lotSizeFilter,
-		NotionalFilter: *notinalFilter,
+		PriceFilter:         *priceFilter,
+		LotSizeFilter:       *lotSizeFilter,
+		NotionalFilter:      *notinalFilter,
+		TrailingDeltaFilter: *trailingDeltaFilter,
 	}, nil
 }
 
