@@ -16,95 +16,10 @@ import (
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
-	"github.com/google/uuid"
 	"github.com/markcheno/go-talib"
 )
 
-// Maximum reachable grid level ranging from 0 (base) to 4 (5 levels total).
-// Acts as sort of a stop stop-loss.
-type level int
-
-const (
-	invalidLevel         level = 100
-	negativeMaxGridLevel level = iota - 5
-	negativeBreakEvenLevel
-	negativeHalfRetracementLevel
-	negativeFullRetracementLevel
-	baseLevel
-	fullRetracementLevel
-	halfRetracementLevel
-	breakEvenLevel
-	maxGridLevel
-)
-
-func (l level) String() string {
-	switch l {
-	case negativeMaxGridLevel:
-		return "-MAX_GRID_LEVEL"
-	case negativeBreakEvenLevel:
-		return "-BREAK_EVEN_LEVEL"
-	case negativeHalfRetracementLevel:
-		return "-HALF_RETRACEMENT_LEVEL"
-	case negativeFullRetracementLevel:
-		return "-FULL_RETRACEMENT_LEVEL"
-	case baseLevel:
-		return "BASE_LEVEL"
-	case fullRetracementLevel:
-		return "FULL_RETRACEMENT_LEVEL"
-	case halfRetracementLevel:
-		return "HALF_RETRACEMENT_LEVEL"
-	case breakEvenLevel:
-		return "BREAK_EVEN_LEVEL"
-	case maxGridLevel:
-		return "MAX_GRID_LEVEL"
-	case invalidLevel:
-		return "INVALID_LEVEL"
-	default:
-		return fmt.Sprintf("Unknown Level [%d]", l)
-	}
-}
-
-func (l *level) increaseLevel() {
-	logger.Debug.Printf("incrementing grid level from: %v", l.String())
-
-	if *l == invalidLevel {
-		*l = baseLevel
-	} else if *l < maxGridLevel {
-		*l++
-	} else {
-		*l = invalidLevel // Reset to base level if it goes beyond maxGridLevel
-	}
-
-	logger.Debug.Printf("new grid level: %v", l.String())
-}
-
-func (l *level) decreaseLevel() {
-	logger.Debug.Printf("decrementing grid level from: %v", l.String())
-
-	if *l == invalidLevel {
-		*l = baseLevel
-	} else if *l > negativeMaxGridLevel {
-		*l--
-	} else {
-		*l = invalidLevel // Reset to base level if it goes beyond -maxGridLevel
-	}
-
-	logger.Debug.Printf("new grid level: %v", l.String())
-}
-
 const atrChangeThreshold = 0.15 // % change
-
-type OrderInfo struct {
-	ID           int64
-	Symbol       string
-	Side         models.OrderSide // "BUY" or "SELL"
-	Type         models.OrderType // "LIMIT", "MARKET", etc.
-	Status       models.OrderStatus
-	CurrentPrice float64
-	EntryPrice   float64
-	SellLevel    float64
-	GridLevel    level
-}
 
 type GridStrategy struct {
 	name               string                       // Name of strategy
@@ -122,14 +37,14 @@ type GridStrategy struct {
 	lows               []float64                    // Lows
 	swingHigh          float64                      // Swing High
 	swingLow           float64                      // Swing Low
-	orderInfos         []*OrderInfo                 // Slice of orders
+	orderInfos         []*models.OrderInfo          // Slice of orders
 	mu                 sync.Mutex                   // Mutex for thread-safe access to the orderMap
 	monitoring         bool                         // Monitoring started or not?
 	rapidFill          bool                         // Rapid fill detection
 	lastFillPrice      float64                      // Last filled orders price
-	gridLevel          level                        // Number of grid levels reached
-	previousGridLevel  level                        // Previous grid level
-	levelChange        chan level                   // Notification channel
+	gridLevel          models.Level                 // Number of grid levels reached
+	previousGridLevel  models.Level                 // Previous grid level
+	levelChange        chan models.Level            // Notification channel
 	gridGap            float64                      // Grid Gap/Size
 	gridNextLowerLevel float64                      // Next grid line below
 	gridNextUpperLevel float64                      // Next grid line above
@@ -144,14 +59,14 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 		riskPercentage:     0.02,
 		stopLossPercentage: 0.06,
 		gridGap:            0,
-		gridLevel:          invalidLevel,
-		previousGridLevel:  invalidLevel,
+		gridLevel:          models.InvalidLevel,
+		previousGridLevel:  models.InvalidLevel,
 		gridNextLowerLevel: -1,
 		gridNextUpperLevel: -1,
-		orderInfos:         make([]*OrderInfo, 0, 2),
+		orderInfos:         make([]*models.OrderInfo, 0, 2),
 		cancelFuncs:        make(map[int64]context.CancelFunc),
 		orderChannels:      make(map[int64]chan struct{}),
-		levelChange:        make(chan level, 10),
+		levelChange:        make(chan models.Level, 10),
 	}
 
 	go g.ProcessLevels()
@@ -159,7 +74,7 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 	return g
 }
 
-func (g *GridStrategy) NotifyLevelChange(newLevel level) {
+func (g *GridStrategy) NotifyLevelChange(newLevel models.Level) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -190,16 +105,17 @@ func (g *GridStrategy) ProcessLevels() {
 
 		logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
 		switch lvl {
-		case invalidLevel:
+		case models.InvalidLevel:
 			g.HandleGridLevelCross(currentPrice, previousPrice)
 
-		case maxGridLevel, negativeMaxGridLevel:
+		case models.MaxGridLevel, models.NegativeMaxGridLevel:
 			g.ResetGrid()
 
 		default:
 			if g.CheckRetracement() {
 				g.ResetGrid()
 			} else {
+				logger.Debug.Println("+++++++++ CALLING OpenNewOrders +++++++++")
 				g.OpenNewOrders()
 			}
 		}
@@ -242,6 +158,8 @@ func (g *GridStrategy) StartOrderMonitoring() {
 func (g *GridStrategy) HandleGridLevelCross(
 	currentPrice, previousPrice float64,
 ) {
+	logger.Debug.Println("[HandleGridLevelCross] called!")
+	g.mu.Lock()
 	g.previousGridLevel = g.gridLevel
 
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
@@ -251,7 +169,7 @@ func (g *GridStrategy) HandleGridLevelCross(
 			currentPrice,
 			g.gridNextLowerLevel,
 		)
-		g.gridLevel.decreaseLevel()
+		g.gridLevel.DecreaseLevel()
 	} else if g.CrossOver(currentPrice, previousPrice, g.gridNextUpperLevel) {
 		// SELL high move
 		logger.Debug.Printf(
@@ -259,8 +177,10 @@ func (g *GridStrategy) HandleGridLevelCross(
 			currentPrice,
 			g.gridNextUpperLevel,
 		)
-		g.gridLevel.increaseLevel()
+		g.gridLevel.IncreaseLevel()
 	}
+
+	g.mu.Unlock()
 	g.NotifyLevelChange(g.gridLevel)
 }
 
@@ -320,7 +240,7 @@ func (g *GridStrategy) HandleOrderChannels() {
 	}
 }
 
-func (g *GridStrategy) GetOrderInfo(orderID int64) *OrderInfo {
+func (g *GridStrategy) GetOrderInfo(orderID int64) *models.OrderInfo {
 	for _, oi := range g.orderInfos {
 		if orderID == oi.ID {
 			return oi
@@ -341,9 +261,9 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 	// Open new orders after an order fill is detected
 	g.previousGridLevel = g.gridLevel
 	if oi.Side == "BUY" {
-		g.gridLevel.decreaseLevel()
+		g.gridLevel.DecreaseLevel()
 	} else {
-		g.gridLevel.increaseLevel()
+		g.gridLevel.IncreaseLevel()
 	}
 
 	if err := g.RemoveOpenOrder(orderID); err != nil {
@@ -368,6 +288,7 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 
 // Logic to place new buy and sell orders at the current grid level
 func (g *GridStrategy) OpenNewOrders() {
+	logger.Debug.Println("[OpenNewOrders] called!")
 	cp := g.GetClosePrice()
 	nextBuy := g.Buy(g.asset, cp)
 	nextSell := g.Sell(g.asset, cp)
@@ -386,7 +307,9 @@ func (g *GridStrategy) CheckRetracement() bool {
 	isRetracing := false
 
 	if len(g.orderInfos) < 2 {
-		logger.Info.Println("[CheckRetracement] -> Not enough orders to process retracement logic.")
+		logger.Debug.Println(
+			"[CheckRetracement] -> Not enough orders to process retracement logic.",
+		)
 		return isRetracing
 	}
 
@@ -420,7 +343,6 @@ func (g *GridStrategy) CheckRetracement() bool {
 				g.gridLevel,
 			)
 			isRetracing = false
-
 		}
 	case "BUY":
 		if prevLvl > currLvl {
@@ -445,7 +367,6 @@ func (g *GridStrategy) CheckRetracement() bool {
 				g.gridLevel,
 			)
 			isRetracing = false
-
 		}
 	}
 	return isRetracing
@@ -462,7 +383,7 @@ func (g *GridStrategy) SetNewGridLevels(newUpper, newLower float64) {
 }
 
 // MonitorOrder checks the database periodically for updates to the order.
-func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *OrderInfo) chan struct{} {
+func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *models.OrderInfo) chan struct{} {
 	ch := make(chan struct{})
 
 	logger.Debug.Printf("[MonitorOrder] -> Starting to monitor OrderID: %v", oi.ID)
@@ -473,7 +394,7 @@ func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *OrderInfo) chan str
 			select {
 			case <-c.Done():
 				logger.Debug.Printf(
-					"Context cancelled for OrderID: %v",
+					"[MonitorOrder] -> Context cancelled for OrderID: %v",
 					oi.ID,
 				)
 				return
@@ -491,7 +412,7 @@ func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *OrderInfo) chan str
 				}
 
 				if o.Status == "FILLED" || o.Status == "CANCELED" {
-					logger.Debug.Printf("Order %v %v", o.OrderID, o.Status)
+					logger.Debug.Printf("[MonitorOrder] -> Order %v %v", o.OrderID, o.Status)
 					g.mu.Lock()
 					oi.Status = o.Status
 					g.mu.Unlock()
@@ -546,19 +467,20 @@ func (g *GridStrategy) ResetGrid() {
 	g.lastFillPrice = 0.0
 	g.gridNextLowerLevel = -1
 	g.gridNextUpperLevel = -1
-	g.gridLevel = invalidLevel
-	g.previousGridLevel = invalidLevel
+	g.gridLevel = models.InvalidLevel
+	g.previousGridLevel = models.InvalidLevel
 	g.monitoring = false
 	g.rapidFill = false
-	g.orderInfos = make([]*OrderInfo, 0, 2)
+	g.orderInfos = make([]*models.OrderInfo, 0, 2)
 	g.orders = make([]models.TypeOfOrder, 0)
 	g.cancelFuncs = make(map[int64]context.CancelFunc)
 	g.orderChannels = make(map[int64]chan struct{})
-	g.levelChange = make(chan level, 10)
+	g.levelChange = make(chan models.Level, 10)
 	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
+	logger.Debug.Printf("[ResetGrid] -> %#+v", g)
 }
 
-func (g *GridStrategy) AddOpenOrder(oi *OrderInfo) {
+func (g *GridStrategy) AddOpenOrder(oi *models.OrderInfo) {
 	g.mu.Lock()
 	g.orderInfos = append(g.orderInfos, oi)
 
@@ -577,7 +499,6 @@ func (g *GridStrategy) RemoveOpenOrder(orderID int64) error {
 
 	for i, order := range g.orderInfos {
 		if order.ID == orderID {
-			// logger.Debug.Printf("REMOVING order: %v", order)
 			// Remove the order at index i from g.orderInfos
 			g.orderInfos = append(g.orderInfos[:i], g.orderInfos[i+1:]...)
 			return nil
@@ -648,7 +569,7 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 		}
 
 		// After successfully placing an order
-		orderInfo := &OrderInfo{
+		orderInfo := &models.OrderInfo{
 			ID:           orderResponse.OrderID,
 			Symbol:       orderResponse.Symbol,
 			Side:         orderResponse.Side,
@@ -696,16 +617,15 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 	}
 
 	return &models.PostOrder{
-		Symbol:           asset,
-		Side:             models.BUY,
-		Type:             models.LIMIT,
-		NewClientOrderId: uuid.NewString(),
-		Quantity:         quantity,
-		Price:            entryPrice,
-		StopPrice:        stopPrice,
-		TimeInForce:      models.GTC,
-		RecvWindow:       5000,
-		Timestamp:        time.Now().UnixMilli(), // will be overwritten by GetServerTime
+		Symbol:      asset,
+		Side:        models.BUY,
+		Type:        models.LIMIT,
+		Quantity:    quantity,
+		Price:       entryPrice,
+		StopPrice:   stopPrice,
+		TimeInForce: models.GTC,
+		RecvWindow:  5000,
+		Timestamp:   time.Now().UnixMilli(), // will be overwritten by GetServerTime
 	}
 }
 
@@ -733,16 +653,15 @@ func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 	}
 
 	return &models.PostOrder{
-		Symbol:           asset,
-		Side:             models.SELL,
-		Type:             models.LIMIT,
-		NewClientOrderId: uuid.NewString(),
-		Quantity:         quantity,
-		Price:            entryPrice,
-		StopPrice:        stopPrice,
-		TimeInForce:      models.GTC,
-		RecvWindow:       5000,
-		Timestamp:        time.Now().UnixMilli(), // will be overwritten by GetServerTime
+		Symbol:      asset,
+		Side:        models.SELL,
+		Type:        models.LIMIT,
+		Quantity:    quantity,
+		Price:       entryPrice,
+		StopPrice:   stopPrice,
+		TimeInForce: models.GTC,
+		RecvWindow:  5000,
+		Timestamp:   time.Now().UnixMilli(), // will be overwritten by GetServerTime
 	}
 }
 
