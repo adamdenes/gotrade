@@ -522,7 +522,7 @@ func (dor *DeleteOrderResponse) DeleteToGet() *GetOrderResponse {
 		TimeInForce:             TimeInForce(dor.TimeInForce),
 		Time:                    dor.TransactTime,
 		Type:                    OrderType(dor.Type),
-		Side:                    OrderSide(dor.Type),
+		Side:                    OrderSide(dor.Side),
 		SelfTradePreventionMode: dor.SelfTradePreventionMode,
 	}
 }
@@ -709,9 +709,10 @@ func (sf *SymbolFilter) UnmarshalJSON(data []byte) error {
 }
 
 type TradeFilters struct {
-    PriceFilter
-    LotSizeFilter
-    NotionalFilter
+	PriceFilter
+	LotSizeFilter
+	NotionalFilter
+	TrailingDeltaFilter
 }
 
 type MaterializedViewConfig struct {
@@ -767,4 +768,80 @@ type MaterializedViewExistsError struct {
 
 func (e *MaterializedViewExistsError) Error() string {
 	return fmt.Sprintf("materialized view %s already exists", e.ViewName)
+}
+
+type OrderInfo struct {
+	ID           int64
+	Symbol       string
+	Side         OrderSide // "BUY" or "SELL"
+	Type         OrderType // "LIMIT", "MARKET", etc.
+	Status       OrderStatus
+	CurrentPrice float64
+	EntryPrice   float64
+	SellLevel    float64
+	GridLevel    Level
+}
+
+// Maximum reachable grid level ranging from 0 (base) to 4 (5 levels total).
+// Acts as sort of a stop stop-loss.
+type Level int
+
+const (
+	InvalidLevel         Level = 100
+	NegativeMaxGridLevel Level = iota - 5
+	NegativeBreakEvenLevel
+	NegativeHalfRetracementLevel
+	NegativeFullRetracementLevel
+	BaseLevel
+	FullRetracementLevel
+	HalfRetracementLevel
+	BreakEvenLevel
+	MaxGridLevel
+)
+
+func (l Level) String() string {
+	switch l {
+	case NegativeMaxGridLevel:
+		return "-MAX_GRID_LEVEL"
+	case NegativeBreakEvenLevel:
+		return "-BREAK_EVEN_LEVEL"
+	case NegativeHalfRetracementLevel:
+		return "-HALF_RETRACEMENT_LEVEL"
+	case NegativeFullRetracementLevel:
+		return "-FULL_RETRACEMENT_LEVEL"
+	case BaseLevel:
+		return "BASE_LEVEL"
+	case FullRetracementLevel:
+		return "FULL_RETRACEMENT_LEVEL"
+	case HalfRetracementLevel:
+		return "HALF_RETRACEMENT_LEVEL"
+	case BreakEvenLevel:
+		return "BREAK_EVEN_LEVEL"
+	case MaxGridLevel:
+		return "MAX_GRID_LEVEL"
+	case InvalidLevel:
+		return "INVALID_LEVEL"
+	default:
+		return fmt.Sprintf("Unknown Level [%d]", l)
+	}
+}
+
+func (l *Level) IncreaseLevel() {
+	if *l == InvalidLevel {
+		*l = BaseLevel
+	} else if *l < MaxGridLevel {
+		*l++
+	} else {
+		*l = InvalidLevel // Reset to base level if it goes beyond maxGridLevel
+	}
+}
+
+func (l *Level) DecreaseLevel() {
+	if *l == InvalidLevel {
+		*l = BaseLevel
+	} else if *l > NegativeMaxGridLevel {
+		*l--
+	} else {
+		*l = InvalidLevel // Reset to base level if it goes beyond -maxGridLevel
+	}
 }
