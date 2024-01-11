@@ -3,6 +3,7 @@
 ### TODOs 1.0.0
 * [] model Account response - mostly to get `commissionRates` too
 * [x] create a GRID strategy
+* [] incorporate TRAILING_STOP for a strategy
 
 ## Improvement ideas
 * [x] rework `CalculateStopLoss` - incorporate ATR
