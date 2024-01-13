@@ -19,9 +19,11 @@ import (
 )
 
 const (
-	wsEndpoint = "wss://testnet.binance.vision/stream?streams="
-	apiKey     = "APCA_API_KEY_ID"
-	apiSecret  = "APCA_API_SECRET_KEY"
+	// wsEndpoint = "wss://testnet.binance.vision/stream?streams="
+	wsEndpoint           = "wss://stream.binance.com:9443/stream?streams="
+	apiKey               = "APCA_API_KEY_ID"
+	apiSecret            = "APCA_API_SECRET_KEY"
+	maxReconnectAttempts = 10
 )
 
 type Binance struct {
@@ -97,6 +99,7 @@ func (b *Binance) subscribe(subdata *models.CandleSubsciption) error {
 	})
 	if err != nil {
 		b.errorLog.Printf("dial: %v", err)
+		// TODO: consider reconnecting here
 		return err
 	}
 	b.ws = conn
@@ -112,7 +115,6 @@ func (b *Binance) handleWsLoop() {
 
 	b.debugLog.Printf("Websocket loop started on channel: %v\n", b.dataChannel)
 
-	const maxReconnectAttempts = 10
 	reconnectAttempts := 0
 	for {
 		select {

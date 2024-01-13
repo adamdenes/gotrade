@@ -319,6 +319,12 @@ func (ts *TimescaleDB) CreateFilter(symbolID int64, filter models.Filter) error 
               VALUES ($1, $2);`
 		_, err = ts.db.Exec(q, symbolID, f.MaxNumAlgoOrders)
 
+	case *models.MaxPositionFilter:
+		maxPosition, _ := strconv.ParseFloat(f.MaxPosition, 64)
+		q = `INSERT INTO binance.max_position_filters (symbol_id, max_position) 
+              VALUES ($1, $2);`
+		_, err = ts.db.Exec(q, symbolID, maxPosition)
+
 	default:
 		return fmt.Errorf("unknown filter type")
 	}

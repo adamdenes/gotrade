@@ -184,4 +184,11 @@ CREATE TABLE IF NOT EXISTS binance.max_num_algo_orders_filters (
     FOREIGN KEY (symbol_id) REFERENCES binance.symbols(symbol_id)
 );
 
+CREATE TABLE IF NOT EXISTS binance.max_position_filters (
+    filter_id SERIAL PRIMARY KEY,
+    symbol_id INT NOT NULL,
+    max_position NUMERIC(20, 8),
+    FOREIGN KEY (symbol_id) REFERENCES binance.symbols(symbol_id)
+);
+
 COMMIT;

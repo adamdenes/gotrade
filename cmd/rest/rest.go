@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	apiEndpoint = "https://testnet.binance.vision/api/v3/"
+	// apiEndpoint = "https://testnet.binance.vision/api/v3/"
+	apiEndpoint = "https://api.binance.com/api/v3/"
 	// HMAC
 	apiKey    = "APCA_API_KEY_ID"
 	apiSecret = "APCA_API_SECRET_KEY"

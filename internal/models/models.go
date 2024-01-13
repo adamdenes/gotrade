@@ -572,6 +572,7 @@ const (
 	NOTIONAL                         = "NOTIONAL"
 	MAX_NUM_ORDERS                   = "MAX_NUM_ORDERS"
 	MAX_NUM_ALGO_ORDERS              = "MAX_NUM_ALGO_ORDERS"
+	MAX_POSITION                     = "MAX_POSITION"
 )
 
 type Filter interface {
@@ -647,6 +648,11 @@ type MaxNumAlgoOrdersFilter struct {
 	MaxNumAlgoOrders int `json:"maxNumAlgoOrders"`
 }
 
+type MaxPositionFilter struct {
+	BaseFilter
+	MaxPosition string `json:"maxPosition"`
+}
+
 type SymbolFilter struct {
 	Symbol     string   `json:"symbol"`
 	BaseAsset  string   `json:"baseAsset"`
@@ -696,6 +702,8 @@ func (sf *SymbolFilter) UnmarshalJSON(data []byte) error {
 			filter = &MaxNumOrdersFilter{}
 		case MAX_NUM_ALGO_ORDERS:
 			filter = &MaxNumAlgoOrdersFilter{}
+		case MAX_POSITION:
+			filter = &MaxPositionFilter{}
 		}
 
 		if err := json.Unmarshal(rawFilter, filter); err != nil {

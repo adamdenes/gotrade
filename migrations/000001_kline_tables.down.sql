@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS binance.percent_price_by_side_filters CASCADE;
 DROP TABLE IF EXISTS binance.notional_filters CASCADE;
 DROP TABLE IF EXISTS binance.max_num_orders_filters CASCADE;
 DROP TABLE IF EXISTS binance.max_num_algo_orders_filters CASCADE;
+DROP TABLE IF EXISTS binance.max_position_filters CASCADE;
 DROP TABLE IF EXISTS binance.bots CASCADE;
 DROP TABLE IF EXISTS binance.trades CASCADE;
 DROP TABLE IF EXISTS binance.orders CASCADE;
