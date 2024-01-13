@@ -548,9 +548,10 @@ func connectExchange(
 
 func getStrategy(strat string, db storage.Storage) (backtest.Strategy[any], error) {
 	strategies := map[string]backtest.Strategy[any]{
-		"sma":  strategy.NewSMAStrategy(12, 24, 5, db),
-		"macd": strategy.NewMACDStrategy(5, db),
-		"grid": strategy.NewGridStrategy(db),
+		"sma":    strategy.NewSMAStrategy(12, 24, 5, db),
+		"macd":   strategy.NewMACDStrategy(5, db),
+		"grid":   strategy.NewGridStrategy(db),
+		"grid_t": strategy.NewGridTrailingStrategy(db),
 	}
 	strategy, found := strategies[strat]
 	if !found {

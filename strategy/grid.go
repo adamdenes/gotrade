@@ -477,7 +477,6 @@ func (g *GridStrategy) ResetGrid() {
 	g.orderChannels = make(map[int64]chan struct{})
 	g.levelChange = make(chan models.Level, 10)
 	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
-	logger.Debug.Printf("[ResetGrid] -> %#+v", g)
 }
 
 func (g *GridStrategy) AddOpenOrder(oi *models.OrderInfo) {
