@@ -853,3 +853,13 @@ func (l *Level) DecreaseLevel() {
 		*l = InvalidLevel // Reset to base level if it goes beyond -maxGridLevel
 	}
 }
+
+// TradeFee represents the fee information for a specific trade symbol.
+type TradeFee struct {
+	Symbol          string `json:"symbol"`
+	MakerCommission string `json:"makerCommission"`
+	TakerCommission string `json:"takerCommission"`
+}
+
+// TradeFees is a slice of TradeFee, representing a list of trade fee information.
+type TradeFees []TradeFee

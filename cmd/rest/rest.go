@@ -26,7 +26,8 @@ import (
 
 const (
 	// apiEndpoint = "https://testnet.binance.vision/api/v3/"
-	apiEndpoint = "https://api.binance.com/api/v3/"
+	apiEndpoint    = "https://api.binance.com/api/v3/"
+	walletEndpoint = "https://api.binance.com/sapi/v1/asset/"
 	// HMAC
 	apiKey    = "APCA_API_KEY_ID"
 	apiSecret = "APCA_API_SECRET_KEY"
@@ -893,4 +894,53 @@ func CancelOrder(symbol, origClientOrderId string, id int64) (*models.DeleteOrde
 	}
 
 	return order, nil
+}
+
+/*
+Trade Fee (USER_DATA)
+
+GET /sapi/v1/asset/tradeFee
+
+# Fetch trade fee
+
+Weight(IP): 1
+
+Parameters:
+
+	Name 	    Type 	Mandatory 	Description
+	symbol 	    STRING 	NO
+	recvWindow 	LONG 	NO
+	timestamp 	LONG 	YES
+*/
+func GetTradeFee(symbol string) (*models.TradeFees, error) {
+	st, err := GetServerTime()
+	if err != nil {
+		return nil, err
+	}
+
+	var q string
+	if symbol != "" {
+		q = fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
+	} else {
+		q = fmt.Sprintf("&recvWindow=%d&timestamp=%d", 5000, st)
+	}
+
+	signedQuery, err := SignEd25519(privateKey, q)
+	if err != nil {
+		return nil, err
+	}
+
+	uri := BuildURI(walletEndpoint+"tradeFee?", q, "&signature=", signedQuery)
+	resp, err := Query("GET", uri, "application/json", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var tradeFees models.TradeFees
+	err = json.Unmarshal(resp, &tradeFees)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling trade fees: %w", err)
+	}
+
+	return &tradeFees, nil
 }
