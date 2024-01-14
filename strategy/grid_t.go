@@ -829,8 +829,7 @@ func (g *GridTrailingStrategy) adjustToNotinalFilter(
 
 	if quantity*limitPrice < minNotional {
 		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-		quantity = minNotional / limitPrice
-		quantity = g.RoundToStepSize(quantity, stepSize)
+		quantity = minNotional/limitPrice + stepSize
 		logger.Warning.Printf(
 			"Adjusting Quantity to [%.8f] based on minNotional of [%0.8f]",
 			quantity,

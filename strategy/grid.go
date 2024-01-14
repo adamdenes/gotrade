@@ -115,7 +115,6 @@ func (g *GridStrategy) ProcessLevels() {
 			if g.CheckRetracement() {
 				g.ResetGrid()
 			} else {
-				logger.Debug.Println("+++++++++ CALLING OpenNewOrders +++++++++")
 				g.OpenNewOrders()
 			}
 		}
@@ -766,11 +765,42 @@ func (g *GridStrategy) getFilters(asset string) (float64, float64, float64, erro
 		return 0, 0, 0, err
 	}
 
-	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
-	tickSize, _ := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
-	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+	stepSize, err := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
+	if err != nil {
+		logger.Error.Printf("Error parsing step size: %v", err)
+		return 0, 0, 0, err
+	}
+
+	tickSize, err := strconv.ParseFloat(filters.PriceFilter.TickSize, 64)
+	if err != nil {
+		logger.Error.Printf("Error parsing tick size: %v", err)
+		return 0, 0, 0, err
+	}
+
+	minNotional, err := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+	if err != nil {
+		logger.Error.Printf("Error parsing tick size: %v", err)
+		return 0, 0, 0, err
+	}
 
 	return stepSize, tickSize, minNotional, nil
+}
+
+func (g *GridStrategy) adjustToNotinalFilter(
+	currentPrice, stepSize, minNotional float64,
+) float64 {
+	quantity := g.GetPositionSize() / currentPrice
+
+	if quantity*currentPrice < minNotional {
+		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+		quantity = minNotional/currentPrice + stepSize
+		logger.Warning.Printf(
+			"Increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
+			quantity,
+			minNotional,
+		)
+	}
+	return g.RoundToStepSize(quantity, stepSize)
 }
 
 func (g *GridStrategy) calculateParams(
@@ -782,21 +812,9 @@ func (g *GridStrategy) calculateParams(
 		return 0, 0, 0, err
 	}
 
-	quantity := g.GetPositionSize() / entryPrice
-	quantity = g.RoundToStepSize(quantity, stepSize)
 	entryPrice = g.RoundToTickSize(entryPrice, tickSize)
 	stopPrice = g.RoundToTickSize(stopPrice, tickSize)
-
-	if quantity*entryPrice < minNotional {
-		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-		quantity = quantity + math.Abs(minNotional-quantity)
-		quantity = g.RoundToStepSize(quantity, stepSize)
-		logger.Info.Printf(
-			"increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
-			quantity,
-			minNotional,
-		)
-	}
+	quantity := g.adjustToNotinalFilter(entryPrice, stepSize, minNotional)
 
 	return quantity, entryPrice, stopPrice, nil
 }

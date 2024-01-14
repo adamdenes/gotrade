@@ -360,6 +360,23 @@ func (m *MACDStrategy) GetRecentLow() {
 	}
 }
 
+func (m *MACDStrategy) adjustToNotinalFilter(
+	currentPrice, stepSize, minNotional float64,
+) float64 {
+	quantity := m.GetPositionSize() / currentPrice
+
+	if quantity*currentPrice < minNotional {
+		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+		quantity = minNotional/currentPrice + stepSize
+		logger.Warning.Printf(
+			"Increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
+			quantity,
+			minNotional,
+		)
+	}
+	return m.RoundToStepSize(quantity, stepSize)
+}
+
 func (m *MACDStrategy) calculateParams(
 	side string,
 	currentPrice, stopPrice, riskRewardRatio float64,
@@ -375,8 +392,8 @@ func (m *MACDStrategy) calculateParams(
 
 	// Calculate quantity based on position size
 	stepSize, _ := strconv.ParseFloat(filters.LotSizeFilter.StepSize, 64)
-	quantity = m.GetPositionSize() / currentPrice
-	quantity = m.RoundToStepSize(quantity, stepSize)
+	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
+	quantity = m.adjustToNotinalFilter(currentPrice, stepSize, minNotional)
 
 	// Calculate risk amount, takeProfit, and stopLimitPrice based on strategy
 	riskAmount = math.Abs(currentPrice - stopPrice)
@@ -402,18 +419,6 @@ func (m *MACDStrategy) calculateParams(
 	stopPrice = m.RoundToTickSize(stopPrice, tickSize)
 	takeProfit = m.RoundToTickSize(takeProfit, tickSize)
 	stopLimitPrice = m.RoundToTickSize(stopLimitPrice, tickSize)
-
-	minNotional, _ := strconv.ParseFloat(filters.NotionalFilter.MinNotional, 64)
-	if quantity*currentPrice < minNotional {
-		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-		quantity = quantity + math.Abs(minNotional-quantity)
-		quantity = m.RoundToStepSize(quantity, stepSize)
-		logger.Info.Printf(
-			"increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
-			quantity,
-			minNotional,
-		)
-	}
 
 	return quantity, stopPrice, takeProfit, stopLimitPrice, riskAmount
 }
