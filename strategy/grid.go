@@ -305,7 +305,7 @@ func (g *GridStrategy) OpenNewOrders() {
 func (g *GridStrategy) CheckRetracement() bool {
 	isRetracing := false
 
-	if len(g.orderInfos) < 2 {
+	if len(g.orderInfos) < 1 {
 		logger.Debug.Println(
 			"[CheckRetracement] -> Not enough orders to process retracement logic.",
 		)

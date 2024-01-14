@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	"github.com/adamdenes/gotrade/internal/logger"
+	"github.com/adamdenes/gotrade/internal/models"
 )
 
 func TestCheckRetracement_NotEnoughOrders(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{} // Less than two orders
+	g.orderInfos = []*models.OrderInfo{} // Less than one order
 
 	result := g.CheckRetracement()
 
@@ -21,7 +22,7 @@ func TestCheckRetracement_NotEnoughOrders(t *testing.T) {
 func TestCheckRetracement_SellOrderWithRetracement(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{
+	g.orderInfos = []*models.OrderInfo{
 		{Side: "BUY"},
 		{Side: "BUY"}, // 'BUY' order in the slice after a 'SELL' order is filled
 	}
@@ -38,7 +39,7 @@ func TestCheckRetracement_SellOrderWithRetracement(t *testing.T) {
 func TestCheckRetracement_SellOrderWithoutRetracement(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{
+	g.orderInfos = []*models.OrderInfo{
 		{Side: "SELL"},
 		{Side: "BUY"}, // 'BUY' order in the slice after a 'SELL' order is filled
 	}
@@ -55,7 +56,7 @@ func TestCheckRetracement_SellOrderWithoutRetracement(t *testing.T) {
 func TestCheckRetracement_BuyOrderWithRetracement(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{
+	g.orderInfos = []*models.OrderInfo{
 		{Side: "SELL"},
 		{Side: "SELL"}, // 'SELL' order in the slice after a 'BUY' order is filled
 	}
@@ -72,7 +73,7 @@ func TestCheckRetracement_BuyOrderWithRetracement(t *testing.T) {
 func TestCheckRetracement_BuyOrderWithoutRetracement(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{
+	g.orderInfos = []*models.OrderInfo{
 		{Side: "BUY"},
 		{Side: "SELL"}, // 'SELL' order in the slice after a 'BUY' order is filled
 	}
@@ -89,7 +90,7 @@ func TestCheckRetracement_BuyOrderWithoutRetracement(t *testing.T) {
 func TestCheckRetracement_EqualPreviousAndCurrentLevels(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{
+	g.orderInfos = []*models.OrderInfo{
 		{Side: "BUY"},
 		{Side: "SELL"}, // Assuming a 'SELL' order in the slice
 	}
@@ -106,7 +107,7 @@ func TestCheckRetracement_EqualPreviousAndCurrentLevels(t *testing.T) {
 func TestCheckRetracement_EmptyOrderInfos(t *testing.T) {
 	logger.Init()
 	g := &GridStrategy{}
-	g.orderInfos = []*OrderInfo{} // Empty orderInfos slice
+	g.orderInfos = []*models.OrderInfo{} // Empty orderInfos slice
 
 	result := g.CheckRetracement()
 
