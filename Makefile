@@ -48,8 +48,13 @@ clean-dangling-images:
 	docker image prune -f
 
 start_db: clean-dangling-images
-	docker volume create $(DB_VOLUME)
-	docker run --name $(DB_CONTAINER_NAME) -v $(DB_VOLUME):$(DB_VOLUME_PATH)  -e POSTGRES_PASSWORD=$(DB_PASSWORD) -e POSTGRES_USER=$(DB_USER) -e POSTGRES_DB=$(DB_NAME) -p $(DB_PORT):$(DB_PORT) -d timescale/timescaledb-ha:pg15-latest
+	@if [ -z "$$(docker volume ls -q -f name=$(DB_VOLUME))" ]; then \
+		echo "Creating volume $(DB_VOLUME)"; \
+		docker volume create $(DB_VOLUME); \
+	else \
+		echo "Volume $(DB_VOLUME) already exists"; \
+	fi
+	docker run --name $(DB_CONTAINER_NAME) -v $(DB_VOLUME):$(DB_VOLUME_PATH) -e POSTGRES_PASSWORD=$(DB_PASSWORD) -e POSTGRES_USER=$(DB_USER) -e POSTGRES_DB=$(DB_NAME) -p $(DB_PORT):$(DB_PORT) -d timescale/timescaledb:latest-pg15
 
 stop_db:
 	docker stop $(DB_CONTAINER_NAME)
