@@ -789,10 +789,10 @@ func (g *GridStrategy) calculateParams(
 
 	if quantity*entryPrice < minNotional {
 		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-		quantity = minNotional / entryPrice
+		quantity = quantity + math.Abs(minNotional-quantity)
 		quantity = g.RoundToStepSize(quantity, stepSize)
-		logger.Warning.Printf(
-			"Adjusting Quantity to [%.8f] based on minNotional of [%0.8f]",
+		logger.Info.Printf(
+			"increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
 			quantity,
 			minNotional,
 		)

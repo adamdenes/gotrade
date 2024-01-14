@@ -398,6 +398,7 @@ func (s *SMAStrategy) calculateParams(
 	if quantity*currentPrice < minNotional {
 		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
 		quantity = quantity + math.Abs(minNotional-quantity)
+		quantity = s.RoundToStepSize(quantity, stepSize)
 		logger.Info.Printf(
 			"increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
 			quantity,
