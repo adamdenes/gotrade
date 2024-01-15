@@ -27,7 +27,7 @@ func TestCheckRetracement_SellOrderWithRetracement(t *testing.T) {
 		{Side: "BUY"}, // 'BUY' order in the slice after a 'SELL' order is filled
 	}
 	g.previousGridLevel = 3
-	g.gridLevel = 2
+	g.gridLevel.Val = 2
 
 	result := g.CheckRetracement()
 
@@ -44,7 +44,7 @@ func TestCheckRetracement_SellOrderWithoutRetracement(t *testing.T) {
 		{Side: "BUY"}, // 'BUY' order in the slice after a 'SELL' order is filled
 	}
 	g.previousGridLevel = 1
-	g.gridLevel = 3
+	g.gridLevel.Val = 3
 
 	result := g.CheckRetracement()
 
@@ -61,7 +61,7 @@ func TestCheckRetracement_BuyOrderWithRetracement(t *testing.T) {
 		{Side: "SELL"}, // 'SELL' order in the slice after a 'BUY' order is filled
 	}
 	g.previousGridLevel = 1
-	g.gridLevel = 0
+	g.gridLevel.Val = 0
 
 	result := g.CheckRetracement()
 
@@ -78,7 +78,7 @@ func TestCheckRetracement_BuyOrderWithoutRetracement(t *testing.T) {
 		{Side: "SELL"}, // 'SELL' order in the slice after a 'BUY' order is filled
 	}
 	g.previousGridLevel = 2
-	g.gridLevel = 3
+	g.gridLevel.Val = 3
 
 	result := g.CheckRetracement()
 
@@ -95,7 +95,7 @@ func TestCheckRetracement_EqualPreviousAndCurrentLevels(t *testing.T) {
 		{Side: "SELL"}, // Assuming a 'SELL' order in the slice
 	}
 	g.previousGridLevel = 0
-	g.gridLevel = 0
+	g.gridLevel.Val = 0
 
 	result := g.CheckRetracement()
 

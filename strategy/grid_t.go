@@ -33,6 +33,7 @@ type GridTrailingStrategy struct {
 	closes             []float64                    // Close prices
 	highs              []float64                    // Highs
 	lows               []float64                    // Lows
+	atr                []float64                    // ATR slice
 	swingHigh          float64                      // Swing High
 	swingLow           float64                      // Swing Low
 	orderInfos         []*models.OrderInfo          // Slice of orders
@@ -40,7 +41,7 @@ type GridTrailingStrategy struct {
 	monitoring         bool                         // Monitoring started or not?
 	rapidFill          bool                         // Rapid fill detection
 	lastFillPrice      float64                      // Last filled orders price
-	gridLevel          models.Level                 // Number of grid levels reached
+	gridLevel          models.LevelType             // Number of grid levels reached
 	previousGridLevel  models.Level                 // Previous grid level
 	levelChange        chan models.Level            // Notification channel
 	gridGap            float64                      // Grid Gap/Size
@@ -59,14 +60,15 @@ func NewGridTrailingStrategy(db storage.Storage) backtest.Strategy[GridTrailingS
 		stopLossPercentage: 0.06,
 		trailingDelta:      100,
 		gridGap:            0,
-		gridLevel:          models.InvalidLevel,
+		gridLevel:          models.LevelType{Val: models.InvalidLevel},
 		previousGridLevel:  models.InvalidLevel,
 		gridNextLowerLevel: -1,
 		gridNextUpperLevel: -1,
 		orderInfos:         make([]*models.OrderInfo, 0, 2),
 		cancelFuncs:        make(map[int64]context.CancelFunc),
 		orderChannels:      make(map[int64]chan struct{}),
-		levelChange:        make(chan models.Level, 10),
+		levelChange:        make(chan models.Level, 15),
+		atr:                make([]float64, 0, 14),
 	}
 
 	go g.ProcessLevels()
@@ -75,9 +77,6 @@ func NewGridTrailingStrategy(db storage.Storage) backtest.Strategy[GridTrailingS
 }
 
 func (g *GridTrailingStrategy) NotifyLevelChange(newLevel models.Level) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	if g.previousGridLevel != newLevel {
 		logger.Debug.Printf(
 			"[NotifyLevelChange] -> previousGridLevel: %v, currentGridLevel: %v",
@@ -88,47 +87,77 @@ func (g *GridTrailingStrategy) NotifyLevelChange(newLevel models.Level) {
 	}
 }
 
-func (g *GridTrailingStrategy) ATR() float64 {
-	atr := talib.Atr(g.highs, g.lows, g.closes, 14)
-	return atr[len(atr)-1]
+func (g *GridTrailingStrategy) ATR() {
+	if len(g.closes) > 14 {
+		atr := talib.Atr(g.highs, g.lows, g.closes, 14)
+		g.atr = append(g.atr, atr[len(atr)-1])
+	}
+	if len(g.atr) > 3 {
+		g.atr = g.atr[1:]
+	}
+}
+
+func (g *GridTrailingStrategy) getAtr() float64 {
+	return g.atr[len(g.atr)-1]
 }
 
 func (g *GridTrailingStrategy) Execute() {
 	g.GetClosePrices()
+	g.ATR()
 	g.ManageOrders()
 }
 
 func (g *GridTrailingStrategy) ProcessLevels() {
-	for lvl := range g.levelChange {
-		currentPrice := g.GetClosePrice()
-		previousPrice := g.closes[len(g.closes)-2]
+	for {
+		select {
+		case lvl := <-g.levelChange:
+			currentPrice := g.GetClosePrice()
+			previousPrice := g.closes[len(g.closes)-2]
 
-		logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
-		switch lvl {
-		case models.InvalidLevel:
-			g.HandleGridLevelCross(currentPrice, previousPrice)
+			if g.previousGridLevel != lvl {
+				logger.Debug.Printf(
+					"[ProcessLevels] -> p/c: [%v/%v]",
+					g.previousGridLevel,
+					lvl,
+				)
 
-		case models.MaxGridLevel, models.NegativeMaxGridLevel:
-			g.ResetGrid()
+				logger.Debug.Printf("[ProcessLevels] -> %s [%d] reached!", lvl.String(), lvl)
+				switch lvl {
+				case models.InvalidLevel:
+					g.HandleGridLevelCross(currentPrice, previousPrice)
 
-		default:
-			if g.CheckRetracement() {
-				g.ResetGrid()
-			} else {
-				g.OpenNewOrders()
+				case models.MaxGridLevel, models.NegativeMaxGridLevel:
+					g.ResetGrid()
+
+				default:
+					if g.CheckRetracement() {
+						g.ResetGrid()
+					} else {
+						g.OpenNewOrders()
+					}
+				}
 			}
 		}
 	}
 }
 
 func (g *GridTrailingStrategy) ManageOrders() {
+	var previousPrice float64
 	// Check if the price has reached the next buy or sell level
 	currentPrice := g.GetClosePrice()
-	previousPrice := g.closes[len(g.closes)-2]
+	if g.backtest {
+		if len(g.atr) < 1 {
+			return
+		}
+		previousPrice = g.closes[len(g.closes)-2]
+	} else {
+		previousPrice = g.closes[len(g.closes)-2]
+	}
 	logger.Debug.Printf(
-		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f",
+		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f, Balance=%.2f",
 		currentPrice,
 		previousPrice,
+		g.balance,
 	)
 
 	// Reset the rapidFill flag after new close price arrives
@@ -145,20 +174,17 @@ func (g *GridTrailingStrategy) ManageOrders() {
 }
 
 func (g *GridTrailingStrategy) StartOrderMonitoring() {
-	g.mu.Lock()
 	if !g.monitoring {
 		go g.HandleOrderChannels()
 		g.monitoring = true
 	}
-	g.mu.Unlock()
 }
 
 func (g *GridTrailingStrategy) HandleGridLevelCross(
 	currentPrice, previousPrice float64,
 ) {
 	logger.Debug.Println("[HandleGridLevelCross] called!")
-	g.mu.Lock()
-	g.previousGridLevel = g.gridLevel
+	g.previousGridLevel = g.gridLevel.Val
 
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
 		// BUY low move
@@ -178,8 +204,7 @@ func (g *GridTrailingStrategy) HandleGridLevelCross(
 		g.gridLevel.IncreaseLevel()
 	}
 
-	g.mu.Unlock()
-	g.NotifyLevelChange(g.gridLevel)
+	g.NotifyLevelChange(g.gridLevel.Val)
 }
 
 // Update grid levels and count based on current price and strategy logic
@@ -188,7 +213,7 @@ func (g *GridTrailingStrategy) UpdateGridLevels(currentPrice, previousPrice floa
 		// This is for the first run / after reset
 		g.CreateGrid(currentPrice)
 	} else {
-		newATR := g.ATR() * 2
+		newATR := g.getAtr() * 2
 		atrChange := math.Abs(newATR-g.gridGap) / g.gridGap
 
 		if atrChange > atrChangeThreshold {
@@ -199,7 +224,7 @@ func (g *GridTrailingStrategy) UpdateGridLevels(currentPrice, previousPrice floa
 			logger.Debug.Printf(
 				"[UpdateGridLevels] -> ATR change -> gridGap: %v gridLevel: %v gridNextBuyLevel: %v gridNextSellLevel: %v",
 				g.gridGap,
-				g.gridLevel,
+				g.gridLevel.Val,
 				g.gridNextLowerLevel,
 				g.gridNextUpperLevel,
 			)
@@ -209,9 +234,7 @@ func (g *GridTrailingStrategy) UpdateGridLevels(currentPrice, previousPrice floa
 
 func (g *GridTrailingStrategy) HandleOrderChannels() {
 	defer func() {
-		g.mu.Lock()
 		g.monitoring = false
-		g.mu.Unlock()
 	}()
 
 	for {
@@ -257,7 +280,8 @@ func (g *GridTrailingStrategy) HandleFinishedOrder(orderID int64) {
 	g.lastFillPrice = oi.EntryPrice
 
 	// Open new orders after an order fill is detected
-	g.previousGridLevel = g.gridLevel
+	g.previousGridLevel = g.gridLevel.Val
+
 	if oi.Side == "BUY" {
 		g.gridLevel.DecreaseLevel()
 	} else {
@@ -269,11 +293,9 @@ func (g *GridTrailingStrategy) HandleFinishedOrder(orderID int64) {
 		return
 	}
 
-	g.mu.Lock()
 	if _, exists := g.orderChannels[orderID]; exists {
 		delete(g.orderChannels, orderID)
 	}
-	g.mu.Unlock()
 
 	// The order was filled in the same interval as it was placed,
 	// the grid calcualtion needs to be adjusted.
@@ -281,7 +303,7 @@ func (g *GridTrailingStrategy) HandleFinishedOrder(orderID int64) {
 		g.rapidFill = true
 	}
 
-	g.NotifyLevelChange(g.gridLevel)
+	g.NotifyLevelChange(g.gridLevel.Val)
 }
 
 // Logic to place new buy and sell orders at the current grid level
@@ -294,9 +316,7 @@ func (g *GridTrailingStrategy) OpenNewOrders() {
 
 	for _, order := range g.orders {
 		g.PlaceOrder(order)
-		g.mu.Lock()
 		g.orders = g.orders[1:]
-		g.mu.Unlock()
 	}
 }
 
@@ -312,7 +332,7 @@ func (g *GridTrailingStrategy) CheckRetracement() bool {
 
 	prevOrder := g.orderInfos[len(g.orderInfos)-1]
 	prevLvl := math.Abs(float64(g.previousGridLevel))
-	currLvl := math.Abs(float64(g.gridLevel))
+	currLvl := math.Abs(float64(g.gridLevel.Val))
 
 	logger.Debug.Printf("[CheckRetracement] -> Previous Order: %v", prevOrder)
 
@@ -323,21 +343,21 @@ func (g *GridTrailingStrategy) CheckRetracement() bool {
 			logger.Debug.Printf(
 				"[CheckRetracement] -> [BUY] retracement detected, previous: %v -> %v :current",
 				g.previousGridLevel,
-				g.gridLevel,
+				g.gridLevel.Val,
 			)
 			isRetracing = true
 		} else if prevLvl < currLvl {
 			logger.Debug.Printf(
 				"[CheckRetracement] -> [BUY] progressing downwards, previous: %v -> %v :current",
 				g.previousGridLevel,
-				g.gridLevel,
+				g.gridLevel.Val,
 			)
 			isRetracing = false
 		} else {
 			logger.Debug.Printf(
 				"[CheckRetracement] -> No level change, previous: %v -> %v :current",
 				g.previousGridLevel,
-				g.gridLevel,
+				g.gridLevel.Val,
 			)
 			isRetracing = false
 		}
@@ -347,21 +367,21 @@ func (g *GridTrailingStrategy) CheckRetracement() bool {
 			logger.Debug.Printf(
 				"[CheckRetracement] -> [SELL] retracement detected, previous: %v -> %v :current",
 				g.previousGridLevel,
-				g.gridLevel,
+				g.gridLevel.Val,
 			)
 			isRetracing = true
 		} else if prevLvl < currLvl {
 			logger.Debug.Printf(
 				"[CheckRetracement] -> [SELL] progressing upwards, previous: %v -> %v :current",
 				g.previousGridLevel,
-				g.gridLevel,
+				g.gridLevel.Val,
 			)
 			isRetracing = false
 		} else {
 			logger.Debug.Printf(
 				"[CheckRetracement] -> No level change, previous: %v -> %v :current",
 				g.previousGridLevel,
-				g.gridLevel,
+				g.gridLevel.Val,
 			)
 			isRetracing = false
 		}
@@ -437,7 +457,7 @@ func (g *GridTrailingStrategy) CrossUnder(currentPrice, previousPrice, threshold
 }
 
 func (g *GridTrailingStrategy) CreateGrid(currentPrice float64) {
-	g.gridGap = g.ATR() * 2
+	g.gridGap = g.getAtr() * 2
 
 	if g.rapidFill {
 		currentPrice = g.lastFillPrice
@@ -454,7 +474,7 @@ func (g *GridTrailingStrategy) CreateGrid(currentPrice float64) {
 		"[CreateGrid] -> price: %v, gridGap: %v, gridLevel: %v, gridNextLowerLevel: %v, gridNextUpperLevel: %v",
 		currentPrice,
 		g.gridGap,
-		g.gridLevel,
+		g.gridLevel.Val,
 		g.gridNextLowerLevel,
 		g.gridNextUpperLevel,
 	)
@@ -467,7 +487,7 @@ func (g *GridTrailingStrategy) ResetGrid() {
 	g.lastFillPrice = 0.0
 	g.gridNextLowerLevel = -1
 	g.gridNextUpperLevel = -1
-	g.gridLevel = models.InvalidLevel
+	g.gridLevel = models.LevelType{Val: models.InvalidLevel}
 	g.previousGridLevel = models.InvalidLevel
 	g.monitoring = false
 	g.rapidFill = false
@@ -475,12 +495,11 @@ func (g *GridTrailingStrategy) ResetGrid() {
 	g.orders = make([]models.TypeOfOrder, 0)
 	g.cancelFuncs = make(map[int64]context.CancelFunc)
 	g.orderChannels = make(map[int64]chan struct{})
-	g.levelChange = make(chan models.Level, 10)
+	g.levelChange = make(chan models.Level, 15)
 	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
 }
 
 func (g *GridTrailingStrategy) AddOpenOrder(oi *models.OrderInfo) {
-	g.mu.Lock()
 	g.orderInfos = append(g.orderInfos, oi)
 
 	if _, exists := g.orderChannels[oi.ID]; !exists {
@@ -488,8 +507,6 @@ func (g *GridTrailingStrategy) AddOpenOrder(oi *models.OrderInfo) {
 		g.cancelFuncs[oi.ID] = cancel
 		g.orderChannels[oi.ID] = g.MonitorOrder(ctx, oi)
 	}
-
-	g.mu.Unlock()
 }
 
 func (g *GridTrailingStrategy) RemoveOpenOrder(orderID int64) error {
@@ -579,7 +596,7 @@ func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) {
 			CurrentPrice: g.GetClosePrice(),
 			EntryPrice:   order.Price,
 			SellLevel:    stop,
-			GridLevel:    g.gridLevel,
+			GridLevel:    g.gridLevel.Val,
 		}
 		g.AddOpenOrder(orderInfo)
 

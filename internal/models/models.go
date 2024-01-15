@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -792,6 +793,11 @@ type OrderInfo struct {
 
 // Maximum reachable grid level ranging from 0 (base) to 4 (5 levels total).
 // Acts as sort of a stop stop-loss.
+type LevelType struct {
+	Val   Level
+	Mutex sync.Mutex
+}
+
 type Level int
 
 const (
@@ -834,23 +840,29 @@ func (l Level) String() string {
 	}
 }
 
-func (l *Level) IncreaseLevel() {
-	if *l == InvalidLevel {
-		*l = BaseLevel
-	} else if *l < MaxGridLevel {
-		*l++
+func (lt *LevelType) IncreaseLevel() {
+	lt.Mutex.Lock()
+	defer lt.Mutex.Unlock()
+
+	if lt.Val == InvalidLevel {
+		lt.Val = BaseLevel
+	} else if lt.Val < MaxGridLevel {
+		lt.Val++
 	} else {
-		*l = InvalidLevel // Reset to base level if it goes beyond maxGridLevel
+		lt.Val = InvalidLevel // Reset to base level if it goes beyond MaxGridLevel
 	}
 }
 
-func (l *Level) DecreaseLevel() {
-	if *l == InvalidLevel {
-		*l = BaseLevel
-	} else if *l > NegativeMaxGridLevel {
-		*l--
+func (lt *LevelType) DecreaseLevel() {
+	lt.Mutex.Lock()
+	defer lt.Mutex.Unlock()
+
+	if lt.Val == InvalidLevel {
+		lt.Val = BaseLevel
+	} else if lt.Val > NegativeMaxGridLevel {
+		lt.Val--
 	} else {
-		*l = InvalidLevel // Reset to base level if it goes beyond -maxGridLevel
+		lt.Val = InvalidLevel // Reset to base level if it goes beyond NegativeMaxGridLevel
 	}
 }
 
