@@ -77,11 +77,11 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 }
 
 func (g *GridStrategy) NotifyLevelChange(newLevel models.Level) {
-	logger.Debug.Printf(
-		"[NotifyLevelChange] -> buffer len/cap: [%v/%v]",
-		len(g.levelChange),
-		cap(g.levelChange),
-	)
+	// logger.Debug.Printf(
+	// 	"[NotifyLevelChange] -> buffer len/cap: [%v/%v]",
+	// 	len(g.levelChange),
+	// 	cap(g.levelChange),
+	// )
 	g.levelChange <- newLevel
 }
 
@@ -151,12 +151,12 @@ func (g *GridStrategy) ManageOrders() {
 	} else {
 		previousPrice = g.closes[len(g.closes)-2]
 	}
-	logger.Debug.Printf(
-		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f, Balance=%.2f",
-		currentPrice,
-		previousPrice,
-		g.balance,
-	)
+	// logger.Debug.Printf(
+	// 	"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f, Balance=%.2f",
+	// 	currentPrice,
+	// 	previousPrice,
+	// 	g.balance,
+	// )
 
 	// Reset the rapidFill flag after new close price arrives
 	g.rapidFill = false
@@ -181,7 +181,6 @@ func (g *GridStrategy) StartOrderMonitoring() {
 func (g *GridStrategy) HandleGridLevelCross(
 	currentPrice, previousPrice float64,
 ) {
-	logger.Debug.Println("[HandleGridLevelCross] called!")
 	g.previousGridLevel = g.gridLevel.Val
 
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
@@ -306,7 +305,7 @@ func (g *GridStrategy) HandleFinishedOrder(orderID int64) {
 
 // Logic to place new buy and sell orders at the current grid level
 func (g *GridStrategy) OpenNewOrders() {
-	logger.Debug.Println("[OpenNewOrders] called!")
+	// logger.Debug.Println("[OpenNewOrders] called!")
 	cp := g.GetClosePrice()
 	nextBuy := g.Buy(g.asset, cp)
 	nextSell := g.Sell(g.asset, cp)
@@ -333,7 +332,7 @@ func (g *GridStrategy) CheckRetracement() bool {
 	prevLvl := math.Abs(float64(g.previousGridLevel))
 	currLvl := math.Abs(float64(g.gridLevel.Val))
 
-	logger.Debug.Printf("[CheckRetracement] -> Previous Order: %v", prevOrder)
+	// logger.Debug.Printf("[CheckRetracement] -> Previous Order: %v", prevOrder)
 
 	switch prevOrder.Side {
 	case "SELL":
@@ -427,7 +426,7 @@ func (g *GridStrategy) MonitorOrder(ctx context.Context, oi *models.OrderInfo) c
 					return
 				}
 
-				if o.Status == "FILLED" || o.Status == "CANCELED" {
+				if o.Status == "FILLED" {
 					logger.Debug.Printf("[MonitorOrder] -> Order %v %v", o.OrderID, o.Status)
 					g.mu.Lock()
 					oi.Status = o.Status
@@ -540,12 +539,12 @@ func (g *GridStrategy) CancelOrder(orderID int64) {
 		logger.Error.Println("failed to close order:", err)
 		return
 	}
-	logger.Debug.Printf(
-		"[CancelOrder] -> OrderID=%v Symbol=%v Status=%v cancelled...",
-		co.OrderID,
-		co.Symbol,
-		co.Status,
-	)
+	// logger.Debug.Printf(
+	// 	"[CancelOrder] -> OrderID=%v Symbol=%v Status=%v cancelled...",
+	// 	co.OrderID,
+	// 	co.Symbol,
+	// 	co.Status,
+	// )
 
 	// Monitoring should take care of it
 	_ = g.db.UpdateOrder(co.DeleteToGet())
@@ -563,7 +562,8 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 
 	switch order := o.(type) {
 	case *models.PostOrder:
-		logger.Debug.Printf("[PlaceOrder] -> Side: %s, Symbol: %s Quantity: %f, TakeProfit: %f, StopPrice: %f", order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice)
+		logger.Debug.Printf("[PlaceOrder] -> Side: %s, Symbol: %s Quantity: %f, TakeProfit: %f, StopPrice: %f",
+			order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice)
 		if g.backtest {
 			order.Timestamp = currBar.OpenTime.UnixMilli()
 			return
@@ -806,13 +806,13 @@ func (g *GridStrategy) adjustToNotinalFilter(
 	quantity := g.GetPositionSize() / currentPrice
 
 	if quantity*currentPrice < minNotional {
-		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+		// logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
 		quantity = minNotional/currentPrice + stepSize
-		logger.Warning.Printf(
-			"Increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
-			quantity,
-			minNotional,
-		)
+		// logger.Warning.Printf(
+		// 	"Increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
+		// 	quantity,
+		// 	minNotional,
+		// )
 	}
 	return g.RoundToStepSize(quantity, stepSize)
 }

@@ -77,14 +77,12 @@ func NewGridTrailingStrategy(db storage.Storage) backtest.Strategy[GridTrailingS
 }
 
 func (g *GridTrailingStrategy) NotifyLevelChange(newLevel models.Level) {
-	if g.previousGridLevel != newLevel {
-		logger.Debug.Printf(
-			"[NotifyLevelChange] -> previousGridLevel: %v, currentGridLevel: %v",
-			g.previousGridLevel,
-			newLevel,
-		)
-		g.levelChange <- newLevel
-	}
+	// logger.Debug.Printf(
+	// 	"[NotifyLevelChange] -> previousGridLevel: %v, currentGridLevel: %v",
+	// 	g.previousGridLevel,
+	// 	newLevel,
+	// )
+	g.levelChange <- newLevel
 }
 
 func (g *GridTrailingStrategy) ATR() {
@@ -153,12 +151,12 @@ func (g *GridTrailingStrategy) ManageOrders() {
 	} else {
 		previousPrice = g.closes[len(g.closes)-2]
 	}
-	logger.Debug.Printf(
-		"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f, Balance=%.2f",
-		currentPrice,
-		previousPrice,
-		g.balance,
-	)
+	// logger.Debug.Printf(
+	// 	"[ManageOrders] -> Current Price=%.8f, Previous Price=%.8f, Balance=%.2f",
+	// 	currentPrice,
+	// 	previousPrice,
+	// 	g.balance,
+	// )
 
 	// Reset the rapidFill flag after new close price arrives
 	g.rapidFill = false
@@ -183,7 +181,6 @@ func (g *GridTrailingStrategy) StartOrderMonitoring() {
 func (g *GridTrailingStrategy) HandleGridLevelCross(
 	currentPrice, previousPrice float64,
 ) {
-	logger.Debug.Println("[HandleGridLevelCross] called!")
 	g.previousGridLevel = g.gridLevel.Val
 
 	if g.CrossUnder(currentPrice, previousPrice, g.gridNextLowerLevel) {
@@ -213,7 +210,7 @@ func (g *GridTrailingStrategy) UpdateGridLevels(currentPrice, previousPrice floa
 		// This is for the first run / after reset
 		g.CreateGrid(currentPrice)
 	} else {
-		newATR := g.getAtr() * 2
+		newATR := g.getAtr()
 		atrChange := math.Abs(newATR-g.gridGap) / g.gridGap
 
 		if atrChange > atrChangeThreshold {
@@ -334,7 +331,7 @@ func (g *GridTrailingStrategy) CheckRetracement() bool {
 	prevLvl := math.Abs(float64(g.previousGridLevel))
 	currLvl := math.Abs(float64(g.gridLevel.Val))
 
-	logger.Debug.Printf("[CheckRetracement] -> Previous Order: %v", prevOrder)
+	// logger.Debug.Printf("[CheckRetracement] -> Previous Order: %v", prevOrder)
 
 	switch prevOrder.Side {
 	case "SELL":
@@ -414,7 +411,7 @@ func (g *GridTrailingStrategy) MonitorOrder(
 			select {
 			case <-c.Done():
 				logger.Debug.Printf(
-					"Context cancelled for OrderID: %v",
+					"[MonitorOrder] -> Context cancelled for OrderID: %v",
 					oi.ID,
 				)
 				return
@@ -431,7 +428,7 @@ func (g *GridTrailingStrategy) MonitorOrder(
 					return
 				}
 
-				if o.Status == "FILLED" || o.Status == "CANCELED" {
+				if o.Status == "FILLED" {
 					logger.Debug.Printf("Order %v %v", o.OrderID, o.Status)
 					g.mu.Lock()
 					oi.Status = o.Status
@@ -457,7 +454,7 @@ func (g *GridTrailingStrategy) CrossUnder(currentPrice, previousPrice, threshold
 }
 
 func (g *GridTrailingStrategy) CreateGrid(currentPrice float64) {
-	g.gridGap = g.getAtr() * 2
+	g.gridGap = g.getAtr()
 
 	if g.rapidFill {
 		currentPrice = g.lastFillPrice
@@ -545,12 +542,12 @@ func (g *GridTrailingStrategy) CancelOrder(orderID int64) {
 		logger.Error.Println("failed to close order:", err)
 		return
 	}
-	logger.Debug.Printf(
-		"[CancelOrder] -> OrderID=%v Symbol=%v Status=%v cancelled...",
-		co.OrderID,
-		co.Symbol,
-		co.Status,
-	)
+	// logger.Debug.Printf(
+	// 	"[CancelOrder] -> OrderID=%v Symbol=%v Status=%v cancelled...",
+	// 	co.OrderID,
+	// 	co.Symbol,
+	// 	co.Status,
+	// )
 
 	// Monitoring should take care of it
 	_ = g.db.UpdateOrder(co.DeleteToGet())
@@ -575,10 +572,6 @@ func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) {
 			return
 		}
 
-		// Limit order can't have stop price
-		stop := order.StopPrice
-		order.StopPrice = 0.0
-
 		order.NewOrderRespType = models.OrderRespType("RESULT")
 		orderResponse, err := rest.PostOrder(order)
 		if err != nil {
@@ -595,7 +588,7 @@ func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) {
 			Type:         orderResponse.Type,
 			CurrentPrice: g.GetClosePrice(),
 			EntryPrice:   order.Price,
-			SellLevel:    stop,
+			SellLevel:    order.StopPrice,
 			GridLevel:    g.gridLevel.Val,
 		}
 		g.AddOpenOrder(orderInfo)
@@ -845,13 +838,13 @@ func (g *GridTrailingStrategy) adjustToNotinalFilter(
 	quantity := g.GetPositionSize() / limitPrice
 
 	if quantity*limitPrice < minNotional {
-		logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
+		// logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
 		quantity = minNotional/limitPrice + stepSize
-		logger.Warning.Printf(
-			"Adjusting Quantity to [%.8f] based on minNotional of [%0.8f]",
-			quantity,
-			minNotional,
-		)
+		// logger.Warning.Printf(
+		// 	"Adjusting Quantity to [%.8f] based on minNotional of [%0.8f]",
+		// 	quantity,
+		// 	minNotional,
+		// )
 	}
 	return g.RoundToStepSize(quantity, stepSize)
 }

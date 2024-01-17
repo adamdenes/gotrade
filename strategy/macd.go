@@ -450,7 +450,7 @@ func (m *MACDStrategy) CalculatePositionSize(
 		}
 	}
 
-	positionSize := m.balance * riskPercentage // / m.stopLossPercentage
+	positionSize := m.balance * riskPercentage / m.stopLossPercentage
 	logger.Debug.Printf(
 		"Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f, Invalidation Point: %.2f%%",
 		positionSize,
