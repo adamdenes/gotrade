@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o gotrade -v cmd/gotrade/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -gcflags '-l=4' -o gotrade -v cmd/gotrade/main.go
 
 # Start the final stage
 FROM alpine:latest  

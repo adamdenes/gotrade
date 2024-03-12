@@ -16,7 +16,7 @@ VERSION=""
 
 build:
 	@echo "Building binary..."
-	$(GOBUILD) -o ./bin/$(BINARY_NAME) -v cmd/gotrade/main.go
+	$(GOBUILD) -gcflags '-l=4' -o ./bin/$(BINARY_NAME) -v cmd/gotrade/main.go
 
 test:
 	$(GOTEST) -v ./...
