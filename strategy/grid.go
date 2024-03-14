@@ -96,6 +96,9 @@ func (g *GridStrategy) ATR() {
 }
 
 func (g *GridStrategy) getAtr() float64 {
+	if len(g.atr) == 0 {
+		return 0
+	}
 	return g.atr[len(g.atr)-1]
 }
 
@@ -313,7 +316,10 @@ func (g *GridStrategy) OpenNewOrders() {
 	g.orders = append(g.orders, nextBuy, nextSell)
 
 	for _, order := range g.orders {
-		g.PlaceOrder(order)
+		if err := g.PlaceOrder(order); err != nil {
+			logger.Error.Println("[OpenNewOrders] -> error:", err)
+			return
+		}
 		g.orders = g.orders[1:]
 	}
 }
@@ -453,6 +459,9 @@ func (g *GridStrategy) CrossUnder(currentPrice, previousPrice, threshold float64
 
 func (g *GridStrategy) CreateGrid(currentPrice float64) {
 	g.gridGap = g.getAtr()
+	if g.gridGap == 0 {
+		return
+	}
 
 	if g.rapidFill {
 		currentPrice = g.lastFillPrice
@@ -557,7 +566,7 @@ func (g *GridStrategy) CancelAllOpenOrders() {
 	}
 }
 
-func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
+func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) error {
 	currBar := g.data[len(g.data)-1]
 
 	switch order := o.(type) {
@@ -566,7 +575,7 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 			order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice)
 		if g.backtest {
 			order.Timestamp = currBar.OpenTime.UnixMilli()
-			return
+			return nil
 		}
 
 		// Limit order can't have stop price
@@ -577,7 +586,7 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 		orderResponse, err := rest.PostOrder(order)
 		if err != nil {
 			logger.Error.Printf("Failed to send order: %v", err)
-			return
+			return fmt.Errorf("Failed to send order: %v", err)
 		}
 
 		// After successfully placing an order
@@ -597,12 +606,15 @@ func (g *GridStrategy) PlaceOrder(o models.TypeOfOrder) {
 		// Saving to DB
 		if err := g.db.SaveOrder(g.name, orderResponse); err != nil {
 			logger.Error.Printf("Error saving order: %v", err)
+			return fmt.Errorf("Error saving order: %v", err)
 		}
 	default:
 		// Some error occured during order creation
 		logger.Error.Println("Error, not placing order!")
-		return
+		return fmt.Errorf("Error, not placing order!")
 	}
+
+	return nil
 }
 
 func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {

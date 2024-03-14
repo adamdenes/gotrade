@@ -23,7 +23,7 @@ type Strategy[S any] interface {
 	SetAsset(string)
 	Buy(string, float64) models.TypeOfOrder
 	Sell(string, float64) models.TypeOfOrder
-	PlaceOrder(models.TypeOfOrder)
+	PlaceOrder(models.TypeOfOrder) error
 	GetClosePrices()
 	GetName() string
 	RoundToStepSize(float64, float64) float64

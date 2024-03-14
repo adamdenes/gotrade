@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -90,7 +91,10 @@ func (m *MACDStrategy) Execute() {
 				order = m.Buy(m.asset, currentPrice)
 			}
 		}
-		m.PlaceOrder(order)
+		if err := m.PlaceOrder(order); err != nil {
+			logger.Error.Println("Execute:", err)
+			return
+		}
 	}
 }
 
@@ -123,7 +127,7 @@ func (m *MACDStrategy) EMA() {
 	}
 }
 
-func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
+func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) error {
 	currBar := m.data[len(m.data)-1]
 
 	switch order := o.(type) {
@@ -133,20 +137,22 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 			if m.backtest {
 				order.Timestamp = currBar.OpenTime.UnixMilli()
 				m.orders = append(m.orders, order)
-				return
+				return nil
 			}
 
 			order.NewOrderRespType = models.OrderRespType("RESULT")
 			orderResponse, err := rest.PostOrder(order)
 			if err != nil {
 				logger.Error.Printf("Failed to send order: %v", err)
-				return
+				return fmt.Errorf("Failed to send order: %v", err)
 			}
 			if err := m.db.SaveOrder(m.name, orderResponse); err != nil {
 				logger.Error.Printf("Error saving order: %v", err)
+				return fmt.Errorf("Error saving order: %v", err)
 			}
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", m.orderLimit)
+			return fmt.Errorf("No more orders allowed! Current limit is: %v", m.orderLimit)
 		}
 	case *models.PostOrderOCO:
 		if m.orderLimit >= len(m.orders) {
@@ -154,27 +160,31 @@ func (m *MACDStrategy) PlaceOrder(o models.TypeOfOrder) {
 			if m.backtest {
 				order.Timestamp = currBar.OpenTime.UnixMilli()
 				m.orders = append(m.orders, order)
-				return
+				return nil
 			}
 
 			ocoResponse, err := rest.PostOrderOCO(order)
 			if err != nil {
 				logger.Error.Printf("Failed to send OCO order: %v", err)
-				return
+				return fmt.Errorf("Failed to send OCO order: %v", err)
 			}
 
 			for _, resp := range ocoResponse.OrderReports {
 				if err := m.db.SaveOrder(m.name, &resp); err != nil {
 					logger.Error.Printf("Error saving OCO order: %v", err)
+					return fmt.Errorf("Error saving OCO order: %v", err)
 				}
 			}
 		} else {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", m.orderLimit)
+			return fmt.Errorf("No more orders allowed! Current limit is: %v", m.orderLimit)
 		}
 	default:
-		// Some error occured during order creation
-		return
+		logger.Error.Println("Error, not placing order!")
+		return fmt.Errorf("Error, not placing order!")
 	}
+
+	return nil
 }
 
 // BUY: Limit Price < Last Price < Stop Price

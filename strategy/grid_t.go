@@ -312,7 +312,10 @@ func (g *GridTrailingStrategy) OpenNewOrders() {
 	g.orders = append(g.orders, nextBuy, nextSell)
 
 	for _, order := range g.orders {
-		g.PlaceOrder(order)
+		if err := g.PlaceOrder(order); err != nil {
+			logger.Error.Println("[OpenNewOrders] -> error:", err)
+			return
+		}
 		g.orders = g.orders[1:]
 	}
 }
@@ -560,7 +563,7 @@ func (g *GridTrailingStrategy) CancelAllOpenOrders() {
 	}
 }
 
-func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) {
+func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) error {
 	currBar := g.data[len(g.data)-1]
 
 	switch order := o.(type) {
@@ -569,14 +572,14 @@ func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) {
 			order.Side, order.Symbol, order.Quantity, order.Price, order.StopPrice, g.trailingDelta)
 		if g.backtest {
 			order.Timestamp = currBar.OpenTime.UnixMilli()
-			return
+			return nil
 		}
 
 		order.NewOrderRespType = models.OrderRespType("RESULT")
 		orderResponse, err := rest.PostOrder(order)
 		if err != nil {
 			logger.Error.Printf("Failed to send order: %v", err)
-			return
+			return fmt.Errorf("Failed to send order: %v", err)
 		}
 
 		// After successfully placing an order
@@ -596,12 +599,15 @@ func (g *GridTrailingStrategy) PlaceOrder(o models.TypeOfOrder) {
 		// Saving to DB
 		if err := g.db.SaveOrder(g.name, orderResponse); err != nil {
 			logger.Error.Printf("Error saving order: %v", err)
+			return fmt.Errorf("Error saving order: %v", err)
 		}
 	default:
 		// Some error occured during order creation
 		logger.Error.Println("Error, not placing order!")
-		return
+		return fmt.Errorf("Error, not placing order!")
 	}
+
+	return nil
 }
 
 func (g *GridTrailingStrategy) Buy(asset string, price float64) models.TypeOfOrder {
