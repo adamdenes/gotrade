@@ -143,10 +143,9 @@ func (s *SMAStrategy) PlaceOrder(o models.TypeOfOrder) error {
 			logger.Error.Printf("No more orders allowed! Current limit is: %v", s.orderLimit)
 			return fmt.Errorf("No more orders allowed! Current limit is: %v", s.orderLimit)
 		}
-	default:
-		// Some error occured during order creation
-		logger.Error.Println("Error, not placing order!")
-		return fmt.Errorf("Error, not placing order!")
+		// default:
+		// 	logger.Error.Println("Error, not placing order!")
+		// 	return fmt.Errorf("Error, not placing order!")
 	}
 
 	return nil
