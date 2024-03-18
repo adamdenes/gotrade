@@ -8,6 +8,8 @@ require (
 	nhooyr.io/websocket v1.8.7
 )
 
+require github.com/golang-migrate/migrate v3.5.4+incompatible // indirect
+
 require (
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
