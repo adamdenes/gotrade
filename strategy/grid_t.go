@@ -11,12 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/markcheno/go-talib"
+
 	"github.com/adamdenes/gotrade/cmd/rest"
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
-	"github.com/markcheno/go-talib"
 )
 
 type GridTrailingStrategy struct {
@@ -314,6 +315,7 @@ func (g *GridTrailingStrategy) OpenNewOrders() {
 	for _, order := range g.orders {
 		if err := g.PlaceOrder(order); err != nil {
 			logger.Error.Println("[OpenNewOrders] -> error:", err)
+			g.ResetGridState()
 			return
 		}
 		g.orders = g.orders[1:]
@@ -482,6 +484,11 @@ func (g *GridTrailingStrategy) CreateGrid(currentPrice float64) {
 
 func (g *GridTrailingStrategy) ResetGrid() {
 	g.CancelAllOpenOrders()
+	g.ResetGridState()
+	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
+}
+
+func (g *GridTrailingStrategy) ResetGridState() {
 	g.balance = 0.0
 	g.positionSize = 0.0
 	g.lastFillPrice = 0.0
@@ -496,7 +503,7 @@ func (g *GridTrailingStrategy) ResetGrid() {
 	g.cancelFuncs = make(map[int64]context.CancelFunc)
 	g.orderChannels = make(map[int64]chan struct{})
 	g.levelChange = make(chan models.Level, 15)
-	logger.Debug.Println("[ResetGrid] -> Grid has been reset")
+	logger.Debug.Println("[ResetGridState] -> GridState has been reset")
 }
 
 func (g *GridTrailingStrategy) AddOpenOrder(oi *models.OrderInfo) {
