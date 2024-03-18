@@ -5,7 +5,7 @@ GOTEST=$(GOCMD) test
 BINARY_NAME=gotrade
 
 # Postgres
-DB_CONTAINER_NAME=gotrade-timescaledb-1
+DB_CONTAINER_NAME=gotrade_timescaledb_1
 DB_NAME=binance_db
 DB_PORT=5432
 DB_USER=web
@@ -54,7 +54,13 @@ start_db: clean-dangling-images
 	else \
 		echo "Volume $(DB_VOLUME) already exists"; \
 	fi
-	docker run --name $(DB_CONTAINER_NAME) -v $(DB_VOLUME):$(DB_VOLUME_PATH) -e POSTGRES_PASSWORD=$(DB_PASSWORD) -e POSTGRES_USER=$(DB_USER) -e POSTGRES_DB=$(DB_NAME) -p $(DB_PORT):$(DB_PORT) -d timescale/timescaledb:latest-pg15
+	docker run --name $(DB_CONTAINER_NAME) \
+		-v $(DB_VOLUME):$(DB_VOLUME_PATH) \
+		-e POSTGRES_PASSWORD=$(DB_PASSWORD) \
+		-e POSTGRES_USER=$(DB_USER) \
+		-e POSTGRES_DB=$(DB_NAME) \
+		-p $(DB_PORT):$(DB_PORT) \
+		-d timescale/timescaledb:latest-pg15
 
 stop_db:
 	docker stop $(DB_CONTAINER_NAME)
