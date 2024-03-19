@@ -29,6 +29,12 @@ stop:
 	@-pkill -SIGTERM -f "./bin/$(BINARY_NAME)"
 	@echo "Server stopped!"
 
+up: clean-dangling-images
+	docker-compose up --build -d && docker-compose logs -f app
+	 
+down: clean-dangling-images
+	docker-compose down
+
 help:
 	@echo "Available targets:"
 	@echo "  build              	- Build project"
@@ -92,4 +98,4 @@ migrate-fix:
 	migrate -path ./migrations -database $(DSN) force $(VERSION)
 
 
-.PHONY: build test run stop start_db stop_db connect_db migrate-up migrate-cagg migrate-down migrate-fix clean-dangling-images
+.PHONY: build test run stop start_db stop_db connect_db migrate-up migrate-cagg migrate-down migrate-fix clean-dangling-images up down
