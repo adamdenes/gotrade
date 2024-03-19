@@ -111,7 +111,7 @@ func LoadEd25519PrivateKey(filePath string) (ed25519.PrivateKey, error) {
 }
 
 // SignEd25519 signs the given query with the Ed25519 private key
-func SignEd25519(privateKey []byte, query string) (string, error) {
+func SignEd25519(privateKey []byte, query string) string {
 	// Sign the query
 	signature := ed25519.Sign(privateKey, []byte(query))
 
@@ -121,7 +121,7 @@ func SignEd25519(privateKey []byte, query string) (string, error) {
 	// URL-encode the Base64 signature
 	encodedSignature := url.QueryEscape(signatureBase64)
 
-	return encodedSignature, nil
+	return encodedSignature
 }
 
 func GetBalance(asset string) (float64, error) {
@@ -401,10 +401,7 @@ func PostTestOrder(order *models.PostOrder) ([]byte, error) {
 	if err := validateOrder(order); err != nil {
 		return nil, err
 	}
-	signedQuery, err := SignEd25519(privateKey, order.String())
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, order.String())
 
 	uri := BuildURI(apiEndpoint + "order/test")
 	jb := []byte(order.String() + "&signature=" + signedQuery)
@@ -439,10 +436,7 @@ func PostOrder(order *models.PostOrder) (*models.PostOrderResponse, error) {
 	}
 
 	order.Timestamp = st
-	signedQuery, err := SignEd25519(privateKey, order.String())
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, order.String())
 
 	uri := BuildURI(apiEndpoint + "order")
 	jb := []byte(order.String() + "&signature=" + signedQuery)
@@ -482,10 +476,7 @@ Order Rate Limit
 	OCO counts as 2 orders against the order rate limit
 */
 func PostOrderOCO(oco *models.PostOrderOCO) (*models.PostOrderOCOResponse, error) {
-	signedQuery, err := SignEd25519(privateKey, oco.String())
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, oco.String())
 
 	uri := BuildURI(apiEndpoint + "order/oco")
 	jb := []byte(oco.String() + "&signature=" + signedQuery)
@@ -552,10 +543,7 @@ func GetAccount() ([]byte, error) {
 	}
 
 	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"account?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
@@ -587,10 +575,7 @@ func GetOrderCountUsage() ([]byte, error) {
 	}
 
 	q := fmt.Sprintf("recvWindow=%d&timestamp=%d", 5000, st)
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"rateLimit/order?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
@@ -638,10 +623,7 @@ func GetAllOrders(symbol string) ([]*models.GetOrderResponse, error) {
 	}
 
 	q := fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"allOrders?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
@@ -690,10 +672,7 @@ func GetOpenOrders(symbol string) ([]*models.GetOrderResponse, error) {
 		q = fmt.Sprintf("symbol=%s&recvWindow=%d&timestamp=%d", symbol, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"openOrders?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
@@ -735,10 +714,7 @@ func GetOCOOrder(id int64) (*models.PostOrderOCOResponse, error) {
 	}
 
 	q := fmt.Sprintf("orderListId=%d&recvWindow=%d&timestamp=%d", id, 5000, st)
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"orderList?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
@@ -798,10 +774,7 @@ func GetOrder(symbol, origClientOrderId string, id int64) (*models.GetOrderRespo
 		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"order?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
@@ -876,10 +849,7 @@ func CancelOrder(symbol, origClientOrderId string, id int64) (*models.DeleteOrde
 		q = fmt.Sprintf("symbol=%s&orderId=%d&recvWindow=%d&timestamp=%d", symbol, id, 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(apiEndpoint+"order?", q, "&signature=", signedQuery)
 	resp, err := Query("DELETE", uri, "application/json", nil)
@@ -925,10 +895,7 @@ func GetTradeFee(symbol string) (*models.TradeFees, error) {
 		q = fmt.Sprintf("&recvWindow=%d&timestamp=%d", 5000, st)
 	}
 
-	signedQuery, err := SignEd25519(privateKey, q)
-	if err != nil {
-		return nil, err
-	}
+	signedQuery := SignEd25519(privateKey, q)
 
 	uri := BuildURI(walletEndpoint+"tradeFee?", q, "&signature=", signedQuery)
 	resp, err := Query("GET", uri, "application/json", nil)
