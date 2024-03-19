@@ -1,0 +1,45 @@
+version: '3.8'
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15 
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: web
+      POSTGRES_USER: web
+      POSTGRES_DB: binance_db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U web -d binance_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    image: gotrade-app
+    restart: on-failure
+    ports:
+      - "4000:4000"
+    volumes:
+      # test
+      - ~/.ssh/test-prv-key.pem:/root/test-prv-key.pem
+
+    environment:
+      DB_PASSWORD: web
+      DSN: postgres://web:web@timescaledb:5432/binance_db?sslmode=disable
+
+      # test environment
+      APCA_API_KEY_ID: # HMAC API KEY
+      APCA_API_SECRET_KEY: # HMAC API SECRET
+      API_KEY_ED25519: # Ed25519 API KEY
+      PRIVATE_KEY_PATH: # path to the ed25519 private key file
+
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+volumes:
+  timescaledb_data:
