@@ -13,13 +13,14 @@ import (
 	"sync"
 	"time"
 
+	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
+
 	"github.com/adamdenes/gotrade/cmd/rest"
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
 )
 
 type Server struct {
