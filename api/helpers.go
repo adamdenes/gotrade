@@ -17,15 +17,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"nhooyr.io/websocket"
+	"nhooyr.io/websocket/wsjson"
+
 	"github.com/adamdenes/gotrade/cmd/rest"
 	"github.com/adamdenes/gotrade/internal/backtest"
 	"github.com/adamdenes/gotrade/internal/logger"
 	"github.com/adamdenes/gotrade/internal/models"
 	"github.com/adamdenes/gotrade/internal/storage"
 	"github.com/adamdenes/gotrade/strategy"
-	"github.com/jackc/pgx/v5"
-	"nhooyr.io/websocket"
-	"nhooyr.io/websocket/wsjson"
 )
 
 const (
@@ -66,6 +67,7 @@ func NewTemplateCache() (map[string]*template.Template, error) {
 
 		cache[name] = ts
 	}
+	logger.Info.Println("HTML templates loaded to cache.")
 	return cache, nil
 }
 
