@@ -28,9 +28,10 @@ const (
 	apiEndpoint = "https://testnet.binance.vision/api/v3/"
 	// apiEndpoint    = "https://api.binance.com/api/v3/"
 	walletEndpoint = "https://api.binance.com/sapi/v1/asset/"
+
 	// HMAC
-	apiKey    = "APCA_API_KEY_ID"
-	apiSecret = "APCA_API_SECRET_KEY"
+	// apiKey    = "APCA_API_KEY_ID"
+	// apiSecret = "APCA_API_SECRET_KEY"
 
 	// Ed25519
 	privateKeyPath = "PRIVATE_KEY_PATH"

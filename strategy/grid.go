@@ -20,7 +20,10 @@ import (
 	"github.com/adamdenes/gotrade/internal/storage"
 )
 
-const atrChangeThreshold = 0.15 // % change
+const (
+	atrChangeThreshold = 0.15    // % change
+	feePercentage      = 0.00075 // 0.075% trading fee
+)
 
 type GridStrategy struct {
 	name               string                       // Name of strategy
@@ -647,11 +650,17 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
+	// Calculate transaction fee
+	fee := g.CalculateTransactionFee(quantity, entryPrice, feePercentage)
+
+	// Adjust quantity to account for the fee
+	adjustedQuantity := g.AdjustQuantityForFee(quantity, g.positionSize, fee)
+
 	return &models.PostOrder{
 		Symbol:      asset,
 		Side:        models.BUY,
 		Type:        models.LIMIT,
-		Quantity:    quantity,
+		Quantity:    adjustedQuantity,
 		Price:       entryPrice,
 		StopPrice:   stopPrice,
 		TimeInForce: models.GTC,
@@ -683,11 +692,17 @@ func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
+	// Calculate transaction fee
+	fee := g.CalculateTransactionFee(quantity, entryPrice, feePercentage)
+
+	// Adjust quantity to account for the fee
+	adjustedQuantity := g.AdjustQuantityForFee(quantity, g.positionSize, fee)
+
 	return &models.PostOrder{
 		Symbol:      asset,
 		Side:        models.SELL,
 		Type:        models.LIMIT,
-		Quantity:    quantity,
+		Quantity:    adjustedQuantity,
 		Price:       entryPrice,
 		StopPrice:   stopPrice,
 		TimeInForce: models.GTC,
@@ -919,4 +934,25 @@ func (g *GridStrategy) DetermineEntryAndStopLoss(
 
 func (g *GridStrategy) GetClosePrice() float64 {
 	return g.closes[len(g.closes)-1]
+}
+
+func (g *GridStrategy) CalculateTransactionFee(quantity, price, feePercentage float64) float64 {
+	result := quantity * price * feePercentage
+	logger.Debug.Printf(
+		"[CalculateTransactionFee] -> quantity: %v price: %v fee: %v result: %v",
+		quantity,
+		price,
+		feePercentage,
+		result,
+	)
+	return result
+}
+
+func (g *GridStrategy) AdjustQuantityForFee(quantity, balance, fee float64) float64 {
+	if balance-fee <= 0 {
+		return 0
+	}
+	result := (balance - fee) / balance * quantity
+	logger.Debug.Printf("[AdjustQuantityForFee] -> %v", result)
+	return result
 }
