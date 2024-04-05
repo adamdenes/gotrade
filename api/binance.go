@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	wsEndpoint = "wss://testnet.binance.vision/stream?streams="
-	// wsEndpoint           = "wss://stream.binance.com:9443/stream?streams="
+	// wsEndpoint = "wss://testnet.binance.vision/stream?streams="
+	wsEndpoint           = "wss://stream.binance.com:9443/stream?streams="
 	apiKey               = "APCA_API_KEY_ID"
 	apiSecret            = "APCA_API_SECRET_KEY"
 	maxReconnectAttempts = 10

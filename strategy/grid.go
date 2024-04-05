@@ -61,7 +61,7 @@ func NewGridStrategy(db storage.Storage) backtest.Strategy[GridStrategy] {
 	g := &GridStrategy{
 		name:               "grid",
 		db:                 db,
-		riskPercentage:     0.02,
+		riskPercentage:     0.1,
 		stopLossPercentage: 0.06,
 		gridGap:            0,
 		gridLevel:          models.LevelType{Val: models.InvalidLevel},
@@ -322,8 +322,11 @@ func (g *GridStrategy) OpenNewOrders() {
 	for _, order := range g.orders {
 		if err := g.PlaceOrder(order); err != nil {
 			logger.Error.Println("[OpenNewOrders] -> error:", err)
-			g.ResetGridState()
-			return
+			// If we `ResetGrid` here we end up eventually in a 'deadlock'
+			// because buy or sell will deplete btc or usdt and no more
+			// orders can be set. So, just let it open half orders?
+			// g.ResetGrid()
+			// return
 		}
 		g.orders = g.orders[1:]
 	}
@@ -474,10 +477,8 @@ func (g *GridStrategy) CreateGrid(currentPrice float64) {
 			"[CreateGrid] -> Rapid fill detected, using last fill price: %v",
 			currentPrice,
 		)
-		g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
-	} else {
-		g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 	}
+	g.SetNewGridLevels(currentPrice+g.gridGap, currentPrice-g.gridGap)
 
 	logger.Debug.Printf(
 		"[CreateGrid] -> price: %v, gridGap: %v, gridLevel: %v, gridNextLowerLevel: %v, gridNextUpperLevel: %v",
@@ -650,17 +651,11 @@ func (g *GridStrategy) Buy(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
-	// Calculate transaction fee
-	fee := g.CalculateTransactionFee(quantity, entryPrice, feePercentage)
-
-	// Adjust quantity to account for the fee
-	adjustedQuantity := g.AdjustQuantityForFee(quantity, g.positionSize, fee)
-
 	return &models.PostOrder{
 		Symbol:      asset,
 		Side:        models.BUY,
 		Type:        models.LIMIT,
-		Quantity:    adjustedQuantity,
+		Quantity:    quantity,
 		Price:       entryPrice,
 		StopPrice:   stopPrice,
 		TimeInForce: models.GTC,
@@ -692,17 +687,11 @@ func (g *GridStrategy) Sell(asset string, price float64) models.TypeOfOrder {
 		return nil
 	}
 
-	// Calculate transaction fee
-	fee := g.CalculateTransactionFee(quantity, entryPrice, feePercentage)
-
-	// Adjust quantity to account for the fee
-	adjustedQuantity := g.AdjustQuantityForFee(quantity, g.positionSize, fee)
-
 	return &models.PostOrder{
 		Symbol:      asset,
 		Side:        models.SELL,
 		Type:        models.LIMIT,
-		Quantity:    adjustedQuantity,
+		Quantity:    quantity,
 		Price:       entryPrice,
 		StopPrice:   stopPrice,
 		TimeInForce: models.GTC,
@@ -736,6 +725,7 @@ func (g *GridStrategy) SetPositionSize(ps float64) {
 }
 
 func (g *GridStrategy) GetPositionSize() float64 {
+	logger.Info.Printf("[GetPositionSize] -> Quantity: %.8f", g.positionSize)
 	return g.positionSize
 }
 
@@ -838,15 +828,21 @@ func (g *GridStrategy) adjustToNotinalFilter(
 	currentPrice, stepSize, minNotional float64,
 ) float64 {
 	quantity := g.GetPositionSize() / currentPrice
+	logger.Info.Printf(
+		"[adjustToNotinalFilter] -> positionSize: %.8f, currentPrice: %.8f -> quantity: %.8f",
+		g.positionSize,
+		currentPrice,
+		g.positionSize/currentPrice,
+	)
 
 	if quantity*currentPrice < minNotional {
-		// logger.Error.Println("price * quantity is too low to be a valid order for the symbol")
-		quantity = minNotional/currentPrice + stepSize
-		// logger.Warning.Printf(
-		// 	"Increasing Quantity to [%.8f] based on minNotional of [%0.8f]",
-		// 	quantity,
-		// 	minNotional,
-		// )
+		logger.Warning.Println("price * quantity is too low to be a valid order for the symbol")
+		quantity = (minNotional/currentPrice + stepSize) * 1.5
+		logger.Warning.Printf(
+			"Increasing Quantity to [%.8f] based on minNotional of [%.8f]",
+			quantity,
+			minNotional,
+		)
 	}
 	return g.RoundToStepSize(quantity, stepSize)
 }
@@ -868,7 +864,14 @@ func (g *GridStrategy) calculateParams(
 }
 
 func (g *GridStrategy) RoundToStepSize(value, stepSize float64) float64 {
-	return math.Round(value/stepSize) * stepSize
+	result := math.Round(value/stepSize) * stepSize
+	logger.Info.Printf(
+		"[RoundToStepSize] -> value: %v, setpSize: %v -> result: %.8f",
+		value,
+		stepSize,
+		result,
+	)
+	return result
 }
 
 func (g *GridStrategy) RoundToTickSize(value, tickSize float64) float64 {
@@ -893,7 +896,8 @@ func (g *GridStrategy) CalculatePositionSize(
 		g.balance = balance
 	}
 
-	positionSize := g.balance * riskPercentage
+	positionSize := g.balance * riskPercentage * (1 - feePercentage)
+
 	logger.Debug.Printf(
 		"[CalculatePositionSize] -> Position size: $%.8f, Account balance: %.2f, Risk: %.2f%%, Entry: %.8f, Stop-Loss: %.8f",
 		positionSize,
@@ -934,25 +938,4 @@ func (g *GridStrategy) DetermineEntryAndStopLoss(
 
 func (g *GridStrategy) GetClosePrice() float64 {
 	return g.closes[len(g.closes)-1]
-}
-
-func (g *GridStrategy) CalculateTransactionFee(quantity, price, feePercentage float64) float64 {
-	result := quantity * price * feePercentage
-	logger.Debug.Printf(
-		"[CalculateTransactionFee] -> quantity: %v price: %v fee: %v result: %v",
-		quantity,
-		price,
-		feePercentage,
-		result,
-	)
-	return result
-}
-
-func (g *GridStrategy) AdjustQuantityForFee(quantity, balance, fee float64) float64 {
-	if balance-fee <= 0 {
-		return 0
-	}
-	result := (balance - fee) / balance * quantity
-	logger.Debug.Printf("[AdjustQuantityForFee] -> %v", result)
-	return result
 }
